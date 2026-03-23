@@ -148,7 +148,7 @@ Output a JSON object:
         self.write_output(context, "rehunt_suggestions.json", rehunt)
 
         for chain_data in demonstrated + proposed:
-            create_chain(context.engagement_id, chain_data)
+            create_chain(context.engagement_id, chain_data, run_id=context.run_id)
 
         return StageResult(
             success=True,

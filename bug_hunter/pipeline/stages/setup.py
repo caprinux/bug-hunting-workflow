@@ -39,7 +39,7 @@ class SetupStage(PipelineStage):
 
         missing_required = [
             t for t in tool_results
-            if not t.available and t.name in ("claude", "git", "python3")
+            if not t.available and t.required
         ]
         if missing_required:
             names = ", ".join(t.name for t in missing_required)

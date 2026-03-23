@@ -13,6 +13,7 @@ from typing import Any
 from bug_hunter.core.cli_wrapper import CLIResult, StreamEvent, run_claude, run_codex
 from bug_hunter.core.database import create_bug
 from bug_hunter.core.events import event_manager
+from bug_hunter.utils.schema_validator import validate_findings_list
 from bug_hunter.pipeline.stages.base import PipelineStage, StageContext, StageResult
 from bug_hunter.pipeline.stages.registry import register
 
@@ -89,9 +90,10 @@ class BugHunterStage(PipelineStage):
                     findings = result.result.get("findings", [])
                     summary = result.result.get("functionality_summary", {})
 
+                    run_prefix = context.run_id[:8]
                     for i, finding in enumerate(findings):
                         if "id" not in finding:
-                            finding["id"] = f"bug-{chunk_idx:03d}-{i:03d}"
+                            finding["id"] = f"{run_prefix}/bug-{chunk_idx:03d}-{i:03d}"
                         finding["found_by"] = [agent_name]
 
                     with open(os.path.join(phase1_dir, f"{chunk_file}_findings.json"), "w") as f:
@@ -112,15 +114,29 @@ class BugHunterStage(PipelineStage):
                 tasks.append(run_chunk(chunk_idx, chunk, agent_name))
 
         completed = 0
+        succeeded = 0
+        failed = 0
         for coro in asyncio.as_completed(tasks):
             findings, summary = await coro
             all_findings.extend(findings)
             if summary:
                 all_summaries.append(summary)
+                succeeded += 1
+            else:
+                failed += 1
             completed += 1
             await event_manager.emit_progress(
                 context.engagement_id, context.run_id, self.name,
                 completed, len(tasks), f"Phase 1: {completed}/{len(tasks)} subagents complete",
+            )
+
+        coverage_ratio = succeeded / len(tasks) if tasks else 0
+        is_degraded = coverage_ratio < 0.5
+
+        if is_degraded:
+            await event_manager.emit_error(
+                context.engagement_id, context.run_id, self.name,
+                f"Degraded coverage: only {succeeded}/{len(tasks)} subagents succeeded ({coverage_ratio:.0%})",
             )
 
         if hunter_config.phase2_enabled and all_summaries:
@@ -133,18 +149,34 @@ class BugHunterStage(PipelineStage):
             )
             all_findings.extend(phase2_findings)
 
-        self.write_output(context, "all_findings.json", all_findings)
+        quarantine_dir = os.path.join(stage_dir, "quarantined")
+        valid_findings, quarantined = validate_findings_list(all_findings, quarantine_dir)
+        if quarantined:
+            await event_manager.emit_log(
+                context.engagement_id, context.run_id, self.name,
+                f"Quarantined {len(quarantined)} malformed findings (see quarantined/)",
+            )
+
+        self.write_output(context, "all_findings.json", valid_findings)
         self.write_output(context, "all_summaries.json", all_summaries)
 
-        for finding in all_findings:
+        for finding in valid_findings:
             create_bug(context.engagement_id, context.run_id, finding)
 
         return StageResult(
             success=True,
             input_count=len(chunks),
-            output_count=len(all_findings),
+            output_count=len(valid_findings),
             cost_usd=total_cost,
-            metadata={"phase1_chunks": len(chunks), "phase2_enabled": hunter_config.phase2_enabled},
+            metadata={
+                "phase1_chunks": len(chunks),
+                "quarantined": len(quarantined),
+                "phase2_enabled": hunter_config.phase2_enabled,
+                "subagents_succeeded": succeeded,
+                "subagents_failed": failed,
+                "coverage_ratio": round(coverage_ratio, 2),
+                "degraded": is_degraded,
+            },
         )
 
     async def _execute_black_box(self, context: StageContext) -> StageResult:
@@ -179,9 +211,10 @@ class BugHunterStage(PipelineStage):
 
                 if result.success and result.result:
                     findings = result.result if isinstance(result.result, list) else result.result.get("findings", [])
+                    run_prefix = context.run_id[:8]
                     for i, finding in enumerate(findings):
                         if "id" not in finding:
-                            finding["id"] = f"bb-{target_idx:03d}-{i:03d}"
+                            finding["id"] = f"{run_prefix}/bb-{target_idx:03d}-{i:03d}"
                         finding["found_by"] = ["claude"]
 
                     with open(os.path.join(target_dir, "findings.json"), "w") as f:
@@ -195,13 +228,28 @@ class BugHunterStage(PipelineStage):
         tasks = [hunt_target(i, t) for i, t in enumerate(targets)]
 
         completed = 0
+        succeeded = 0
+        failed = 0
         for coro in asyncio.as_completed(tasks):
             findings = await coro
             all_findings.extend(findings)
+            if findings:
+                succeeded += 1
+            else:
+                failed += 1
             completed += 1
             await event_manager.emit_progress(
                 context.engagement_id, context.run_id, self.name,
                 completed, len(targets), f"Hunting: {completed}/{len(targets)} targets complete",
+            )
+
+        coverage_ratio = succeeded / len(targets) if targets else 0
+        is_degraded = coverage_ratio < 0.5
+
+        if is_degraded:
+            await event_manager.emit_error(
+                context.engagement_id, context.run_id, self.name,
+                f"Degraded coverage: only {succeeded}/{len(targets)} targets produced findings ({coverage_ratio:.0%})",
             )
 
         self.write_output(context, "all_findings.json", all_findings)
@@ -214,6 +262,12 @@ class BugHunterStage(PipelineStage):
             input_count=len(targets),
             output_count=len(all_findings),
             cost_usd=total_cost,
+            metadata={
+                "targets_succeeded": succeeded,
+                "targets_failed": failed,
+                "coverage_ratio": round(coverage_ratio, 2),
+                "degraded": is_degraded,
+            },
         )
 
     async def _map_codebase(self, source_path: str, config) -> dict:
@@ -431,9 +485,10 @@ security vulnerability. If it does, output findings in the standard bug finding 
 
             if sub_result.success and sub_result.result:
                 findings = sub_result.result if isinstance(sub_result.result, list) else sub_result.result.get("findings", [])
+                run_prefix = context.run_id[:8]
                 for j, finding in enumerate(findings):
                     if "id" not in finding:
-                        finding["id"] = f"logic-{i:03d}-{j:03d}"
+                        finding["id"] = f"{run_prefix}/logic-{i:03d}-{j:03d}"
                     finding["found_by"] = ["claude-phase2"]
                 phase2_findings.extend(findings)
 

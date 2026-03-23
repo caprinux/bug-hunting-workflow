@@ -101,13 +101,21 @@ Output a JSON object:
 
         if not result.success:
             for bug in bugs:
-                update_bug(bug["id"], status="confirmed")
-            self.write_output(context, "confirmed_bugs.json", bug_data_list)
+                update_bug(bug["id"], status="triage_failed")
+            self.write_output(context, "confirmed_bugs.json", [])
             self.write_output(context, "informational.json", [])
             self.write_output(context, "discarded.json", [])
+            self.write_output(context, "triage_failed.json", bug_data_list)
+
+            await event_manager.emit_error(
+                context.engagement_id, context.run_id, self.name,
+                f"Triager failed — {len(bugs)} bugs moved to triage_failed for human review",
+            )
+
             return StageResult(
-                success=True, input_count=len(bugs), output_count=len(bugs),
-                cost_usd=result.cost_usd, metadata={"triage_failed": True},
+                success=True, input_count=len(bugs), output_count=0,
+                cost_usd=result.cost_usd,
+                metadata={"triage_failed": True, "triage_failed_count": len(bugs)},
             )
 
         triage_result = result.result or {}

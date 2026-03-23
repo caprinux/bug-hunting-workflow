@@ -104,11 +104,19 @@ async def api_list_runs(engagement_id: str):
     return list_runs(engagement_id)
 
 
-@router.get("/engagements/{engagement_id}/runs/{run_id}")
-async def api_get_run(engagement_id: str, run_id: str):
+def _verify_run_ownership(engagement_id: str, run_id: str) -> dict:
+    """Verify a run belongs to the given engagement."""
     run = get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
+    if run["engagement_id"] != engagement_id:
+        raise HTTPException(status_code=404, detail="Run not found for this engagement")
+    return run
+
+
+@router.get("/engagements/{engagement_id}/runs/{run_id}")
+async def api_get_run(engagement_id: str, run_id: str):
+    run = _verify_run_ownership(engagement_id, run_id)
     run["stages"] = list_stage_results(run_id)
     return run
 
@@ -128,9 +136,7 @@ async def api_get_stage_output(engagement_id: str, run_id: str, stage_name: str,
                                 path: str = Query(default="")):
     """Browse stage output files."""
     config = load_config()
-    eng = get_engagement(engagement_id)
-    if not eng:
-        raise HTTPException(status_code=404, detail="Engagement not found")
+    _verify_run_ownership(engagement_id, run_id)
 
     stages = list_stage_results(run_id)
     stage = next((s for s in stages if s["stage_name"] == stage_name), None)

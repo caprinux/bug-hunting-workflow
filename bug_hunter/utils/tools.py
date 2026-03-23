@@ -65,6 +65,7 @@ class ToolCheckResult:
     installed: bool = False
     install_error: str = ""
     description: str = ""
+    required: bool = False
 
 
 async def check_tool(name: str) -> ToolCheckResult:
@@ -129,8 +130,10 @@ async def check_and_install_tools(engagement_type: str, auto_install: bool = Tru
     results = []
     for name, info in toolsets.items():
         result = await check_tool(name)
+        result.required = info.get("required", False)
         if not result.available and auto_install and info.get("install"):
             result = await install_tool(name, info["install"])
+            result.required = info.get("required", False)
         results.append(result)
 
     return results
@@ -147,14 +150,11 @@ def tools_report(results: list[ToolCheckResult]) -> dict:
                 "installed": r.installed,
                 "install_error": r.install_error,
                 "description": r.description,
+                "required": r.required,
             }
             for r in results
         ],
         "all_required_available": all(
-            r.available for r in results
-            if any(
-                r.name in ts and ts[r.name].get("required", False)
-                for ts in [COMMON_TOOLS, SOURCE_CODE_TOOLS, BLACK_BOX_TOOLS]
-            )
+            r.available for r in results if r.required
         ),
     }

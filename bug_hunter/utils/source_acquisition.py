@@ -136,10 +136,19 @@ async def _clone_repo_immutable(repo_url: str, output_dir: str, run_id: str) -> 
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        await checkout_process.wait()
+        co_stdout, co_stderr = await checkout_process.communicate()
+        if checkout_process.returncode != 0:
+            error = co_stderr.decode("utf-8", errors="replace")
+            return AcquisitionResult(
+                success=False,
+                error=f"Git checkout failed for ref '{commit}': {error}",
+                repo_url=url,
+            )
 
     # Record the exact commit hash for this snapshot
     actual_commit = await _get_git_commit(str(clone_dir))
+    if commit and actual_commit and not actual_commit.startswith(commit):
+        logger.warning(f"Requested commit {commit} resolved to {actual_commit}")
 
     return AcquisitionResult(
         success=True,

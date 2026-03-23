@@ -308,6 +308,8 @@ class PipelineOrchestrator:
 
     def _update_cumulative_state(self):
         """Update cumulative engagement state across all runs."""
+        from bug_hunter.core.database import list_runs as db_list_runs
+
         cumulative_dir = self._get_cumulative_dir()
 
         all_confirmed = list_bugs(self.engagement_id, status="confirmed")
@@ -324,23 +326,33 @@ class PipelineOrchestrator:
             json.dump([b["bug_data"] for b in all_informational], f, indent=2)
 
         total_cost = sum(
-            r.get("cost_usd", 0)
-            for r in __import__("bug_hunter.core.database", fromlist=["list_runs"]).list_runs(self.engagement_id)
+            r.get("cost_usd", 0) for r in db_list_runs(self.engagement_id)
         )
         update_engagement(self.engagement_id, cost_total_usd=total_cost)
 
     def _build_completion_summary(self, run_id: str) -> dict:
         from bug_hunter.core.database import list_stage_results
+
         stages = list_stage_results(run_id)
-        confirmed = list_bugs(self.engagement_id, status="confirmed")
-        cannot_validate = list_bugs(self.engagement_id, status="cannot_validate")
+
+        # Per-run counts
+        run_confirmed = list_bugs(self.engagement_id, status="confirmed", run_id=run_id)
+        run_cannot_validate = list_bugs(self.engagement_id, status="cannot_validate", run_id=run_id)
+        run_triage_failed = list_bugs(self.engagement_id, status="triage_failed", run_id=run_id)
+
+        # Cumulative counts
+        all_confirmed = list_bugs(self.engagement_id, status="confirmed")
+        all_cannot_validate = list_bugs(self.engagement_id, status="cannot_validate")
 
         return {
             "run_id": run_id,
             "stages_completed": sum(1 for s in stages if s["status"] == "completed"),
             "stages_failed": sum(1 for s in stages if s["status"] == "failed"),
             "stages_skipped": sum(1 for s in stages if s["status"] == "skipped"),
-            "confirmed_bugs": len(confirmed),
-            "cannot_validate": len(cannot_validate),
             "total_stages": len(stages),
+            "run_confirmed_bugs": len(run_confirmed),
+            "run_cannot_validate": len(run_cannot_validate),
+            "run_triage_failed": len(run_triage_failed),
+            "cumulative_confirmed_bugs": len(all_confirmed),
+            "cumulative_cannot_validate": len(all_cannot_validate),
         }

@@ -71,7 +71,8 @@ def init_db(db_path: Optional[str] = None) -> None:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 completed_at TEXT,
-                cost_usd REAL DEFAULT 0.0
+                cost_usd REAL DEFAULT 0.0,
+                UNIQUE(engagement_id, run_number)
             );
 
             CREATE TABLE IF NOT EXISTS stage_results (
@@ -93,13 +94,14 @@ def init_db(db_path: Optional[str] = None) -> None:
 
             CREATE TABLE IF NOT EXISTS bugs (
                 id TEXT PRIMARY KEY,
+                external_id TEXT NOT NULL,
                 engagement_id TEXT NOT NULL REFERENCES engagements(id),
                 run_id TEXT NOT NULL REFERENCES runs(id),
                 bug_data TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'found'
                     CHECK(status IN ('found', 'in_scope', 'validated', 'expanded',
                                      'confirmed', 'informational', 'cannot_validate',
-                                     'out_of_scope', 'discarded')),
+                                     'out_of_scope', 'discarded', 'triage_failed')),
                 current_stage TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -107,13 +109,17 @@ def init_db(db_path: Optional[str] = None) -> None:
 
             CREATE TABLE IF NOT EXISTS chains (
                 id TEXT PRIMARY KEY,
+                external_id TEXT NOT NULL,
                 engagement_id TEXT NOT NULL REFERENCES engagements(id),
+                run_id TEXT,
                 chain_data TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_runs_engagement ON runs(engagement_id);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_run_per_engagement
+                ON runs(engagement_id) WHERE status = 'running';
             CREATE INDEX IF NOT EXISTS idx_stage_results_run ON stage_results(run_id);
             CREATE INDEX IF NOT EXISTS idx_bugs_engagement ON bugs(engagement_id);
             CREATE INDEX IF NOT EXISTS idx_bugs_run ON bugs(run_id);
@@ -297,15 +303,16 @@ def update_stage_result(sr_id: str, **kwargs) -> Optional[dict]:
 # --- Bug CRUD ---
 
 def create_bug(engagement_id: str, run_id: str, bug_data: dict) -> dict:
-    bug_id = bug_data.get("id", str(uuid4()))
+    db_id = str(uuid4())
+    external_id = bug_data.get("id", db_id)
     now = _now()
     with get_db() as conn:
         conn.execute(
-            """INSERT INTO bugs (id, engagement_id, run_id, bug_data, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (bug_id, engagement_id, run_id, json.dumps(bug_data), now, now),
+            """INSERT INTO bugs (id, external_id, engagement_id, run_id, bug_data, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (db_id, external_id, engagement_id, run_id, json.dumps(bug_data), now, now),
         )
-    return get_bug(bug_id)
+    return get_bug(db_id)
 
 
 def get_bug(bug_id: str) -> Optional[dict]:
@@ -361,16 +368,35 @@ def update_bug(bug_id: str, **kwargs) -> Optional[dict]:
 
 # --- Chain CRUD ---
 
-def create_chain(engagement_id: str, chain_data: dict) -> dict:
-    chain_id = chain_data.get("id", str(uuid4()))
+def create_chain(engagement_id: str, chain_data: dict, run_id: str = None) -> dict:
+    """Create a chain, or update an existing one with the same bug_ids."""
+    bug_ids = sorted(chain_data.get("bug_ids", []))
+    bug_ids_key = json.dumps(bug_ids)
+
+    # Check for existing chain with same bug_ids in this engagement
+    existing = list_chains(engagement_id)
+    for ex in existing:
+        ex_bug_ids = sorted(ex["chain_data"].get("bug_ids", []))
+        if json.dumps(ex_bug_ids) == bug_ids_key:
+            # Update existing chain with newer evidence
+            now = _now()
+            with get_db() as conn:
+                conn.execute(
+                    "UPDATE chains SET chain_data = ?, run_id = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(chain_data), run_id, now, ex["id"]),
+                )
+            return get_chain(ex["id"])
+
+    db_id = str(uuid4())
+    external_id = chain_data.get("id", db_id)
     now = _now()
     with get_db() as conn:
         conn.execute(
-            """INSERT INTO chains (id, engagement_id, chain_data, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (chain_id, engagement_id, json.dumps(chain_data), now, now),
+            """INSERT INTO chains (id, external_id, engagement_id, run_id, chain_data, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (db_id, external_id, engagement_id, run_id, json.dumps(chain_data), now, now),
         )
-    return get_chain(chain_id)
+    return get_chain(db_id)
 
 
 def get_chain(chain_id: str) -> Optional[dict]:
