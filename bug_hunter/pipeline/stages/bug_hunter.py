@@ -199,6 +199,7 @@ class BugHunterStage(PipelineStage):
         semaphore = asyncio.Semaphore(context.config.pipeline.max_concurrent_infra_agents)
 
         async def hunt_target(target_idx: int, target: dict):
+            """Returns (findings_list, agent_succeeded)."""
             nonlocal total_cost
             async with semaphore:
                 target_dir = os.path.join(stage_dir, f"target_{target_idx:03d}")
@@ -209,8 +210,10 @@ class BugHunterStage(PipelineStage):
                 )
                 total_cost += result.cost_usd
 
-                if result.success and result.result:
-                    findings = result.result if isinstance(result.result, list) else result.result.get("findings", [])
+                if result.success:
+                    findings = []
+                    if result.result:
+                        findings = result.result if isinstance(result.result, list) else result.result.get("findings", [])
                     run_prefix = context.run_id[:8]
                     for i, finding in enumerate(findings):
                         if "id" not in finding:
@@ -219,11 +222,11 @@ class BugHunterStage(PipelineStage):
 
                     with open(os.path.join(target_dir, "findings.json"), "w") as f:
                         json.dump(findings, f, indent=2)
-                    return findings
+                    return findings, True
                 else:
                     with open(os.path.join(target_dir, "error.json"), "w") as f:
                         json.dump({"error": result.error}, f, indent=2)
-                    return []
+                    return [], False
 
         tasks = [hunt_target(i, t) for i, t in enumerate(targets)]
 
@@ -231,9 +234,9 @@ class BugHunterStage(PipelineStage):
         succeeded = 0
         failed = 0
         for coro in asyncio.as_completed(tasks):
-            findings = await coro
+            findings, agent_ok = await coro
             all_findings.extend(findings)
-            if findings:
+            if agent_ok:
                 succeeded += 1
             else:
                 failed += 1

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -91,10 +92,16 @@ async def api_start_run(engagement_id: str, req: StartRunRequest):
     orchestrator = PipelineOrchestrator(config, engagement_id)
     _orchestrators[engagement_id] = orchestrator
 
-    run_id = await orchestrator.start_run(
-        run_type=req.run_type,
-        rehunt_target=req.rehunt_target if req.rehunt_target else None,
-    )
+    try:
+        run_id = await orchestrator.start_run(
+            run_type=req.run_type,
+            rehunt_target=req.rehunt_target if req.rehunt_target else None,
+        )
+    except sqlite3.IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail="A run is already active for this engagement. Wait for it to complete.",
+        )
 
     return {"run_id": run_id, "status": "running"}
 

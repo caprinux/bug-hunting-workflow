@@ -45,7 +45,7 @@ export function useWebSocket(engagementId = null) {
         if (data.type === 'completion') {
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification('Bug Hunting Workflow', {
-              body: `Run completed: ${data.data?.confirmed_bugs || 0} bugs confirmed`,
+              body: `Run completed: ${data.data?.run_confirmed_bugs || 0} bugs confirmed (${data.data?.cumulative_confirmed_bugs || 0} total)`,
             })
           }
         }
