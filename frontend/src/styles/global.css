@@ -269,6 +269,53 @@ a:hover { color: var(--accent-hover); }
 .event-agent.claude { color: var(--color-info); }
 .event-agent.codex { color: var(--color-warning); }
 
+/* Agent stream panel */
+.agent-stream {
+  background: var(--bg-primary, #0d1117); border: 1px solid var(--border);
+  border-radius: 8px; max-height: 300px; overflow-y: auto;
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  padding: 8px;
+}
+.stream-entry {
+  display: flex; gap: 8px; padding: 2px 0;
+  border-bottom: 1px solid var(--border); opacity: 0.9;
+}
+.stream-entry:last-child { border-bottom: none; }
+.stream-agent {
+  flex-shrink: 0; min-width: 50px; font-weight: 600;
+  color: var(--color-info); font-size: 11px;
+}
+.stream-agent.codex { color: var(--color-warning); }
+.stream-text { color: var(--text-secondary); word-break: break-word; }
+
+/* Engagement summary */
+.engagement-summary {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px; margin-bottom: 24px;
+}
+.summary-section {
+  padding: 16px; background: var(--bg-secondary, var(--bg-card));
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.summary-section h3 {
+  font-size: 13px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
+}
+.summary-counts { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* New badge for bugs from latest run */
+.new-badge {
+  display: inline-block; padding: 1px 6px; border-radius: 4px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  background: var(--color-info); color: #fff; letter-spacing: 0.5px;
+}
+
+/* Bug run indicator */
+.bug-run {
+  font-size: 11px; color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+
 .theme-toggle {
   background: transparent; border: 1px solid var(--border);
   color: var(--text-secondary); padding: 4px 12px; border-radius: 6px;
@@ -582,6 +629,39 @@ h2 {
   position: absolute; top: 0; left: 0; right: 0; text-align: center;
   font-size: 10px; line-height: 18px; color: var(--text-primary);
   font-family: 'JetBrains Mono', monospace; font-weight: 500;
+}
+
+/* Stage timing bar */
+.stage-timing {
+  margin-top: 8px; height: 14px; position: relative;
+  background: var(--bg-inset, var(--bg-tertiary)); border-radius: 3px; overflow: hidden;
+}
+.timing-bar {
+  height: 100%; background: var(--color-info); opacity: 0.3;
+  border-radius: 3px; min-width: 2px;
+}
+.timing-label {
+  position: absolute; top: 0; right: 4px; line-height: 14px;
+  font-size: 10px; color: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Stage cost */
+.stage-cost {
+  font-size: 11px; color: var(--color-warning); margin-top: 4px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Bug count on connector */
+.pipeline-connector {
+  position: relative; display: flex; align-items: center; justify-content: center;
+}
+.connector-count {
+  position: absolute; top: -10px;
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  padding: 0 5px; border-radius: 8px;
+  font-size: 10px; font-weight: 600; color: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
 }
 
 .stage-duration {

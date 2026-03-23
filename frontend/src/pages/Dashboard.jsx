@@ -2,18 +2,12 @@ import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../utils/api'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useAutoRefresh } from '../hooks/useAutoRefresh'
 
 export default function Dashboard() {
   const [engagements, setEngagements] = useState([])
   const [loading, setLoading] = useState(true)
   const { events, connected } = useWebSocket()
-
-  useEffect(() => { loadEngagements() }, [])
-
-  useEffect(() => {
-    const completionEvents = events.filter(e => e.type === 'completion')
-    if (completionEvents.length > 0) loadEngagements()
-  }, [events])
 
   async function loadEngagements() {
     try {
@@ -24,6 +18,13 @@ export default function Dashboard() {
     }
     setLoading(false)
   }
+
+  useAutoRefresh(loadEngagements, [])
+
+  useEffect(() => {
+    const completionEvents = events.filter(e => e.type === 'completion')
+    if (completionEvents.length > 0) loadEngagements()
+  }, [events])
 
   const stats = {
     total: engagements.length,

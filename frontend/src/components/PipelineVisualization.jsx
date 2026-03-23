@@ -19,6 +19,22 @@ const STATUS_COLORS = {
   completed: 'var(--color-success)',
   failed: 'var(--color-error)',
   skipped: 'var(--color-muted)',
+  cancelled: 'var(--color-warning)',
+}
+
+function formatDuration(ms) {
+  if (!ms) return ''
+  if (ms < 1000) return `${ms}ms`
+  const s = ms / 1000
+  if (s < 60) return `${s.toFixed(1)}s`
+  const m = Math.floor(s / 60)
+  const rem = Math.round(s % 60)
+  return `${m}m ${rem}s`
+}
+
+function formatCost(usd) {
+  if (!usd) return ''
+  return `$${usd.toFixed(3)}`
 }
 
 export default function PipelineVisualization({ stages, events, onStageClick }) {
@@ -32,15 +48,26 @@ export default function PipelineVisualization({ stages, events, onStageClick }) 
     return progressEvents.length > 0 ? progressEvents[progressEvents.length - 1].data : null
   }
 
+  // Calculate max duration for relative bar widths
+  const maxDuration = Math.max(...stages.map(s => s.duration_ms || 0), 1)
+
   return (
     <div className="pipeline-viz">
       {stages.map((stage, i) => {
         const progress = latestProgress(stage.stage_name)
         const isExpanded = expandedStage === stage.stage_name
+        const meta = stage.metadata ? (typeof stage.metadata === 'string' ? JSON.parse(stage.metadata) : stage.metadata) : {}
 
         return (
           <React.Fragment key={stage.stage_name}>
-            {i > 0 && <div className="pipeline-connector" />}
+            {i > 0 && (
+              <div className="pipeline-connector">
+                {/* Bug count on connector — shows output of previous stage */}
+                {stages[i - 1].output_count > 0 && (
+                  <span className="connector-count">{stages[i - 1].output_count}</span>
+                )}
+              </div>
+            )}
             <div
               className={`pipeline-node ${stage.status}`}
               style={{ borderColor: STATUS_COLORS[stage.status] }}
@@ -70,8 +97,32 @@ export default function PipelineVisualization({ stages, events, onStageClick }) 
                 </div>
               )}
 
+              {/* Timing bar — relative to longest stage */}
               {stage.duration_ms > 0 && (
-                <div className="stage-duration">{(stage.duration_ms / 1000).toFixed(1)}s</div>
+                <div className="stage-timing">
+                  <div
+                    className="timing-bar"
+                    style={{ width: `${(stage.duration_ms / maxDuration) * 100}%` }}
+                  />
+                  <span className="timing-label">{formatDuration(stage.duration_ms)}</span>
+                </div>
+              )}
+
+              {/* Cost display */}
+              {stage.cost_usd > 0 && (
+                <div className="stage-cost">{formatCost(stage.cost_usd)}</div>
+              )}
+
+              {/* Metadata badges */}
+              {meta.degraded && (
+                <span className="badge warning" style={{ fontSize: '10px', marginTop: '4px' }}>
+                  degraded ({Math.round((meta.coverage_ratio || 0) * 100)}%)
+                </span>
+              )}
+              {meta.quarantined > 0 && (
+                <span className="badge warning" style={{ fontSize: '10px', marginTop: '4px' }}>
+                  {meta.quarantined} quarantined
+                </span>
               )}
 
               {(stage.status === 'completed' || stage.status === 'failed') && (

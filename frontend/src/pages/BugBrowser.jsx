@@ -1,29 +1,44 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '../utils/api'
+import { useAutoRefresh } from '../hooks/useAutoRefresh'
 
 const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, informational: 4 }
 
 export default function BugBrowser() {
   const { id } = useParams()
   const [bugs, setBugs] = useState([])
+  const [runs, setRuns] = useState([])
   const [filter, setFilter] = useState('')
+  const [runFilter, setRunFilter] = useState('')
   const [expanded, setExpanded] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { loadBugs() }, [id, filter])
-
-  async function loadBugs() {
+  async function loadData() {
     try {
-      const data = await api.listBugs(id, filter || undefined)
-      setBugs(data)
+      const [bugData, runData] = await Promise.all([
+        api.listBugs(id, filter || undefined),
+        api.listRuns(id),
+      ])
+      setBugs(bugData)
+      setRuns(runData)
     } catch (e) {
       console.error(e)
     }
     setLoading(false)
   }
 
-  const sortedBugs = [...bugs].sort((a, b) => {
+  useAutoRefresh(loadData, [id, filter])
+
+  // Find the latest run to mark "new" bugs
+  const latestRunId = runs.length > 0 ? runs[runs.length - 1].id : null
+
+  let filteredBugs = bugs
+  if (runFilter) {
+    filteredBugs = bugs.filter(b => b.run_id === runFilter)
+  }
+
+  const sortedBugs = [...filteredBugs].sort((a, b) => {
     const sa = SEVERITY_ORDER[a.bug_data?.severity] ?? 5
     const sb = SEVERITY_ORDER[b.bug_data?.severity] ?? 5
     return sa - sb
@@ -35,22 +50,41 @@ export default function BugBrowser() {
     return acc
   }, {})
 
+  // Map run_id to run_number for display
+  const runMap = {}
+  for (const r of runs) runMap[r.id] = r.run_number
+
   return (
     <div className="page bug-browser">
       <div className="page-header">
         <div>
           <Link to={`/engagements/${id}`} className="back-link">Back to Engagement</Link>
-          <h1>Bugs ({bugs.length})</h1>
+          <h1>Bugs ({sortedBugs.length})</h1>
         </div>
         <div className="filters">
-          {['', 'confirmed', 'validated', 'cannot_validate', 'informational', 'discarded'].map(s => (
+          {['', 'confirmed', 'validated', 'cannot_validate', 'triage_failed', 'informational', 'discarded'].map(s => (
             <button key={s} className={`btn btn-sm ${filter === s ? 'active' : ''}`}
-                    onClick={() => setFilter(s)}>
+                    onClick={() => { setFilter(s); setRunFilter('') }}>
               {s || 'All'}
             </button>
           ))}
         </div>
       </div>
+
+      {/* Run filter */}
+      {runs.length > 1 && (
+        <div className="filters" style={{ marginBottom: '12px' }}>
+          <span style={{ fontSize: '13px', color: 'var(--text-muted)', marginRight: '8px' }}>Run:</span>
+          <button className={`btn btn-sm ${!runFilter ? 'active' : ''}`}
+                  onClick={() => setRunFilter('')}>All</button>
+          {runs.map(r => (
+            <button key={r.id} className={`btn btn-sm ${runFilter === r.id ? 'active' : ''}`}
+                    onClick={() => setRunFilter(r.id)}>
+              #{r.run_number}
+            </button>
+          ))}
+        </div>
+      )}
 
       {!loading && sortedBugs.length > 0 && (
         <div className="severity-summary">
@@ -71,17 +105,20 @@ export default function BugBrowser() {
           {sortedBugs.map(bug => {
             const d = bug.bug_data || {}
             const isExpanded = expanded === bug.id
+            const isNew = latestRunId && bug.run_id === latestRunId && runs.length > 1
             return (
               <div key={bug.id} className={`bug-card ${d.severity || bug.status}`}>
                 <div className="bug-header" onClick={() => setExpanded(isExpanded ? null : bug.id)}>
                   <span className={`severity-badge ${d.severity || 'unknown'}`}>
                     {d.severity || bug.status}
                   </span>
+                  {isNew && <span className="new-badge">NEW</span>}
                   <span className="bug-id">{d.id}</span>
                   <span className="bug-type">{d.vuln_type}</span>
                   <span className="bug-location">
                     {d.source_file ? `${d.source_file}:${d.line_range}` : d.url || ''}
                   </span>
+                  <span className="bug-run">R#{runMap[bug.run_id] || '?'}</span>
                   <span className="expand-indicator">{isExpanded ? '-' : '+'}</span>
                 </div>
                 {isExpanded && (
@@ -90,6 +127,7 @@ export default function BugBrowser() {
                     <p><strong>Reasoning:</strong> {d.reasoning}</p>
                     <p><strong>Confidence:</strong> {d.confidence}</p>
                     <p><strong>Found by:</strong> {(d.found_by || []).join(', ')}</p>
+                    <p><strong>Run:</strong> #{runMap[bug.run_id] || '?'}</p>
                     {d.poc && (
                       <div className="poc-section">
                         <strong>PoC ({d.poc.language}):</strong>

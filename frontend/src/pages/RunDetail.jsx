@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '../utils/api'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useAutoRefresh } from '../hooks/useAutoRefresh'
 import PipelineVisualization from '../components/PipelineVisualization'
 import StageOutputBrowser from '../components/StageOutputBrowser'
 
@@ -12,9 +13,22 @@ export default function RunDetail() {
   const [selectedStage, setSelectedStage] = useState(null)
   const [cancelling, setCancelling] = useState(false)
   const [historicalEvents, setHistoricalEvents] = useState([])
+  const [showAgentStream, setShowAgentStream] = useState(false)
+  const streamRef = useRef(null)
   const { events, connected } = useWebSocket(engagementId)
 
-  useEffect(() => { loadRun() }, [runId])
+  async function loadRun() {
+    try {
+      const data = await api.getRun(engagementId, runId)
+      setRun(data)
+    } catch (e) {
+      console.error(e)
+    }
+    setLoading(false)
+  }
+
+  useAutoRefresh(loadRun, [engagementId, runId])
+
   useEffect(() => {
     api.getRunEvents(engagementId, runId)
       .then(data => setHistoricalEvents(data.events || []))
@@ -26,15 +40,12 @@ export default function RunDetail() {
     if (stageUpdates.length > 0) loadRun()
   }, [events, runId])
 
-  async function loadRun() {
-    try {
-      const data = await api.getRun(engagementId, runId)
-      setRun(data)
-    } catch (e) {
-      console.error(e)
+  // Auto-scroll agent stream
+  useEffect(() => {
+    if (streamRef.current && showAgentStream) {
+      streamRef.current.scrollTop = streamRef.current.scrollHeight
     }
-    setLoading(false)
-  }
+  }, [events, showAgentStream])
 
   async function handleCancel() {
     if (!confirm('Cancel this run? The pipeline will stop after the current subagent finishes.')) return
@@ -53,24 +64,30 @@ export default function RunDetail() {
 
   const stages = run.stages || []
   const liveEvents = events.filter(e => e.run_id === runId)
-  // Merge historical + live, dedup by timestamp
-  const seenTimestamps = new Set()
+  // Merge historical + live, dedup
+  const seenKeys = new Set()
   const allEvents = []
   for (const evt of [...historicalEvents, ...liveEvents]) {
-    const key = `${evt.timestamp}-${evt.type}-${evt.stage}`
-    if (!seenTimestamps.has(key)) {
-      seenTimestamps.add(key)
+    const key = `${evt.timestamp}-${evt.type}-${evt.stage}-${evt.data?.agent || ''}`
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key)
       allEvents.push(evt)
     }
   }
 
-  // Extract per-agent stats from events
+  // Agent stream events (live only, not persisted)
+  const agentStreamEvents = liveEvents.filter(e => e.type === 'agent_stream')
+
+  // Per-agent stats from events
   const agentStats = {}
   for (const evt of allEvents) {
     if (evt.type === 'agent_progress' && evt.data?.agent) {
       agentStats[evt.data.agent] = evt.data
     }
   }
+
+  // Run cost
+  const totalCost = stages.reduce((sum, s) => sum + (s.cost_usd || 0), 0)
 
   return (
     <div className="page run-detail">
@@ -84,6 +101,9 @@ export default function RunDetail() {
             {run.current_stage && run.status === 'running' && (
               <span className="current-stage">Current: {run.current_stage}</span>
             )}
+            {totalCost > 0 && (
+              <span className="cost">${totalCost.toFixed(3)}</span>
+            )}
             <span className={`ws-status ${connected ? 'connected' : 'disconnected'}`}>
               {connected ? 'Live' : 'Disconnected'}
             </span>
@@ -91,9 +111,17 @@ export default function RunDetail() {
         </div>
         <div className="header-actions">
           {run.status === 'running' && (
-            <button className="btn btn-danger" onClick={handleCancel} disabled={cancelling}>
-              {cancelling ? 'Cancelling...' : 'Stop Run'}
-            </button>
+            <>
+              <button
+                className={`btn btn-sm ${showAgentStream ? 'active' : ''}`}
+                onClick={() => setShowAgentStream(!showAgentStream)}
+              >
+                {showAgentStream ? 'Hide' : 'Show'} Agent Stream
+              </button>
+              <button className="btn btn-danger" onClick={handleCancel} disabled={cancelling}>
+                {cancelling ? 'Cancelling...' : 'Stop Run'}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -107,13 +135,14 @@ export default function RunDetail() {
       {Object.keys(agentStats).length > 0 && (
         <div className="agent-status-bar">
           {Object.entries(agentStats).map(([agent, data]) => (
-            <div key={agent} className={`agent-status-card ${data.status || 'running'}`}>
+            <div key={agent} className={`agent-status-card ${data.status || 'idle'}`}>
+              <span className={`status-dot ${data.running > 0 ? 'running' : 'completed'}`} />
               <span className="agent-name">{agent}</span>
               <span className="agent-detail">
-                {data.status === 'running'
-                  ? `chunk ${data.current_chunk}/${data.total_chunks}`
-                  : `${data.succeeded || 0} ok / ${data.failed || 0} failed`
-                }
+                {data.running > 0 && `${data.running} active`}
+                {data.succeeded > 0 && ` ${data.succeeded} done`}
+                {data.failed > 0 && ` ${data.failed} failed`}
+                {` / ${data.total_chunks} total`}
               </span>
             </div>
           ))}
@@ -136,9 +165,30 @@ export default function RunDetail() {
         />
       )}
 
+      {/* Live agent stream panel */}
+      {showAgentStream && (
+        <>
+          <h2>Agent Stream</h2>
+          <div className="agent-stream" ref={streamRef}>
+            {agentStreamEvents.length === 0 ? (
+              <div className="empty-state"><p>Waiting for agent output...</p></div>
+            ) : (
+              agentStreamEvents.slice(-200).map((evt, i) => (
+                <div key={i} className="stream-entry">
+                  <span className={`stream-agent ${evt.data?.agent_id || ''}`}>
+                    {evt.data?.agent_id || '?'}
+                  </span>
+                  <span className="stream-text">{evt.data?.text || ''}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
+
       <h2>Event Log</h2>
       <div className="event-log">
-        {allEvents.slice(-100).reverse().map((evt, i) => (
+        {allEvents.filter(e => e.type !== 'agent_stream').slice(-100).reverse().map((evt, i) => (
           <div key={i} className={`event-entry ${evt.type}`}>
             <span className="event-time">{new Date(evt.timestamp).toLocaleTimeString()}</span>
             <span className={`event-agent ${evt.data?.agent || ''}`}>
