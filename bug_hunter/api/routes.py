@@ -161,7 +161,7 @@ async def api_get_stage_output(engagement_id: str, run_id: str, stage_name: str,
 
     if path:
         full_path = os.path.join(stage_dir, path)
-        if not os.path.abspath(full_path).startswith(os.path.abspath(stage_dir)):
+        if not _is_safe_path(stage_dir, full_path):
             raise HTTPException(status_code=403, detail="Path traversal detected")
 
         if os.path.isfile(full_path):
@@ -191,7 +191,7 @@ async def api_get_cumulative(engagement_id: str, filename: str):
     )
     filepath = os.path.join(cumulative_dir, filename)
 
-    if not os.path.abspath(filepath).startswith(os.path.abspath(cumulative_dir)):
+    if not _is_safe_path(cumulative_dir, filepath):
         raise HTTPException(status_code=403, detail="Path traversal detected")
 
     if not os.path.exists(filepath):
@@ -199,6 +199,16 @@ async def api_get_cumulative(engagement_id: str, filename: str):
 
     with open(filepath) as f:
         return {"content": json.loads(f.read())}
+
+
+def _is_safe_path(base_dir: str, requested_path: str) -> bool:
+    """Check that requested_path is inside base_dir, preventing traversal."""
+    base = os.path.realpath(base_dir)
+    target = os.path.realpath(requested_path)
+    try:
+        return os.path.commonpath([base, target]) == base
+    except ValueError:
+        return False
 
 
 def _list_dir(dir_path: str, base_path: str) -> list[dict]:

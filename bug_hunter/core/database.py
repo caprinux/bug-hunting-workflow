@@ -150,29 +150,17 @@ def _run_migrations(conn) -> None:
         conn.execute("ALTER TABLE chains ADD COLUMN run_id TEXT")
 
     # Migration: expand bugs status CHECK to include triage_failed.
-    # SQLite doesn't support ALTER CHECK, so we recreate the table.
-    # Detect old schema by attempting a dummy check.
+    # SQLite doesn't support ALTER CHECK, so we detect the old constraint
+    # by reading the table's SQL definition and recreate if needed.
     try:
-        conn.execute(
-            "SELECT 1 FROM bugs WHERE status = 'triage_failed' LIMIT 0"
-        )
-        # If the CHECK allows triage_failed, this succeeds (even with 0 rows).
-        # But the real test is whether an INSERT would work. Use a savepoint.
-        conn.execute("SAVEPOINT check_triage")
-        try:
-            conn.execute(
-                """INSERT INTO bugs (id, external_id, engagement_id, run_id, bug_data,
-                   status, created_at, updated_at)
-                   VALUES ('__migration_test__', '', '', '', '{}',
-                   'triage_failed', '', '')"""
-            )
-            conn.execute("DELETE FROM bugs WHERE id = '__migration_test__'")
-            conn.execute("RELEASE check_triage")
-        except Exception:
-            conn.execute("ROLLBACK TO check_triage")
-            conn.execute("RELEASE check_triage")
-            # Old CHECK constraint rejects triage_failed — recreate the table
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='bugs'"
+        ).fetchone()
+        if row and row[0] and "triage_failed" not in row[0]:
+            # Old CHECK constraint doesn't include triage_failed — recreate
             conn.executescript("""
+                PRAGMA foreign_keys=OFF;
+
                 ALTER TABLE bugs RENAME TO bugs_old;
 
                 CREATE TABLE bugs (
@@ -192,9 +180,15 @@ def _run_migrations(conn) -> None:
 
                 INSERT INTO bugs SELECT * FROM bugs_old;
                 DROP TABLE bugs_old;
+
+                CREATE INDEX IF NOT EXISTS idx_bugs_engagement ON bugs(engagement_id);
+                CREATE INDEX IF NOT EXISTS idx_bugs_run ON bugs(run_id);
+                CREATE INDEX IF NOT EXISTS idx_bugs_status ON bugs(status);
+
+                PRAGMA foreign_keys=ON;
             """)
     except Exception:
-        pass  # Table doesn't exist yet or other issue — init_db will create it
+        pass  # Table doesn't exist yet — init_db will create it
 
 
 def _now() -> str:

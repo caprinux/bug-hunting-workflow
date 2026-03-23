@@ -28,7 +28,8 @@ class EventManager:
                 if engagement_id not in self._connections:
                     self._connections[engagement_id] = set()
                 self._connections[engagement_id].add(websocket)
-            self._global_connections.add(websocket)
+            else:
+                self._global_connections.add(websocket)
         logger.info(f"WebSocket connected (engagement: {engagement_id or 'global'})")
 
     async def disconnect(self, websocket: WebSocket, engagement_id: str = None):
@@ -37,7 +38,8 @@ class EventManager:
                 self._connections[engagement_id].discard(websocket)
                 if not self._connections[engagement_id]:
                     del self._connections[engagement_id]
-            self._global_connections.discard(websocket)
+            else:
+                self._global_connections.discard(websocket)
         logger.info(f"WebSocket disconnected (engagement: {engagement_id or 'global'})")
 
     async def emit(self, event_type: str, engagement_id: str, run_id: str = "",
