@@ -201,6 +201,36 @@ async def api_get_cumulative(engagement_id: str, filename: str):
         return {"content": json.loads(f.read())}
 
 
+CONFIG_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml")
+
+
+@router.get("/settings")
+async def api_get_settings():
+    """Get the current global configuration."""
+    config = load_config(CONFIG_FILE if os.path.exists(CONFIG_FILE) else None)
+    full = config_to_dict(config)
+    # Don't send auth config to the frontend
+    full.pop("auth", None)
+    full.pop("engagement", None)
+    return full
+
+
+@router.put("/settings")
+async def api_update_settings(settings: dict):
+    """Update global configuration. Merges with existing config."""
+    config = load_config(CONFIG_FILE if os.path.exists(CONFIG_FILE) else None)
+    # Don't allow overriding auth or engagement defaults via settings
+    settings.pop("auth", None)
+    settings.pop("engagement", None)
+    from bug_hunter.core.config import _merge_dict_into_dataclass, save_config
+    _merge_dict_into_dataclass(config, settings)
+    save_config(config, CONFIG_FILE)
+    full = config_to_dict(config)
+    full.pop("auth", None)
+    full.pop("engagement", None)
+    return full
+
+
 def _is_safe_path(base_dir: str, requested_path: str) -> bool:
     """Check that requested_path is inside base_dir, preventing traversal."""
     base = os.path.realpath(base_dir)

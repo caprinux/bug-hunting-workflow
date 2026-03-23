@@ -9,6 +9,7 @@ import RunDetail from './pages/RunDetail'
 import BugBrowser from './pages/BugBrowser'
 import ChainBrowser from './pages/ChainBrowser'
 import IntelBrowser from './pages/IntelBrowser'
+import Settings from './pages/Settings'
 
 export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
@@ -32,12 +33,17 @@ export default function App() {
 
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark')
 
+  const handleLogout = useCallback(() => {
+    sessionStorage.removeItem('bhw_token')
+    setAuthenticated(false)
+  }, [])
+
   if (!authenticated) {
     return <Login onLogin={() => setAuthenticated(true)} theme={theme} toggleTheme={toggleTheme} />
   }
 
   return (
-    <Layout theme={theme} toggleTheme={toggleTheme}>
+    <Layout theme={theme} toggleTheme={toggleTheme} onLogout={handleLogout}>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/engagements/new" element={<NewEngagement />} />
@@ -46,6 +52,7 @@ export default function App() {
         <Route path="/engagements/:id/bugs" element={<BugBrowser />} />
         <Route path="/engagements/:id/chains" element={<ChainBrowser />} />
         <Route path="/engagements/:id/intel" element={<IntelBrowser />} />
+        <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Layout>

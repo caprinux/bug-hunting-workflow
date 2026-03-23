@@ -1,6 +1,31 @@
 import React, { useState, useEffect } from 'react'
 import { api } from '../utils/api'
 
+function FolderIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">
+      <path d="M2 4.5V12a1 1 0 001 1h10a1 1 0 001-1V6a1 1 0 00-1-1H8L6.5 3.5H3A1 1 0 002 4.5z" />
+    </svg>
+  )
+}
+
+function FileIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">
+      <path d="M4 1.5h5.5L13 5v9a1 1 0 01-1 1H4a1 1 0 01-1-1V2.5a1 1 0 011-1z" />
+      <path d="M9.5 1.5V5H13" />
+    </svg>
+  )
+}
+
+function UpIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 12V4M4.5 7.5L8 4l3.5 3.5" />
+    </svg>
+  )
+}
+
 export default function StageOutputBrowser({ engagementId, runId, stageName, onClose }) {
   const [files, setFiles] = useState([])
   const [content, setContent] = useState(null)
@@ -50,7 +75,7 @@ export default function StageOutputBrowser({ engagementId, runId, stageName, onC
 
       {currentPath && !content && (
         <div className="file-item" onClick={navigateUp}>
-          <span className="file-icon">^</span>
+          <span className="file-icon"><UpIcon /></span>
           <span className="file-name">..</span>
         </div>
       )}
@@ -61,7 +86,9 @@ export default function StageOutputBrowser({ engagementId, runId, stageName, onC
           className="file-item"
           onClick={() => loadDirectory(file.path)}
         >
-          <span className="file-icon">{file.is_dir ? 'D' : 'F'}</span>
+          <span className="file-icon">
+            {file.is_dir ? <FolderIcon /> : <FileIcon />}
+          </span>
           <span className="file-name">{file.name}</span>
           {file.size !== undefined && (
             <span className="file-size">{formatSize(file.size)}</span>

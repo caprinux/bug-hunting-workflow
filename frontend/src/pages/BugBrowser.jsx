@@ -29,11 +29,19 @@ export default function BugBrowser() {
     return sa - sb
   })
 
+  const severityCounts = sortedBugs.reduce((acc, bug) => {
+    const sev = bug.bug_data?.severity || 'unknown'
+    acc[sev] = (acc[sev] || 0) + 1
+    return acc
+  }, {})
+
   return (
     <div className="page bug-browser">
       <div className="page-header">
-        <Link to={`/engagements/${id}`} className="back-link">Back to Engagement</Link>
-        <h1>Bugs ({bugs.length})</h1>
+        <div>
+          <Link to={`/engagements/${id}`} className="back-link">Back to Engagement</Link>
+          <h1>Bugs ({bugs.length})</h1>
+        </div>
         <div className="filters">
           {['', 'confirmed', 'validated', 'cannot_validate', 'informational', 'discarded'].map(s => (
             <button key={s} className={`btn btn-sm ${filter === s ? 'active' : ''}`}
@@ -43,6 +51,20 @@ export default function BugBrowser() {
           ))}
         </div>
       </div>
+
+      {!loading && sortedBugs.length > 0 && (
+        <div className="severity-summary">
+          {['critical', 'high', 'medium', 'low', 'informational'].map(sev => {
+            const count = severityCounts[sev]
+            if (!count) return null
+            return (
+              <span key={sev} className={`severity-chip ${sev}`}>
+                {count} {sev}
+              </span>
+            )
+          })}
+        </div>
+      )}
 
       {loading ? <div className="loading">Loading...</div> : (
         <div className="bug-list">
@@ -101,7 +123,7 @@ export default function BugBrowser() {
               </div>
             )
           })}
-          {sortedBugs.length === 0 && <div className="empty-state">No bugs found</div>}
+          {sortedBugs.length === 0 && <div className="empty-state"><p>No bugs found</p></div>}
         </div>
       )}
     </div>

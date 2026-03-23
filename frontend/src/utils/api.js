@@ -36,6 +36,9 @@ export const api = {
     request(`/engagements/${engId}/runs/${runId}/stages/${stage}/output?path=${encodeURIComponent(path)}`),
   getCumulative: (engId, filename) => request(`/engagements/${engId}/cumulative/${filename}`),
 
+  getSettings: () => request('/settings'),
+  updateSettings: (data) => request('/settings', { method: 'PUT', body: JSON.stringify(data) }),
+
   login: async (password) => {
     const res = await fetch(`${API_BASE}/engagements`, {
       headers: {
