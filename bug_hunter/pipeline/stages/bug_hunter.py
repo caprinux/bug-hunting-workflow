@@ -252,7 +252,7 @@ class BugHunterStage(PipelineStage):
         if is_degraded:
             await event_manager.emit_error(
                 context.engagement_id, context.run_id, self.name,
-                f"Degraded coverage: only {succeeded}/{len(targets)} targets produced findings ({coverage_ratio:.0%})",
+                f"Degraded coverage: only {succeeded}/{len(targets)} target agents completed successfully ({coverage_ratio:.0%})",
             )
 
         self.write_output(context, "all_findings.json", all_findings)

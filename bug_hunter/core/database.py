@@ -149,12 +149,52 @@ def _run_migrations(conn) -> None:
     if not _column_exists("chains", "run_id"):
         conn.execute("ALTER TABLE chains ADD COLUMN run_id TEXT")
 
-    # Migration: expand bugs status CHECK to include triage_failed
-    # SQLite doesn't support ALTER CHECK constraints, so we recreate via a pragma check.
-    # The new table definition already includes triage_failed; for old tables, we drop
-    # the constraint by recreating. This is safe because SQLite ignores CHECK constraints
-    # on INSERT if the table was created without them in older versions.
-    # For robustness, we just catch and log if triage_failed inserts fail on old schemas.
+    # Migration: expand bugs status CHECK to include triage_failed.
+    # SQLite doesn't support ALTER CHECK, so we recreate the table.
+    # Detect old schema by attempting a dummy check.
+    try:
+        conn.execute(
+            "SELECT 1 FROM bugs WHERE status = 'triage_failed' LIMIT 0"
+        )
+        # If the CHECK allows triage_failed, this succeeds (even with 0 rows).
+        # But the real test is whether an INSERT would work. Use a savepoint.
+        conn.execute("SAVEPOINT check_triage")
+        try:
+            conn.execute(
+                """INSERT INTO bugs (id, external_id, engagement_id, run_id, bug_data,
+                   status, created_at, updated_at)
+                   VALUES ('__migration_test__', '', '', '', '{}',
+                   'triage_failed', '', '')"""
+            )
+            conn.execute("DELETE FROM bugs WHERE id = '__migration_test__'")
+            conn.execute("RELEASE check_triage")
+        except Exception:
+            conn.execute("ROLLBACK TO check_triage")
+            conn.execute("RELEASE check_triage")
+            # Old CHECK constraint rejects triage_failed — recreate the table
+            conn.executescript("""
+                ALTER TABLE bugs RENAME TO bugs_old;
+
+                CREATE TABLE bugs (
+                    id TEXT PRIMARY KEY,
+                    external_id TEXT NOT NULL,
+                    engagement_id TEXT NOT NULL REFERENCES engagements(id),
+                    run_id TEXT NOT NULL REFERENCES runs(id),
+                    bug_data TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'found'
+                        CHECK(status IN ('found', 'in_scope', 'validated', 'expanded',
+                                         'confirmed', 'informational', 'cannot_validate',
+                                         'out_of_scope', 'discarded', 'triage_failed')),
+                    current_stage TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                INSERT INTO bugs SELECT * FROM bugs_old;
+                DROP TABLE bugs_old;
+            """)
+    except Exception:
+        pass  # Table doesn't exist yet or other issue — init_db will create it
 
 
 def _now() -> str:

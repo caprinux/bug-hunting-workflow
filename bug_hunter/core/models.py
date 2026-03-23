@@ -12,10 +12,10 @@ class CreateEngagementRequest(BaseModel):
     type: str = Field(pattern="^(source_code|black_box)$")
     source_path: str = ""
     source_repo: str = ""
-    target_domains: list[str] = []
+    target_domains: list[str] = Field(default_factory=list)
     scope_definition: str = ""
     infra_config: str = ""
-    config_overrides: dict[str, Any] = {}
+    config_overrides: dict[str, Any] = Field(default_factory=dict)
 
 
 class StartRunRequest(BaseModel):
@@ -32,7 +32,7 @@ class EngagementResponse(BaseModel):
     created_at: str
     updated_at: str
     cost_total_usd: float
-    runs: list[dict[str, Any]] = []
+    runs: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class RunResponse(BaseModel):
@@ -47,7 +47,7 @@ class RunResponse(BaseModel):
     updated_at: str
     completed_at: Optional[str] = None
     cost_usd: float
-    stages: list[dict[str, Any]] = []
+    stages: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class BugResponse(BaseModel):
@@ -79,4 +79,4 @@ class WebSocketMessage(BaseModel):
     engagement_id: str
     run_id: str = ""
     stage: str = ""
-    data: dict[str, Any] = {}
+    data: dict[str, Any] = Field(default_factory=dict)
