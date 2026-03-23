@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import Login from './pages/Login'
@@ -18,6 +18,17 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('theme', theme)
   }, [theme])
+
+  // Poll for token removal (from WebSocket auth failure or API 401)
+  useEffect(() => {
+    if (!authenticated) return
+    const interval = setInterval(() => {
+      if (!sessionStorage.getItem('bhw_token')) {
+        setAuthenticated(false)
+      }
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [authenticated])
 
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark')
 

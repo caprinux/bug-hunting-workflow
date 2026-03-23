@@ -1,7 +1,10 @@
 """Source code acquisition — clone repos or validate local paths.
 
-Sources are treated as immutable snapshots per run. Git repos are cloned into
-run-specific directories and the exact commit hash is recorded.
+Sources are copied into run-specific directories so each run audits a
+stable point-in-time copy. Git repos are cloned and the exact commit hash
+is recorded. Local paths are copied via `cp -a` — this is not an atomic
+filesystem snapshot, so concurrent modifications to the source during copy
+may produce a partially mixed state.
 """
 
 from __future__ import annotations
@@ -67,7 +70,7 @@ async def acquire_source(
 ) -> AcquisitionResult:
     """Acquire source code from local path or git repo.
 
-    Both modes create immutable run-scoped snapshots:
+    Both modes create run-scoped copies for stability:
     - Local paths: copied into a run-specific directory via cp -a.
     - Git repos: cloned into a run-specific directory.
     """
@@ -101,18 +104,27 @@ async def _snapshot_local_path(path: str, output_dir: str, run_id: str) -> Acqui
         logger.warning("No run_id provided, using live source path (not snapshotted)")
         return AcquisitionResult(success=True, local_path=str(p), commit=commit)
 
-    # Copy source into a run-scoped snapshot directory
+    # Copy source into a run-scoped snapshot directory.
+    # A .snapshot_complete marker file distinguishes finished copies from
+    # partial ones left behind by interrupted runs.
     dir_name = p.name
     snapshot_dir = Path(output_dir) / "repos" / f"{dir_name}_{run_id[:8]}"
+    marker = snapshot_dir / ".snapshot_complete"
+
     if snapshot_dir.exists():
-        logger.info(f"Snapshot already exists at {snapshot_dir}")
-        snapshot_commit = await _get_git_commit(str(snapshot_dir))
-        return AcquisitionResult(success=True, local_path=str(snapshot_dir), commit=snapshot_commit or commit)
+        if marker.exists():
+            logger.info(f"Snapshot already exists at {snapshot_dir}")
+            snapshot_commit = await _get_git_commit(str(snapshot_dir))
+            return AcquisitionResult(success=True, local_path=str(snapshot_dir), commit=snapshot_commit or commit)
+        else:
+            # Partial snapshot from a previous interrupted run — remove and redo
+            logger.warning(f"Removing incomplete snapshot at {snapshot_dir}")
+            import shutil
+            shutil.rmtree(snapshot_dir, ignore_errors=True)
 
     snapshot_dir.parent.mkdir(parents=True, exist_ok=True)
     logger.info(f"Snapshotting {p} to {snapshot_dir}")
 
-    # Use rsync if available for efficiency, fall back to cp
     process = await asyncio.create_subprocess_exec(
         "cp", "-a", str(p), str(snapshot_dir),
         stdout=asyncio.subprocess.PIPE,
@@ -121,7 +133,13 @@ async def _snapshot_local_path(path: str, output_dir: str, run_id: str) -> Acqui
     _, stderr = await process.communicate()
     if process.returncode != 0:
         error = stderr.decode("utf-8", errors="replace")
+        # Clean up partial copy
+        import shutil
+        shutil.rmtree(snapshot_dir, ignore_errors=True)
         return AcquisitionResult(success=False, error=f"Snapshot copy failed: {error}")
+
+    # Mark snapshot as complete
+    marker.touch()
 
     return AcquisitionResult(success=True, local_path=str(snapshot_dir), commit=commit)
 
