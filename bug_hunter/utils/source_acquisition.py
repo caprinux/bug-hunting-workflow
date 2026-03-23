@@ -1,4 +1,8 @@
-"""Source code acquisition — clone repos or validate local paths."""
+"""Source code acquisition — clone repos or validate local paths.
+
+Sources are treated as immutable snapshots per run. Git repos are cloned into
+run-specific directories and the exact commit hash is recorded.
+"""
 
 from __future__ import annotations
 
@@ -59,19 +63,24 @@ async def acquire_source(
     source_path: str = "",
     source_repo: str = "",
     output_dir: str = "./audit_output",
+    run_id: str = "",
 ) -> AcquisitionResult:
-    """Acquire source code from local path or git repo."""
+    """Acquire source code from local path or git repo.
+
+    For local paths: validates and records the current git commit if available.
+    For git repos: clones into a run-specific directory (immutable snapshot).
+    """
     if source_path:
-        return _validate_local_path(source_path)
+        return await _snapshot_local_path(source_path)
 
     if source_repo:
-        return await _clone_repo(source_repo, output_dir)
+        return await _clone_repo_immutable(source_repo, output_dir, run_id)
 
     return AcquisitionResult(success=False, error="No source path or repo URL provided")
 
 
-def _validate_local_path(path: str) -> AcquisitionResult:
-    """Validate that a local path exists and is readable."""
+async def _snapshot_local_path(path: str) -> AcquisitionResult:
+    """Validate a local path and record its git commit if it's a repo."""
     p = Path(path).resolve()
     if not p.exists():
         return AcquisitionResult(success=False, error=f"Path does not exist: {path}")
@@ -79,27 +88,31 @@ def _validate_local_path(path: str) -> AcquisitionResult:
         return AcquisitionResult(success=False, error=f"Path is not a directory: {path}")
     if not os.access(p, os.R_OK):
         return AcquisitionResult(success=False, error=f"Path is not readable: {path}")
-    return AcquisitionResult(success=True, local_path=str(p))
+
+    commit = await _get_git_commit(str(p))
+    return AcquisitionResult(success=True, local_path=str(p), commit=commit)
 
 
-async def _clone_repo(repo_url: str, output_dir: str) -> AcquisitionResult:
-    """Clone a git repository."""
+async def _clone_repo_immutable(repo_url: str, output_dir: str, run_id: str) -> AcquisitionResult:
+    """Clone a git repository into a run-specific immutable directory."""
     url, branch, commit = parse_git_url(repo_url)
 
     repo_name = url.rstrip("/").split("/")[-1].replace(".git", "")
-    clone_dir = Path(output_dir) / "repos" / repo_name
+    # Each run gets its own clone to prevent drift between runs
+    clone_dir = Path(output_dir) / "repos" / f"{repo_name}_{run_id[:8]}" if run_id else Path(output_dir) / "repos" / repo_name
     clone_dir.parent.mkdir(parents=True, exist_ok=True)
 
     if clone_dir.exists():
-        logger.info(f"Repo already cloned at {clone_dir}, pulling latest")
-        cmd = f"cd {clone_dir} && git pull"
-        process = await asyncio.create_subprocess_shell(
-            cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        )
-        await process.wait()
-        return AcquisitionResult(success=True, local_path=str(clone_dir), repo_url=url)
+        # Run-specific dir already exists (resume case) — verify commit
+        existing_commit = await _get_git_commit(str(clone_dir))
+        if existing_commit:
+            logger.info(f"Repo snapshot exists at {clone_dir} (commit: {existing_commit[:8]})")
+            return AcquisitionResult(
+                success=True, local_path=str(clone_dir), repo_url=url,
+                branch=branch, commit=existing_commit,
+            )
 
-    cmd = ["git", "clone", "--depth=1"]
+    cmd = ["git", "clone"]
     if branch:
         cmd.extend(["--branch", branch])
     cmd.extend([url, str(clone_dir)])
@@ -125,10 +138,30 @@ async def _clone_repo(repo_url: str, output_dir: str) -> AcquisitionResult:
         )
         await checkout_process.wait()
 
+    # Record the exact commit hash for this snapshot
+    actual_commit = await _get_git_commit(str(clone_dir))
+
     return AcquisitionResult(
         success=True,
         local_path=str(clone_dir),
         repo_url=url,
         branch=branch,
-        commit=commit,
+        commit=actual_commit or commit,
     )
+
+
+async def _get_git_commit(path: str) -> str:
+    """Get the current git commit hash of a directory, or empty string if not a git repo."""
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "git", "rev-parse", "HEAD",
+            cwd=path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await process.communicate()
+        if process.returncode == 0:
+            return stdout.decode().strip()
+    except Exception:
+        pass
+    return ""

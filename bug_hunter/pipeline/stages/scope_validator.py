@@ -24,7 +24,7 @@ class ScopeValidatorStage(PipelineStage):
         return "scope_validator"
 
     async def execute(self, context: StageContext) -> StageResult:
-        bugs = list_bugs(context.engagement_id, status="found")
+        bugs = list_bugs(context.engagement_id, status="found", run_id=context.run_id)
         if not bugs:
             self.write_output(context, "in_scope.json", [])
             self.write_output(context, "out_of_scope.json", [])

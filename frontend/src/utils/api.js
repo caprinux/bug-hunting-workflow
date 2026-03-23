@@ -1,10 +1,21 @@
 const API_BASE = '/api'
 
+function getAuthHeader() {
+  const token = sessionStorage.getItem('bhw_token') || ''
+  if (!token) return {}
+  return { 'Authorization': 'Basic ' + btoa('user:' + token) }
+}
+
 async function request(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeader(), ...options.headers },
     ...options,
   })
+  if (res.status === 401) {
+    sessionStorage.removeItem('bhw_token')
+    window.location.reload()
+    throw new Error('Unauthorized')
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(err.detail || 'Request failed')
@@ -24,4 +35,16 @@ export const api = {
   getStageOutput: (engId, runId, stage, path = '') =>
     request(`/engagements/${engId}/runs/${runId}/stages/${stage}/output?path=${encodeURIComponent(path)}`),
   getCumulative: (engId, filename) => request(`/engagements/${engId}/cumulative/${filename}`),
+
+  login: async (password) => {
+    const res = await fetch(`${API_BASE}/engagements`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Basic ' + btoa('user:' + password),
+      },
+    })
+    if (res.status === 401) throw new Error('Invalid password')
+    if (!res.ok) throw new Error('Server error')
+    return true
+  },
 }

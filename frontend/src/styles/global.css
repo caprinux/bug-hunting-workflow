@@ -293,6 +293,17 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--c
 .event-type { color: var(--text-secondary); min-width: 100px; }
 .event-data { flex: 1; }
 
+/* Login */
+.login-page {
+  display: flex; align-items: center; justify-content: center; min-height: 100vh;
+  background: var(--bg-primary);
+}
+.login-card {
+  width: 100%; max-width: 400px; padding: 32px; background: var(--bg-secondary);
+  border: 1px solid var(--border); border-radius: 12px; text-align: center;
+}
+.login-card h1 { margin-bottom: 24px; font-size: 20px; }
+
 /* Utilities */
 .loading { text-align: center; padding: 48px; color: var(--text-muted); }
 .empty-state { text-align: center; padding: 48px; color: var(--text-muted); }

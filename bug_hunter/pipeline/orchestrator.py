@@ -174,9 +174,15 @@ class PipelineOrchestrator:
                     )
                 else:
                     pipeline_state["failed"] = True
+                    pipeline_state["failed_stage"] = stage_name
                     await event_manager.emit_stage_update(
                         self.engagement_id, run_id, stage_name, "failed",
                     )
+                    await event_manager.emit_error(
+                        self.engagement_id, run_id, stage_name,
+                        f"Stage '{stage_name}' failed after retries. Pipeline halted.",
+                    )
+                    break
 
                 self._save_pipeline_state(run_dir, pipeline_state)
 

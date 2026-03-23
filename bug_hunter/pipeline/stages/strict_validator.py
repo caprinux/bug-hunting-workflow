@@ -25,7 +25,7 @@ class StrictValidatorStage(PipelineStage):
         return "strict_validator"
 
     async def execute(self, context: StageContext) -> StageResult:
-        bugs = list_bugs(context.engagement_id, status="in_scope")
+        bugs = list_bugs(context.engagement_id, status="in_scope", run_id=context.run_id)
         if not bugs:
             self.write_output(context, "validated_bugs.json", [])
             self.write_output(context, "cannot_validate.json", [])

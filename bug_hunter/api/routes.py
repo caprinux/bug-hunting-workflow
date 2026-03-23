@@ -75,6 +75,13 @@ async def api_start_run(engagement_id: str, req: StartRunRequest):
     if not eng:
         raise HTTPException(status_code=404, detail="Engagement not found")
 
+    active_runs = [r for r in list_runs(engagement_id) if r["status"] == "running"]
+    if active_runs:
+        raise HTTPException(
+            status_code=409,
+            detail="A run is already active for this engagement. Wait for it to complete.",
+        )
+
     config = load_config()
     eng_config_data = eng["config"]
 

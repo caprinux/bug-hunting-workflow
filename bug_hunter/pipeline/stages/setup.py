@@ -31,7 +31,9 @@ class SetupStage(PipelineStage):
             "Checking tool dependencies...",
         )
 
-        tool_results = await check_and_install_tools(eng_type, auto_install=True)
+        tool_results = await check_and_install_tools(
+            eng_type, auto_install=context.config.pipeline.auto_install_tools,
+        )
         report = tools_report(tool_results)
         self.write_output(context, "setup.json", report)
 
@@ -57,6 +59,7 @@ class SetupStage(PipelineStage):
                 source_path=eng_config.get("engagement", {}).get("source_path", ""),
                 source_repo=eng_config.get("engagement", {}).get("source_repo", ""),
                 output_dir=context.config.pipeline.output_dir,
+                run_id=context.run_id,
             )
 
             if not source_result.success:

@@ -1,5 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
+function getAuthToken() {
+  // Extract password from basic auth credentials stored by the browser.
+  // When basic auth is used, we can read it from a meta tag or pass it explicitly.
+  // Fallback: read from sessionStorage where the app stores it after first auth.
+  return sessionStorage.getItem('bhw_token') || ''
+}
+
+export function setAuthToken(token) {
+  sessionStorage.setItem('bhw_token', token)
+}
+
 export function useWebSocket(engagementId = null) {
   const [events, setEvents] = useState([])
   const [connected, setConnected] = useState(false)
@@ -8,9 +19,12 @@ export function useWebSocket(engagementId = null) {
 
   const connect = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const url = engagementId
-      ? `${protocol}//${window.location.host}/ws?engagement_id=${engagementId}`
-      : `${protocol}//${window.location.host}/ws`
+    const token = getAuthToken()
+    const params = new URLSearchParams()
+    if (token) params.set('token', token)
+    if (engagementId) params.set('engagement_id', engagementId)
+    const qs = params.toString()
+    const url = `${protocol}//${window.location.host}/ws${qs ? '?' + qs : ''}`
 
     const ws = new WebSocket(url)
     wsRef.current = ws

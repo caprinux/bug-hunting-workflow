@@ -24,7 +24,7 @@ class DeduplicatorStage(PipelineStage):
         return "deduplicator"
 
     async def execute(self, context: StageContext) -> StageResult:
-        bugs = list_bugs(context.engagement_id, status="found")
+        bugs = list_bugs(context.engagement_id, status="found", run_id=context.run_id)
         if not bugs:
             self.write_output(context, "deduplicated_findings.json", [])
             self.write_output(context, "duplicate_groups.json", [])

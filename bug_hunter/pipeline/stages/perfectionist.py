@@ -25,7 +25,7 @@ class PerfectionistStage(PipelineStage):
         return "perfectionist"
 
     async def execute(self, context: StageContext) -> StageResult:
-        bugs = list_bugs(context.engagement_id, status="validated")
+        bugs = list_bugs(context.engagement_id, status="validated", run_id=context.run_id)
         if not bugs:
             return StageResult(success=True, input_count=0, output_count=0)
 

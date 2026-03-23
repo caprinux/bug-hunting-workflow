@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
+import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import NewEngagement from './pages/NewEngagement'
 import EngagementDetail from './pages/EngagementDetail'
@@ -11,6 +12,7 @@ import IntelBrowser from './pages/IntelBrowser'
 
 export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
+  const [authenticated, setAuthenticated] = useState(() => !!sessionStorage.getItem('bhw_token'))
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -18,6 +20,10 @@ export default function App() {
   }, [theme])
 
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark')
+
+  if (!authenticated) {
+    return <Login onLogin={() => setAuthenticated(true)} theme={theme} toggleTheme={toggleTheme} />
+  }
 
   return (
     <Layout theme={theme} toggleTheme={toggleTheme}>

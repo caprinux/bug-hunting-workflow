@@ -24,9 +24,9 @@ class StrictTriagerStage(PipelineStage):
         return "strict_triager"
 
     async def execute(self, context: StageContext) -> StageResult:
-        bugs = list_bugs(context.engagement_id, status="expanded")
+        bugs = list_bugs(context.engagement_id, status="expanded", run_id=context.run_id)
         if not bugs:
-            bugs = list_bugs(context.engagement_id, status="validated")
+            bugs = list_bugs(context.engagement_id, status="validated", run_id=context.run_id)
 
         if not bugs:
             self.write_output(context, "confirmed_bugs.json", [])

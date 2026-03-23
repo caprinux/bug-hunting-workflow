@@ -17,6 +17,7 @@ class PipelineConfig:
     retry_limit: int = 3
     subagent_timeout: int = 300
     resume: bool = True
+    auto_install_tools: bool = True
     bug_schema_version: str = "1.0"
     request_delay: float = 0.0
     max_concurrent_infra_agents: int = 5

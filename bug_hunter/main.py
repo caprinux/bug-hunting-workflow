@@ -70,11 +70,10 @@ async def startup():
     global AUTH_PASSWORD
     if not AUTH_PASSWORD:
         AUTH_PASSWORD = secrets.token_urlsafe(24)
-        logger.info(f"Generated authentication password: {AUTH_PASSWORD}")
-        print(f"\n{'='*60}")
-        print(f"  Authentication Password: {AUTH_PASSWORD}")
-        print(f"  Username: any (ignored)")
-        print(f"{'='*60}\n")
+        logger.info("Generated new authentication password (see console output)")
+        print(f"\n{'='*60}", flush=True)
+        print(f"  Authentication Password: {AUTH_PASSWORD}", flush=True)
+        print(f"{'='*60}\n", flush=True)
 
 
 @app.get("/health")

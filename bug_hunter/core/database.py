@@ -318,18 +318,19 @@ def get_bug(bug_id: str) -> Optional[dict]:
     return result
 
 
-def list_bugs(engagement_id: str, status: str = None) -> list[dict]:
+def list_bugs(engagement_id: str, status: str = None,
+              run_id: str = None) -> list[dict]:
     with get_db() as conn:
+        query = "SELECT * FROM bugs WHERE engagement_id = ?"
+        params: list = [engagement_id]
         if status:
-            rows = conn.execute(
-                "SELECT * FROM bugs WHERE engagement_id = ? AND status = ? ORDER BY created_at",
-                (engagement_id, status),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM bugs WHERE engagement_id = ? ORDER BY created_at",
-                (engagement_id,),
-            ).fetchall()
+            query += " AND status = ?"
+            params.append(status)
+        if run_id:
+            query += " AND run_id = ?"
+            params.append(run_id)
+        query += " ORDER BY created_at"
+        rows = conn.execute(query, params).fetchall()
     results = []
     for row in rows:
         r = dict(row)
