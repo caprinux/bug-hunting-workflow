@@ -84,7 +84,7 @@ async def run_claude(
 
 async def run_codex(
     prompt: str,
-    model: str = "o3",
+    model: str = "gpt-5.4",
     cwd: Optional[str] = None,
     timeout: int = 300,
     on_event: Optional[Callable[[StreamEvent], None]] = None,
@@ -132,6 +132,9 @@ async def _run_cli_process(
             env=env,
         )
 
+        # Track Codex agent_message items to reconstruct the final result
+        codex_messages: list[str] = []
+
         async def read_stream():
             nonlocal result_data, cost_usd, session_id
             while True:
@@ -147,10 +150,30 @@ async def _run_cli_process(
                     event_data = json.loads(line_str)
                     event = _parse_stream_event(event_data)
 
+                    # Claude Code format: "result" event with result field
                     if event.type == "result":
                         result_data = event.data
                         cost_usd = event.data.get("total_cost_usd", 0.0)
                         session_id = event.data.get("session_id", "")
+
+                    # Codex format: "item.completed" with agent_message text
+                    elif event.type == "item.completed":
+                        item = event.data.get("item", {})
+                        if item.get("type") == "agent_message":
+                            codex_messages.append(item.get("text", ""))
+
+                    # Codex format: "turn.completed" with usage stats
+                    elif event.type == "turn.completed":
+                        usage = event.data.get("usage", {})
+                        # Build a result from collected Codex messages
+                        if not result_data and codex_messages:
+                            last_message = codex_messages[-1]
+                            # Try to parse the last message as JSON
+                            try:
+                                parsed = json.loads(last_message)
+                                result_data = {"result": parsed, "is_error": False}
+                            except (json.JSONDecodeError, TypeError):
+                                result_data = {"result": last_message, "is_error": False}
 
                     if on_event:
                         on_event(event)
