@@ -68,19 +68,101 @@ async def acquire_source(
     output_dir: str = "./audit_output",
     run_id: str = "",
 ) -> AcquisitionResult:
-    """Acquire source code from local path or git repo.
+    """Acquire source code from local path or git repo(s).
 
     Both modes create run-scoped copies for stability:
     - Local paths: copied into a run-specific directory via cp -a.
     - Git repos: cloned into a run-specific directory.
+
+    Multiple git repos can be provided as a comma-separated string.
+    Each repo is cloned into a subdirectory under a shared parent.
     """
     if source_path:
         return await _snapshot_local_path(source_path, output_dir, run_id)
 
     if source_repo:
-        return await _clone_repo_immutable(source_repo, output_dir, run_id)
+        repos = [r.strip() for r in source_repo.split(",") if r.strip()]
+        if len(repos) == 1:
+            return await _clone_repo_immutable(repos[0], output_dir, run_id)
+        return await _clone_multiple_repos(repos, output_dir, run_id)
 
     return AcquisitionResult(success=False, error="No source path or repo URL provided")
+
+
+async def _clone_multiple_repos(
+    repo_urls: list[str], output_dir: str, run_id: str,
+) -> AcquisitionResult:
+    """Clone multiple git repos into a shared parent directory."""
+    parent_dir = Path(output_dir) / "repos" / f"multi_{run_id[:8]}" if run_id else Path(output_dir) / "repos" / "multi"
+    parent_dir.mkdir(parents=True, exist_ok=True)
+
+    results = []
+    errors = []
+    for url in repo_urls:
+        parsed_url, branch, commit = parse_git_url(url)
+        repo_name = parsed_url.rstrip("/").split("/")[-1].replace(".git", "")
+        clone_dir = parent_dir / repo_name
+
+        if clone_dir.exists():
+            existing_commit = await _get_git_commit(str(clone_dir))
+            if existing_commit:
+                results.append(AcquisitionResult(
+                    success=True, local_path=str(clone_dir),
+                    repo_url=parsed_url, branch=branch, commit=existing_commit,
+                ))
+                continue
+
+        cmd = ["git", "clone"]
+        if branch:
+            cmd.extend(["--branch", branch])
+        cmd.extend([parsed_url, str(clone_dir)])
+
+        logger.info(f"Cloning {parsed_url} to {clone_dir}")
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            error = stderr.decode("utf-8", errors="replace")
+            errors.append(f"{parsed_url}: {error}")
+            continue
+
+        if commit:
+            checkout = await asyncio.create_subprocess_exec(
+                "git", "checkout", commit,
+                cwd=str(clone_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            co_stdout, co_stderr = await checkout.communicate()
+            if checkout.returncode != 0:
+                error = co_stderr.decode("utf-8", errors="replace")
+                errors.append(f"{parsed_url}: checkout failed for '{commit}': {error}")
+                continue
+
+        actual_commit = await _get_git_commit(str(clone_dir))
+        results.append(AcquisitionResult(
+            success=True, local_path=str(clone_dir),
+            repo_url=parsed_url, branch=branch, commit=actual_commit or commit,
+        ))
+
+    if not results:
+        return AcquisitionResult(
+            success=False,
+            error=f"All repos failed to clone: {'; '.join(errors)}",
+        )
+
+    # Return the parent directory as the local_path so the bug hunter scans all repos
+    all_commits = ", ".join(f"{r.repo_url}@{r.commit[:8]}" for r in results if r.commit)
+    return AcquisitionResult(
+        success=True,
+        local_path=str(parent_dir),
+        repo_url=", ".join(r.repo_url for r in results),
+        commit=all_commits,
+    )
 
 
 async def _snapshot_local_path(path: str, output_dir: str, run_id: str) -> AcquisitionResult:

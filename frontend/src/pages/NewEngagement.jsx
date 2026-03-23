@@ -105,9 +105,12 @@ export default function NewEngagement() {
                      placeholder="/path/to/source/code" />
             </div>
             <div className="form-group">
-              <label>Or GitHub Repo URL</label>
+              <label>Or GitHub Repo URL(s)</label>
               <input type="text" value={form.source_repo} onChange={e => update('source_repo', e.target.value)}
-                     placeholder="https://github.com/user/repo or https://github.com/user/repo@branch" />
+                     placeholder="https://github.com/user/repo — separate multiple with commas" />
+              <small style={{color: 'var(--text-muted)', fontSize: '12px'}}>
+                Supports branch/commit: repo@branch or repo#commit. Multiple repos: repo1, repo2
+              </small>
             </div>
           </>
         )}
