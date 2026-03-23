@@ -130,6 +130,7 @@ async def _run_cli_process(
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
             env=env,
+            limit=10 * 1024 * 1024,  # 10MB readline buffer (default 64KB is too small for CLI output)
         )
 
         # Track Codex agent_message items to reconstruct the final result
