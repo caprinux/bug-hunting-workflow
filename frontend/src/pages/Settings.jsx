@@ -8,6 +8,7 @@ const CLAUDE_MODEL_OPTIONS = [
 ]
 
 const CODEX_MODEL_OPTIONS = [
+  { value: 'gpt-5.4', label: 'GPT-5.4' },
   { value: 'o3', label: 'GPT o3' },
   { value: 'o4-mini', label: 'GPT o4-mini' },
   { value: 'gpt-4.1', label: 'GPT-4.1' },

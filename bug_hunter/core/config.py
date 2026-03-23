@@ -48,7 +48,7 @@ class BroadBugHunterConfig:
     shared_code_paths: list[str] = field(default_factory=list)
     file_extensions: list[str] = field(default_factory=list)
     exclude_paths: list[str] = field(default_factory=list)
-    codex_model: str = "o3"  # model passed to codex CLI via -m flag
+    codex_model: str = "gpt-5.4"  # model passed to codex CLI via -m flag
 
 
 @dataclass
