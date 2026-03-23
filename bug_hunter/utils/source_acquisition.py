@@ -67,11 +67,12 @@ async def acquire_source(
 ) -> AcquisitionResult:
     """Acquire source code from local path or git repo.
 
-    For local paths: validates and records the current git commit if available.
-    For git repos: clones into a run-specific directory (immutable snapshot).
+    Both modes create immutable run-scoped snapshots:
+    - Local paths: copied into a run-specific directory via cp -a.
+    - Git repos: cloned into a run-specific directory.
     """
     if source_path:
-        return await _snapshot_local_path(source_path)
+        return await _snapshot_local_path(source_path, output_dir, run_id)
 
     if source_repo:
         return await _clone_repo_immutable(source_repo, output_dir, run_id)
@@ -79,8 +80,12 @@ async def acquire_source(
     return AcquisitionResult(success=False, error="No source path or repo URL provided")
 
 
-async def _snapshot_local_path(path: str) -> AcquisitionResult:
-    """Validate a local path and record its git commit if it's a repo."""
+async def _snapshot_local_path(path: str, output_dir: str, run_id: str) -> AcquisitionResult:
+    """Create an immutable snapshot of a local source directory.
+
+    Copies the source into a run-specific directory so files cannot change
+    during the audit.
+    """
     p = Path(path).resolve()
     if not p.exists():
         return AcquisitionResult(success=False, error=f"Path does not exist: {path}")
@@ -90,7 +95,35 @@ async def _snapshot_local_path(path: str) -> AcquisitionResult:
         return AcquisitionResult(success=False, error=f"Path is not readable: {path}")
 
     commit = await _get_git_commit(str(p))
-    return AcquisitionResult(success=True, local_path=str(p), commit=commit)
+
+    if not run_id:
+        # No run_id means we can't snapshot — return live path with warning
+        logger.warning("No run_id provided, using live source path (not snapshotted)")
+        return AcquisitionResult(success=True, local_path=str(p), commit=commit)
+
+    # Copy source into a run-scoped snapshot directory
+    dir_name = p.name
+    snapshot_dir = Path(output_dir) / "repos" / f"{dir_name}_{run_id[:8]}"
+    if snapshot_dir.exists():
+        logger.info(f"Snapshot already exists at {snapshot_dir}")
+        snapshot_commit = await _get_git_commit(str(snapshot_dir))
+        return AcquisitionResult(success=True, local_path=str(snapshot_dir), commit=snapshot_commit or commit)
+
+    snapshot_dir.parent.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Snapshotting {p} to {snapshot_dir}")
+
+    # Use rsync if available for efficiency, fall back to cp
+    process = await asyncio.create_subprocess_exec(
+        "cp", "-a", str(p), str(snapshot_dir),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await process.communicate()
+    if process.returncode != 0:
+        error = stderr.decode("utf-8", errors="replace")
+        return AcquisitionResult(success=False, error=f"Snapshot copy failed: {error}")
+
+    return AcquisitionResult(success=True, local_path=str(snapshot_dir), commit=commit)
 
 
 async def _clone_repo_immutable(repo_url: str, output_dir: str, run_id: str) -> AcquisitionResult:

@@ -54,8 +54,14 @@ export function useWebSocket(engagementId = null) {
       }
     }
 
-    ws.onclose = () => {
+    ws.onclose = (evt) => {
       setConnected(false)
+      // 1008 = Policy Violation (server rejected auth). Don't reconnect.
+      if (evt.code === 1008) {
+        console.warn('WebSocket auth rejected — clearing token')
+        sessionStorage.removeItem('bhw_token')
+        return
+      }
       reconnectTimer.current = setTimeout(connect, 3000)
     }
 

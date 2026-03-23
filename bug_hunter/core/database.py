@@ -244,7 +244,8 @@ def update_engagement(eng_id: str, **kwargs) -> Optional[dict]:
 
 # --- Run CRUD ---
 
-def create_run(engagement_id: str, run_type: str = "initial", rehunt_target: str = None) -> dict:
+def create_run(engagement_id: str, run_type: str = "initial",
+               rehunt_target: str = None, status: str = "pending") -> dict:
     run_id = str(uuid4())
     now = _now()
     with get_db() as conn:
@@ -253,9 +254,9 @@ def create_run(engagement_id: str, run_type: str = "initial", rehunt_target: str
             (engagement_id,),
         ).fetchone()[0]
         conn.execute(
-            """INSERT INTO runs (id, engagement_id, run_number, run_type, rehunt_target, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (run_id, engagement_id, run_number, run_type, rehunt_target, now, now),
+            """INSERT INTO runs (id, engagement_id, run_number, status, run_type, rehunt_target, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (run_id, engagement_id, run_number, status, run_type, rehunt_target, now, now),
         )
     return get_run(run_id)
 

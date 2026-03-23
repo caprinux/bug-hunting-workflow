@@ -87,8 +87,15 @@ class PipelineOrchestrator:
 
     async def start_run(self, run_type: str = "initial",
                         rehunt_target: str = None) -> str:
-        """Start a new pipeline run."""
-        run = create_run(self.engagement_id, run_type, rehunt_target)
+        """Start a new pipeline run.
+
+        Creates the run with status='running' immediately so the unique
+        partial index catches concurrent starts at INSERT time — before
+        any stage rows or directories are created.
+        """
+        # This INSERT will raise IntegrityError if another run is already
+        # 'running' for this engagement, thanks to idx_one_active_run_per_engagement.
+        run = create_run(self.engagement_id, run_type, rehunt_target, status="running")
         run_id = run["id"]
         self._current_run_id = run_id
 
@@ -107,7 +114,6 @@ class PipelineOrchestrator:
         for stage_name, stage_order in stages:
             create_stage_result(run_id, stage_name, stage_order)
 
-        update_run(run_id, status="running")
         await event_manager.emit_stage_update(
             self.engagement_id, run_id, "", "running",
             message="Pipeline started",
