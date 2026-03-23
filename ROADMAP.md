@@ -8,6 +8,9 @@ Improvements organized by priority tier. Items within each tier are roughly orde
 
 These improve reliability and debuggability without changing the core workflow.
 
+### Replace CLI subprocess with Claude Agent SDK
+Replace the `claude --print` subprocess invocation in `cli_wrapper.py` with the `claude-code-sdk` Python package. Gives native async/await, typed events, proper exceptions, and eliminates stdout parsing fragility. Codex CLI remains subprocess-based (no SDK equivalent). Prioritize when stdout parsing or process lifecycle issues surface in real engagements.
+
 ### Partial success states
 Add `completed_with_warnings` status to stages. The metadata already captures counts (subagents succeeded/failed, coverage ratio), but the frontend doesn't distinguish "completed cleanly" from "completed with 60% coverage." Surface degraded state visually.
 *Ref: suggestion #8*
