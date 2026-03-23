@@ -42,7 +42,7 @@ class WorkloadDividerConfig:
 
 @dataclass
 class BroadBugHunterConfig:
-    agents: list[str] = field(default_factory=lambda: ["claude"])
+    agents: list[str] = field(default_factory=lambda: ["claude", "codex"])
     context_budget: int = 150000
     phase2_enabled: bool = True
     shared_code_paths: list[str] = field(default_factory=list)
