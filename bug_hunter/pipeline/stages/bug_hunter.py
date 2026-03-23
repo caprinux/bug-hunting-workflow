@@ -413,7 +413,7 @@ Output your response as JSON matching the required schema."""
         elif agent_name == "codex" or agent_name.startswith("codex"):
             return await run_codex(
                 prompt=prompt,
-                model="o3",
+                model=context.config.broad_bug_hunter.codex_model,
                 cwd=source_path,
                 timeout=context.config.pipeline.subagent_timeout,
                 on_event=on_event,

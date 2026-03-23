@@ -1,7 +1,17 @@
 import React, { useState, useEffect } from 'react'
 import { api } from '../utils/api'
 
-const MODEL_OPTIONS = ['opus', 'sonnet', 'haiku']
+const CLAUDE_MODEL_OPTIONS = [
+  { value: 'opus', label: 'Claude Opus 4.6' },
+  { value: 'sonnet', label: 'Claude Sonnet 4.6' },
+  { value: 'haiku', label: 'Claude Haiku 4.5' },
+]
+
+const CODEX_MODEL_OPTIONS = [
+  { value: 'o3', label: 'GPT o3' },
+  { value: 'o4-mini', label: 'GPT o4-mini' },
+  { value: 'gpt-4.1', label: 'GPT-4.1' },
+]
 
 const SECTIONS = [
   {
@@ -23,7 +33,8 @@ const SECTIONS = [
     label: 'Bug Hunter',
     description: 'Controls for the Broad Bug Hunter stage.',
     fields: [
-      { key: 'agents', label: 'Agents', type: 'tags', help: 'Models to run concurrently (e.g. claude, codex)' },
+      { key: 'agents', label: 'Agents', type: 'agent_checkboxes', help: 'Which AI agents to run concurrently during bug hunting' },
+      { key: 'codex_model', label: 'Codex Model', type: 'select', options: CODEX_MODEL_OPTIONS, help: 'Model used by Codex CLI (only applies when Codex is enabled)' },
       { key: 'context_budget', label: 'Context Budget (tokens)', type: 'number', help: 'Max tokens per subagent code chunk' },
       { key: 'phase2_enabled', label: 'Phase 2 (Logic Bugs)', type: 'bool', help: 'Enable cross-component logic bug hunting' },
       { key: 'exclude_paths', label: 'Exclude Paths', type: 'tags', help: 'Directories to skip (e.g. node_modules, vendor)' },
@@ -104,17 +115,17 @@ const SECTIONS = [
     label: 'Models',
     description: 'LLM model selection per pipeline stage.',
     fields: [
-      { key: 'workload_divider', label: 'Workload Divider', type: 'select', options: MODEL_OPTIONS },
-      { key: 'bug_hunter_orchestrator', label: 'Bug Hunter Orchestrator', type: 'select', options: MODEL_OPTIONS },
-      { key: 'bug_hunter_subagent', label: 'Bug Hunter Subagent', type: 'select', options: MODEL_OPTIONS },
-      { key: 'scope_enumerator', label: 'Scope Enumerator', type: 'select', options: MODEL_OPTIONS },
-      { key: 'black_box_bug_hunter', label: 'Black Box Bug Hunter', type: 'select', options: MODEL_OPTIONS },
-      { key: 'deduplicator', label: 'De-duplicator', type: 'select', options: MODEL_OPTIONS },
-      { key: 'scope_validator', label: 'Scope Validator', type: 'select', options: MODEL_OPTIONS },
-      { key: 'strict_validator', label: 'Strict Validator', type: 'select', options: MODEL_OPTIONS },
-      { key: 'perfectionist', label: 'Perfectionist', type: 'select', options: MODEL_OPTIONS },
-      { key: 'strict_triager', label: 'Strict Triager', type: 'select', options: MODEL_OPTIONS },
-      { key: 'bug_chainer', label: 'Bug Chainer', type: 'select', options: MODEL_OPTIONS },
+      { key: 'workload_divider', label: 'Workload Divider', type: 'select', options: CLAUDE_MODEL_OPTIONS },
+      { key: 'bug_hunter_orchestrator', label: 'Bug Hunter Orchestrator', type: 'select', options: CLAUDE_MODEL_OPTIONS },
+      { key: 'bug_hunter_subagent', label: 'Bug Hunter Subagent', type: 'select', options: CLAUDE_MODEL_OPTIONS },
+      { key: 'scope_enumerator', label: 'Scope Enumerator', type: 'select', options: CLAUDE_MODEL_OPTIONS },
+      { key: 'black_box_bug_hunter', label: 'Black Box Bug Hunter', type: 'select', options: CLAUDE_MODEL_OPTIONS },
+      { key: 'deduplicator', label: 'De-duplicator', type: 'select', options: CLAUDE_MODEL_OPTIONS },
+      { key: 'scope_validator', label: 'Scope Validator', type: 'select', options: CLAUDE_MODEL_OPTIONS },
+      { key: 'strict_validator', label: 'Strict Validator', type: 'select', options: CLAUDE_MODEL_OPTIONS },
+      { key: 'perfectionist', label: 'Perfectionist', type: 'select', options: CLAUDE_MODEL_OPTIONS },
+      { key: 'strict_triager', label: 'Strict Triager', type: 'select', options: CLAUDE_MODEL_OPTIONS },
+      { key: 'bug_chainer', label: 'Bug Chainer', type: 'select', options: CLAUDE_MODEL_OPTIONS },
     ],
   },
 ]
@@ -179,8 +190,35 @@ export default function Settings() {
       case 'select':
         return (
           <select value={value ?? ''} onChange={e => onChange(e.target.value)}>
-            {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            {field.options.map(opt => {
+              const optValue = typeof opt === 'object' ? opt.value : opt
+              const optLabel = typeof opt === 'object' ? opt.label : opt
+              return <option key={optValue} value={optValue}>{optLabel}</option>
+            })}
           </select>
+        )
+      case 'agent_checkboxes':
+        return (
+          <div className="agent-checkboxes">
+            <label className="toggle-label">
+              <input type="checkbox" checked={true} disabled />
+              <span>Claude (Claude Opus 4.6)</span>
+            </label>
+            <label className="toggle-label">
+              <input
+                type="checkbox"
+                checked={(value || []).includes('codex')}
+                onChange={e => {
+                  if (e.target.checked) {
+                    onChange([...new Set([...(value || ['claude']), 'codex'])])
+                  } else {
+                    onChange((value || []).filter(a => a !== 'codex'))
+                  }
+                }}
+              />
+              <span>Codex (OpenAI)</span>
+            </label>
+          </div>
         )
       case 'text':
         return (
