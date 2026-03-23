@@ -421,20 +421,31 @@ Output your response as JSON matching the required schema."""
         agent_file = str(AGENTS_DIR / "source_code" / "bug_hunter_subagent.md")
 
         def on_event(event: StreamEvent):
+            text = ""
             if event.type == "assistant":
-                text = event.data.get("content", "")
-                if isinstance(text, list):
+                content = event.data.get("content", "")
+                if isinstance(content, list):
                     text = " ".join(
-                        block.get("text", "") for block in text
+                        block.get("text", "") for block in content
                         if isinstance(block, dict) and block.get("type") == "text"
                     )
-                if text:
-                    asyncio.get_event_loop().create_task(
+                elif isinstance(content, str):
+                    text = content
+            elif event.type == "item.completed":
+                item = event.data.get("item", {})
+                if item.get("type") == "agent_message":
+                    text = item.get("text", "")
+            if text:
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(
                         event_manager.emit_agent_stream(
                             context.engagement_id, context.run_id, self.name,
-                            agent_name, text[:200],
+                            agent_name, text[:500],
                         )
                     )
+                except RuntimeError:
+                    pass
 
         schema_file = str(Path(__file__).parent.parent.parent.parent / "schemas" / "bug_hunter_output.json")
 
