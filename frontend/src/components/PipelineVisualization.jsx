@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import ElapsedTimer from './ElapsedTimer'
 
 const STAGE_LABELS = {
   setup: 'Setup',
@@ -29,7 +30,8 @@ function formatDuration(ms) {
   if (s < 60) return `${s.toFixed(1)}s`
   const m = Math.floor(s / 60)
   const rem = Math.round(s % 60)
-  return `${m}m ${rem}s`
+  if (m < 60) return `${m}m ${rem}s`
+  return `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
 function formatCost(usd) {
@@ -48,6 +50,14 @@ export default function PipelineVisualization({ stages, events, onStageClick }) 
     return progressEvents.length > 0 ? progressEvents[progressEvents.length - 1].data : null
   }
 
+  // Get latest error for a stage
+  const latestError = (stageName) => {
+    const errorEvents = events.filter(e => e.stage === stageName && (e.type === 'error' || e.data?.error))
+    if (errorEvents.length === 0) return null
+    const last = errorEvents[errorEvents.length - 1]
+    return last.data?.error || last.data?.message || null
+  }
+
   // Calculate max duration for relative bar widths
   const maxDuration = Math.max(...stages.map(s => s.duration_ms || 0), 1)
 
@@ -56,13 +66,13 @@ export default function PipelineVisualization({ stages, events, onStageClick }) 
       {stages.map((stage, i) => {
         const progress = latestProgress(stage.stage_name)
         const isExpanded = expandedStage === stage.stage_name
+        const error = stage.status === 'failed' ? latestError(stage.stage_name) : null
         const meta = stage.metadata ? (typeof stage.metadata === 'string' ? JSON.parse(stage.metadata) : stage.metadata) : {}
 
         return (
           <React.Fragment key={stage.stage_name}>
             {i > 0 && (
               <div className="pipeline-connector">
-                {/* Bug count on connector — shows output of previous stage */}
                 {stages[i - 1].output_count > 0 && (
                   <span className="connector-count">{stages[i - 1].output_count}</span>
                 )}
@@ -87,6 +97,13 @@ export default function PipelineVisualization({ stages, events, onStageClick }) 
                 )}
               </div>
 
+              {/* Live elapsed timer for running stages */}
+              {stage.status === 'running' && stage.started_at && (
+                <div className="stage-elapsed">
+                  <ElapsedTimer startTime={stage.started_at} active={true} />
+                </div>
+              )}
+
               {progress && stage.status === 'running' && (
                 <div className="progress-bar-container">
                   <div
@@ -97,7 +114,7 @@ export default function PipelineVisualization({ stages, events, onStageClick }) 
                 </div>
               )}
 
-              {/* Timing bar — relative to longest stage */}
+              {/* Timing bar for completed stages */}
               {stage.duration_ms > 0 && (
                 <div className="stage-timing">
                   <div
@@ -108,9 +125,14 @@ export default function PipelineVisualization({ stages, events, onStageClick }) 
                 </div>
               )}
 
-              {/* Cost display */}
+              {/* Cost */}
               {stage.cost_usd > 0 && (
                 <div className="stage-cost">{formatCost(stage.cost_usd)}</div>
+              )}
+
+              {/* Inline error for failed stages */}
+              {error && (
+                <div className="stage-error">{error.length > 120 ? error.slice(0, 120) + '...' : error}</div>
               )}
 
               {/* Metadata badges */}

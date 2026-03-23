@@ -42,10 +42,20 @@ export function useWebSocket(engagementId = null) {
         const data = JSON.parse(evt.data)
         setEvents(prev => [...prev.slice(-500), data])
 
-        if (data.type === 'completion') {
-          if ('Notification' in window && Notification.permission === 'granted') {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          if (data.type === 'completion') {
             new Notification('Bug Hunting Workflow', {
               body: `Run completed: ${data.data?.run_confirmed_bugs || 0} bugs confirmed (${data.data?.cumulative_confirmed_bugs || 0} total)`,
+            })
+          } else if (data.type === 'stage_update' && data.data?.status === 'failed') {
+            new Notification('Bug Hunting Workflow — Stage Failed', {
+              body: `Stage "${data.stage}" failed in run`,
+              tag: `stage-fail-${data.stage}`,
+            })
+          } else if (data.type === 'error' && data.stage) {
+            new Notification('Bug Hunting Workflow — Error', {
+              body: `${data.stage}: ${data.data?.error?.slice(0, 100) || 'Unknown error'}`,
+              tag: `error-${data.stage}`,
             })
           }
         }

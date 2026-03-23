@@ -32,6 +32,20 @@ async def api_list_engagements():
     engagements = list_engagements()
     for eng in engagements:
         eng["runs"] = list_runs(eng["id"])
+        # Include bug counts for dashboard display
+        all_bugs = list_bugs(eng["id"])
+        confirmed = [b for b in all_bugs if b["status"] == "confirmed"]
+        eng["bug_counts"] = {
+            "total": len(all_bugs),
+            "confirmed": len(confirmed),
+            "cannot_validate": sum(1 for b in all_bugs if b["status"] == "cannot_validate"),
+        }
+        # Severity breakdown of confirmed bugs
+        sev = {}
+        for b in confirmed:
+            s = b["bug_data"].get("severity", "unknown")
+            sev[s] = sev.get(s, 0) + 1
+        eng["bug_counts"]["by_severity"] = sev
     return engagements
 
 

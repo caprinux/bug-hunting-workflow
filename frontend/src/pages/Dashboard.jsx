@@ -97,6 +97,16 @@ export default function Dashboard() {
                   <span className="cost">${eng.cost_total_usd.toFixed(2)}</span>
                 )}
               </div>
+              {eng.bug_counts?.confirmed > 0 && (
+                <div className="card-bugs">
+                  {['critical', 'high', 'medium', 'low'].map(sev => {
+                    const count = eng.bug_counts.by_severity?.[sev]
+                    if (!count) return null
+                    return <span key={sev} className={`severity-chip-sm ${sev}`}>{count}</span>
+                  })}
+                  <span className="bug-total">{eng.bug_counts.confirmed} confirmed</span>
+                </div>
+              )}
               <div className="card-date">
                 {new Date(eng.created_at).toLocaleDateString(undefined, {
                   year: 'numeric', month: 'short', day: 'numeric'

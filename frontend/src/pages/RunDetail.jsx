@@ -5,6 +5,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { useAutoRefresh } from '../hooks/useAutoRefresh'
 import PipelineVisualization from '../components/PipelineVisualization'
 import StageOutputBrowser from '../components/StageOutputBrowser'
+import ElapsedTimer from '../components/ElapsedTimer'
 
 export default function RunDetail() {
   const { id: engagementId, runId } = useParams()
@@ -98,6 +99,9 @@ export default function RunDetail() {
           <div className="meta-row">
             <span className={`badge ${run.status}`}>{run.status}</span>
             <span className="run-type">{run.run_type}</span>
+            {run.status === 'running' && (
+              <ElapsedTimer startTime={run.created_at} active={true} />
+            )}
             {run.current_stage && run.status === 'running' && (
               <span className="current-stage">Current: {run.current_stage}</span>
             )}

@@ -499,6 +499,20 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 0
 }
 .card-date { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
 
+/* Bug counts on dashboard cards */
+.card-bugs {
+  display: flex; align-items: center; gap: 6px; margin-top: 8px;
+}
+.severity-chip-sm {
+  display: inline-block; width: 20px; height: 20px; border-radius: 4px;
+  text-align: center; line-height: 20px; font-size: 11px; font-weight: 700; color: #fff;
+}
+.severity-chip-sm.critical { background: var(--severity-critical); }
+.severity-chip-sm.high { background: var(--severity-high); }
+.severity-chip-sm.medium { background: var(--severity-medium); }
+.severity-chip-sm.low { background: var(--severity-low); }
+.bug-total { font-size: 12px; color: var(--text-secondary); }
+
 .runs-list { display: flex; flex-direction: column; gap: 8px; }
 .run-card { padding: 14px 18px; }
 .run-header { display: flex; gap: 12px; align-items: center; }
@@ -649,6 +663,24 @@ h2 {
 /* Stage cost */
 .stage-cost {
   font-size: 11px; color: var(--color-warning); margin-top: 4px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Elapsed timer on running stages */
+.stage-elapsed {
+  margin-top: 6px; font-size: 12px; font-weight: 600;
+  color: var(--color-info);
+  font-family: 'JetBrains Mono', monospace;
+}
+.elapsed-timer {
+  font-family: 'JetBrains Mono', monospace; font-weight: 600;
+}
+
+/* Inline stage error */
+.stage-error {
+  margin-top: 6px; font-size: 11px; color: var(--color-error);
+  background: rgba(248, 81, 73, 0.1); padding: 4px 8px;
+  border-radius: 4px; word-break: break-word;
   font-family: 'JetBrains Mono', monospace;
 }
 
