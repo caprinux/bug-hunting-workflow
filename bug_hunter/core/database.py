@@ -62,7 +62,7 @@ def init_db(db_path: Optional[str] = None) -> None:
                 engagement_id TEXT NOT NULL REFERENCES engagements(id),
                 run_number INTEGER NOT NULL,
                 status TEXT NOT NULL DEFAULT 'pending'
-                    CHECK(status IN ('pending', 'running', 'completed', 'failed', 'paused')),
+                    CHECK(status IN ('pending', 'running', 'completed', 'failed', 'paused', 'cancelled')),
                 run_type TEXT NOT NULL DEFAULT 'initial'
                     CHECK(run_type IN ('initial', 'rehunt')),
                 rehunt_target TEXT,
@@ -117,6 +117,16 @@ def init_db(db_path: Optional[str] = None) -> None:
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                engagement_id TEXT NOT NULL,
+                run_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                stage TEXT DEFAULT '',
+                data TEXT DEFAULT '{}',
+                timestamp TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_runs_engagement ON runs(engagement_id);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_run_per_engagement
                 ON runs(engagement_id) WHERE status = 'running';
@@ -125,6 +135,7 @@ def init_db(db_path: Optional[str] = None) -> None:
             CREATE INDEX IF NOT EXISTS idx_bugs_run ON bugs(run_id);
             CREATE INDEX IF NOT EXISTS idx_bugs_status ON bugs(status);
             CREATE INDEX IF NOT EXISTS idx_chains_engagement ON chains(engagement_id);
+            CREATE INDEX IF NOT EXISTS idx_events_run ON events(run_id);
         """)
 
         # Migrations for existing databases
@@ -484,4 +495,34 @@ def list_chains(engagement_id: str) -> list[dict]:
         r = dict(row)
         r["chain_data"] = json.loads(r["chain_data"])
         results.append(r)
+    return results
+
+
+# --- Event CRUD ---
+
+def create_event(engagement_id: str, run_id: str, event_type: str,
+                 stage: str = "", data: dict = None, timestamp: str = None) -> None:
+    """Store a pipeline event for persistence."""
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO events (engagement_id, run_id, event_type, stage, data, timestamp)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (engagement_id, run_id, event_type, stage,
+             json.dumps(data or {}), timestamp or _now()),
+        )
+
+
+def list_events(run_id: str, limit: int = 500) -> list[dict]:
+    """List events for a run, most recent first."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM events WHERE run_id = ? ORDER BY id DESC LIMIT ?",
+            (run_id, limit),
+        ).fetchall()
+    results = []
+    for row in rows:
+        r = dict(row)
+        r["data"] = json.loads(r["data"])
+        results.append(r)
+    results.reverse()  # Return chronological order
     return results

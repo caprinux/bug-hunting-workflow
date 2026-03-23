@@ -57,7 +57,9 @@ class PipelineOrchestrator:
         self.engagement = get_engagement(engagement_id)
         self._stages: dict[str, PipelineStage] = {}
         self._running = False
+        self._cancelled = False
         self._current_run_id: Optional[str] = None
+        self._current_task: Optional[asyncio.Task] = None
 
     def _get_stage_list(self) -> list[tuple[str, int]]:
         eng_type = self.engagement["type"]
@@ -119,8 +121,28 @@ class PipelineOrchestrator:
             message="Pipeline started",
         )
 
-        asyncio.create_task(self._execute_pipeline(run_id, run_type, rehunt_target))
+        self._cancelled = False
+        self._current_task = asyncio.create_task(self._execute_pipeline(run_id, run_type, rehunt_target))
         return run_id
+
+    async def cancel_run(self):
+        """Cancel the currently running pipeline."""
+        if not self._running or not self._current_run_id:
+            return False
+        self._cancelled = True
+        run_id = self._current_run_id
+        logger.info(f"Cancelling run {run_id}")
+        if self._current_task and not self._current_task.done():
+            self._current_task.cancel()
+        now = datetime.now(timezone.utc).isoformat()
+        update_run(run_id, status="cancelled", completed_at=now)
+        await event_manager.emit_stage_update(
+            self.engagement_id, run_id, "", "cancelled",
+            message="Run cancelled by user",
+        )
+        self._running = False
+        self._current_run_id = None
+        return True
 
     async def _execute_pipeline(self, run_id: str, run_type: str,
                                 rehunt_target: str = None):
@@ -150,6 +172,10 @@ class PipelineOrchestrator:
 
         try:
             for stage_name, stage_order in stages:
+                if self._cancelled:
+                    logger.info("Pipeline cancelled by user")
+                    break
+
                 if stage_name in pipeline_state.get("completed_stages", []):
                     logger.info(f"Skipping completed stage: {stage_name}")
                     continue
@@ -193,7 +219,12 @@ class PipelineOrchestrator:
                 self._save_pipeline_state(run_dir, pipeline_state)
 
             now = datetime.now(timezone.utc).isoformat()
-            final_status = "completed" if not pipeline_state.get("failed") else "failed"
+            if self._cancelled:
+                final_status = "cancelled"
+            elif pipeline_state.get("failed"):
+                final_status = "failed"
+            else:
+                final_status = "completed"
             update_run(run_id, status=final_status, completed_at=now)
 
             self._update_cumulative_state()
@@ -201,6 +232,10 @@ class PipelineOrchestrator:
             summary = self._build_completion_summary(run_id)
             await event_manager.emit_completion(self.engagement_id, run_id, summary)
 
+        except asyncio.CancelledError:
+            logger.info(f"Pipeline task cancelled for run {run_id}")
+            now = datetime.now(timezone.utc).isoformat()
+            update_run(run_id, status="cancelled", completed_at=now)
         except Exception as e:
             logger.exception(f"Pipeline failed: {e}")
             update_run(run_id, status="failed")
@@ -211,6 +246,7 @@ class PipelineOrchestrator:
         finally:
             self._running = False
             self._current_run_id = None
+            self._current_task = None
 
     async def _execute_stage_with_retry(
         self, stage: PipelineStage, context: StageContext,

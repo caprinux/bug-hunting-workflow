@@ -77,13 +77,42 @@ class BugHunterStage(PipelineStage):
 
         semaphore = asyncio.Semaphore(len(hunter_config.agents) * 3)
 
+        # Per-agent tracking
+        agent_stats: dict[str, dict] = {
+            agent: {"succeeded": 0, "failed": 0, "running": 0, "total": 0}
+            for agent in hunter_config.agents
+        }
+        # Count total per agent
+        for chunk in chunks:
+            for agent in hunter_config.agents:
+                agent_stats[agent]["total"] += 1
+
+        async def emit_agent_progress(agent_name: str, status: str, chunk_idx: int = -1):
+            stats = agent_stats[agent_name]
+            await event_manager.emit(
+                "agent_progress", context.engagement_id, context.run_id, self.name,
+                {
+                    "agent": agent_name,
+                    "status": status,
+                    "current_chunk": chunk_idx if status == "running" else None,
+                    "total_chunks": stats["total"],
+                    "succeeded": stats["succeeded"],
+                    "failed": stats["failed"],
+                    "running": stats["running"],
+                },
+            )
+
         async def run_chunk(chunk_idx: int, chunk: dict, agent_name: str):
             nonlocal total_cost
             async with semaphore:
+                agent_stats[agent_name]["running"] += 1
+                await emit_agent_progress(agent_name, "running", chunk_idx)
+
                 result = await self._run_subagent(
                     context, chunk, agent_name, source_path,
                 )
                 total_cost += result.cost_usd
+                agent_stats[agent_name]["running"] -= 1
 
                 chunk_file = f"chunk_{chunk_idx:03d}_{agent_name}"
                 if result.success and result.result:
@@ -101,11 +130,20 @@ class BugHunterStage(PipelineStage):
                     with open(os.path.join(phase1_dir, f"{chunk_file}_summary.json"), "w") as f:
                         json.dump(summary, f, indent=2)
 
+                    agent_stats[agent_name]["succeeded"] += 1
+                    await emit_agent_progress(agent_name, "chunk_done", chunk_idx)
                     return findings, summary
                 else:
                     logger.warning(f"Chunk {chunk_idx} ({agent_name}) failed: {result.error}")
                     with open(os.path.join(phase1_dir, f"{chunk_file}_error.json"), "w") as f:
                         json.dump({"error": result.error, "raw": result.raw_output[:2000]}, f, indent=2)
+
+                    agent_stats[agent_name]["failed"] += 1
+                    await event_manager.emit_log(
+                        context.engagement_id, context.run_id, self.name,
+                        f"[{agent_name}] Chunk {chunk_idx} failed: {result.error[:200]}",
+                    )
+                    await emit_agent_progress(agent_name, "chunk_failed", chunk_idx)
                     return [], {}
 
         tasks = []

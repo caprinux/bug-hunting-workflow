@@ -246,6 +246,28 @@ a:hover { color: var(--accent-hover); }
 .btn-sm.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 .btn:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+.btn-danger { background: var(--color-error); color: #fff; border-color: var(--color-error); }
+.btn-danger:hover { opacity: 0.9; }
+
+/* Agent status bar */
+.agent-status-bar {
+  display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.agent-status-card {
+  display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius, 8px); font-size: 13px;
+}
+.agent-status-card.running { border-color: var(--color-info); }
+.agent-status-card.chunk_done { border-color: var(--color-success); }
+.agent-status-card.chunk_failed { border-color: var(--color-error); }
+.agent-name { font-weight: 600; }
+.agent-detail { color: var(--text-secondary); }
+
+/* Event agent label */
+.event-agent { color: var(--color-warning); min-width: 60px; font-weight: 500; }
+.event-agent.claude { color: var(--color-info); }
+.event-agent.codex { color: var(--color-warning); }
 
 .theme-toggle {
   background: transparent; border: 1px solid var(--border);

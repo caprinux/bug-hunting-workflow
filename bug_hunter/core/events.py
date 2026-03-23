@@ -44,16 +44,25 @@ class EventManager:
 
     async def emit(self, event_type: str, engagement_id: str, run_id: str = "",
                    stage: str = "", data: dict[str, Any] = None):
-        """Broadcast an event to relevant WebSocket connections."""
+        """Broadcast an event to relevant WebSocket connections and persist to DB."""
+        timestamp = datetime.now(timezone.utc).isoformat()
         message = {
             "type": event_type,
             "engagement_id": engagement_id,
             "run_id": run_id,
             "stage": stage,
             "data": data or {},
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": timestamp,
         }
         msg_json = json.dumps(message)
+
+        # Persist to database (skip agent_stream to avoid flooding the DB)
+        if run_id and event_type != "agent_stream":
+            try:
+                from bug_hunter.core.database import create_event
+                create_event(engagement_id, run_id, event_type, stage, data, timestamp)
+            except Exception as e:
+                logger.warning(f"Failed to persist event: {e}")
 
         targets: set[WebSocket] = set()
         async with self._lock:

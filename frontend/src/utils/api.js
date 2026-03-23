@@ -36,6 +36,9 @@ export const api = {
     request(`/engagements/${engId}/runs/${runId}/stages/${stage}/output?path=${encodeURIComponent(path)}`),
   getCumulative: (engId, filename) => request(`/engagements/${engId}/cumulative/${filename}`),
 
+  cancelRun: (engId, runId) => request(`/engagements/${engId}/runs/${runId}/cancel`, { method: 'POST' }),
+  getRunEvents: (engId, runId) => request(`/engagements/${engId}/runs/${runId}/events`),
+
   getSettings: () => request('/settings'),
   updateSettings: (data) => request('/settings', { method: 'PUT', body: JSON.stringify(data) }),
 

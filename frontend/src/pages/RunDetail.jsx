@@ -10,9 +10,17 @@ export default function RunDetail() {
   const [run, setRun] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selectedStage, setSelectedStage] = useState(null)
+  const [cancelling, setCancelling] = useState(false)
+  const [historicalEvents, setHistoricalEvents] = useState([])
   const { events, connected } = useWebSocket(engagementId)
 
   useEffect(() => { loadRun() }, [runId])
+  useEffect(() => {
+    api.getRunEvents(engagementId, runId)
+      .then(data => setHistoricalEvents(data.events || []))
+      .catch(() => {})
+  }, [engagementId, runId])
+
   useEffect(() => {
     const stageUpdates = events.filter(e => e.run_id === runId && e.type === 'stage_update')
     if (stageUpdates.length > 0) loadRun()
@@ -28,11 +36,41 @@ export default function RunDetail() {
     setLoading(false)
   }
 
+  async function handleCancel() {
+    if (!confirm('Cancel this run? The pipeline will stop after the current subagent finishes.')) return
+    setCancelling(true)
+    try {
+      await api.cancelRun(engagementId, runId)
+      await loadRun()
+    } catch (e) {
+      console.error(e)
+    }
+    setCancelling(false)
+  }
+
   if (loading) return <div className="loading">Loading...</div>
   if (!run) return <div className="error-msg">Run not found</div>
 
   const stages = run.stages || []
-  const runEvents = events.filter(e => e.run_id === runId)
+  const liveEvents = events.filter(e => e.run_id === runId)
+  // Merge historical + live, dedup by timestamp
+  const seenTimestamps = new Set()
+  const allEvents = []
+  for (const evt of [...historicalEvents, ...liveEvents]) {
+    const key = `${evt.timestamp}-${evt.type}-${evt.stage}`
+    if (!seenTimestamps.has(key)) {
+      seenTimestamps.add(key)
+      allEvents.push(evt)
+    }
+  }
+
+  // Extract per-agent stats from events
+  const agentStats = {}
+  for (const evt of allEvents) {
+    if (evt.type === 'agent_progress' && evt.data?.agent) {
+      agentStats[evt.data.agent] = evt.data
+    }
+  }
 
   return (
     <div className="page run-detail">
@@ -51,6 +89,13 @@ export default function RunDetail() {
             </span>
           </div>
         </div>
+        <div className="header-actions">
+          {run.status === 'running' && (
+            <button className="btn btn-danger" onClick={handleCancel} disabled={cancelling}>
+              {cancelling ? 'Cancelling...' : 'Stop Run'}
+            </button>
+          )}
+        </div>
       </div>
 
       {run.rehunt_target && (
@@ -59,10 +104,26 @@ export default function RunDetail() {
         </div>
       )}
 
+      {Object.keys(agentStats).length > 0 && (
+        <div className="agent-status-bar">
+          {Object.entries(agentStats).map(([agent, data]) => (
+            <div key={agent} className={`agent-status-card ${data.status || 'running'}`}>
+              <span className="agent-name">{agent}</span>
+              <span className="agent-detail">
+                {data.status === 'running'
+                  ? `chunk ${data.current_chunk}/${data.total_chunks}`
+                  : `${data.succeeded || 0} ok / ${data.failed || 0} failed`
+                }
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <h2>Pipeline</h2>
       <PipelineVisualization
         stages={stages}
-        events={runEvents}
+        events={allEvents}
         onStageClick={setSelectedStage}
       />
 
@@ -77,9 +138,12 @@ export default function RunDetail() {
 
       <h2>Event Log</h2>
       <div className="event-log">
-        {runEvents.slice(-50).reverse().map((evt, i) => (
+        {allEvents.slice(-100).reverse().map((evt, i) => (
           <div key={i} className={`event-entry ${evt.type}`}>
             <span className="event-time">{new Date(evt.timestamp).toLocaleTimeString()}</span>
+            <span className={`event-agent ${evt.data?.agent || ''}`}>
+              {evt.data?.agent || ''}
+            </span>
             <span className="event-stage">{evt.stage}</span>
             <span className="event-type">{evt.type}</span>
             <span className="event-data">
@@ -87,7 +151,7 @@ export default function RunDetail() {
             </span>
           </div>
         ))}
-        {runEvents.length === 0 && <div className="empty-state">No events yet</div>}
+        {allEvents.length === 0 && <div className="empty-state"><p>No events yet</p></div>}
       </div>
     </div>
   )

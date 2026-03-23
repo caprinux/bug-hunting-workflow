@@ -106,6 +106,18 @@ async def api_start_run(engagement_id: str, req: StartRunRequest):
     return {"run_id": run_id, "status": "running"}
 
 
+@router.post("/engagements/{engagement_id}/runs/{run_id}/cancel")
+async def api_cancel_run(engagement_id: str, run_id: str):
+    _verify_run_ownership(engagement_id, run_id)
+    orchestrator = _orchestrators.get(engagement_id)
+    if not orchestrator:
+        raise HTTPException(status_code=404, detail="No active orchestrator for this engagement")
+    cancelled = await orchestrator.cancel_run()
+    if not cancelled:
+        raise HTTPException(status_code=409, detail="No running pipeline to cancel")
+    return {"status": "cancelled", "run_id": run_id}
+
+
 @router.get("/engagements/{engagement_id}/runs")
 async def api_list_runs(engagement_id: str):
     return list_runs(engagement_id)
@@ -126,6 +138,14 @@ async def api_get_run(engagement_id: str, run_id: str):
     run = _verify_run_ownership(engagement_id, run_id)
     run["stages"] = list_stage_results(run_id)
     return run
+
+
+@router.get("/engagements/{engagement_id}/runs/{run_id}/events")
+async def api_get_run_events(engagement_id: str, run_id: str):
+    _verify_run_ownership(engagement_id, run_id)
+    from bug_hunter.core.database import list_events
+    events = list_events(run_id)
+    return {"events": events}
 
 
 @router.get("/engagements/{engagement_id}/bugs")

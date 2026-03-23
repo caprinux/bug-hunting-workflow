@@ -15,7 +15,7 @@ class PipelineConfig:
     output_dir: str = "./audit_output"
     verbose: bool = True
     retry_limit: int = 3
-    subagent_timeout: int = 900  # 15 minutes per subagent
+    subagent_timeout: int = 3600  # 1 hour per subagent
     resume: bool = True
     auto_install_tools: bool = True
     bug_schema_version: str = "1.0"
