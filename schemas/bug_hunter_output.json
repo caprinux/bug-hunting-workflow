@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BugHunterOutput",
+  "description": "Output schema for Bug Hunter subagents. Contains findings and a functionality summary.",
+  "type": "object",
+  "required": ["findings", "functionality_summary"],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "vuln_class", "vuln_type", "description", "reasoning", "confidence"],
+        "properties": {
+          "id": { "type": "string" },
+          "source_file": { "type": "string" },
+          "line_range": { "type": "string" },
+          "url": { "type": "string" },
+          "http_evidence": {
+            "type": "object",
+            "properties": {
+              "request": { "type": "string" },
+              "response": { "type": "string" }
+            }
+          },
+          "vuln_class": { "type": "string" },
+          "vuln_type": { "type": "string" },
+          "description": { "type": "string" },
+          "reasoning": { "type": "string" },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          }
+        }
+      }
+    },
+    "functionality_summary": {
+      "type": "object",
+      "required": ["inputs", "outputs", "security_operations", "assumptions", "auth_checks"],
+      "properties": {
+        "inputs": {
+          "type": "string",
+          "description": "What inputs this module accepts and from where"
+        },
+        "outputs": {
+          "type": "string",
+          "description": "What this module outputs and to where"
+        },
+        "security_operations": {
+          "type": "string",
+          "description": "Security-relevant operations performed (auth checks, crypto, DB queries, file I/O, command execution)"
+        },
+        "assumptions": {
+          "type": "string",
+          "description": "What assumptions the code makes about its inputs (trusted? validated? sanitized?)"
+        },
+        "auth_checks": {
+          "type": "string",
+          "description": "What authentication/authorization is enforced and where"
+        }
+      }
+    }
+  }
+}

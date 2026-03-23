@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BugChain",
+  "description": "A chain of bugs combined for higher impact.",
+  "type": "object",
+  "required": ["id", "bug_ids", "description", "combined_impact", "status"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique chain identifier (e.g., chain-001)"
+    },
+    "bug_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "IDs of bugs in this chain, in execution order"
+    },
+    "description": {
+      "type": "string",
+      "description": "Description of how the bugs chain together"
+    },
+    "combined_impact": {
+      "type": "string",
+      "description": "The combined security impact achieved by the chain"
+    },
+    "execution_order": {
+      "type": "string",
+      "description": "Step-by-step description of the exploitation chain"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["demonstrated", "proposed"],
+      "description": "Whether this chain has been proven via combined PoC execution"
+    },
+    "combined_poc_file": {
+      "type": "string",
+      "description": "Path to the combined chain PoC (if demonstrated)"
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low"]
+    }
+  }
+}

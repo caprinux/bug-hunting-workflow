@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BugFinding",
+  "description": "Standardized bug finding schema used across all pipeline stages. Fields are progressively enriched by each stage.",
+  "type": "object",
+  "required": ["id", "found_by", "vuln_class", "vuln_type", "description", "reasoning", "confidence"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier assigned by the Bug Hunter (e.g., bug-001)"
+    },
+    "found_by": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of agent identifiers that found this bug (e.g., claude-opus, codex-o3)"
+    },
+    "source_file": {
+      "type": "string",
+      "description": "File path where the bug was found (source code audit)"
+    },
+    "line_range": {
+      "type": "string",
+      "description": "Line range in the source file (e.g., 45-62)"
+    },
+    "url": {
+      "type": "string",
+      "description": "URL where the bug was found (black box pentest)"
+    },
+    "http_evidence": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "string",
+          "description": "Raw HTTP request that demonstrated the issue"
+        },
+        "response": {
+          "type": "string",
+          "description": "Raw HTTP response demonstrating the issue"
+        }
+      },
+      "description": "HTTP request/response evidence (black box pentest)"
+    },
+    "vuln_class": {
+      "type": "string",
+      "description": "Vulnerability classification (e.g., CWE-89, CWE-79)"
+    },
+    "vuln_type": {
+      "type": "string",
+      "description": "Human-readable vulnerability type (e.g., SQL Injection, XSS)"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed description of the vulnerability"
+    },
+    "reasoning": {
+      "type": "string",
+      "description": "Explanation of why this is a vulnerability and how it can be exploited"
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"],
+      "description": "Confidence level that this is a real vulnerability"
+    },
+    "poc": {
+      "type": "object",
+      "properties": {
+        "language": {
+          "type": "string",
+          "description": "Programming language of the PoC (e.g., python, bash)"
+        },
+        "code": {
+          "type": "string",
+          "description": "The PoC source code"
+        },
+        "file": {
+          "type": "string",
+          "description": "Path to the PoC file on disk"
+        },
+        "execution_result": {
+          "type": "string",
+          "enum": ["success", "failure", "error", "destructive_skipped"],
+          "description": "Result of PoC execution"
+        },
+        "output": {
+          "type": "string",
+          "description": "Output from PoC execution"
+        }
+      },
+      "description": "Proof of concept (added by Strict Validator)"
+    },
+    "expanded_primitives": {
+      "type": "object",
+      "properties": {
+        "demonstrated": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "primitive": {
+                "type": "string",
+                "description": "Description of the expanded primitive"
+              },
+              "poc_file": {
+                "type": "string",
+                "description": "Path to the expansion PoC file"
+              },
+              "poc_code": {
+                "type": "string",
+                "description": "The expansion PoC source code"
+              },
+              "execution_result": {
+                "type": "string",
+                "enum": ["success", "failure", "error"]
+              }
+            },
+            "required": ["primitive"]
+          },
+          "description": "Expansions proven via live PoC execution"
+        },
+        "theoretical": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "primitive": {
+                "type": "string",
+                "description": "Description of the theoretical expansion"
+              },
+              "reason_not_demonstrated": {
+                "type": "string",
+                "description": "Why this expansion couldn't be demonstrated"
+              }
+            },
+            "required": ["primitive", "reason_not_demonstrated"]
+          },
+          "description": "Expansions that couldn't be tested, clearly labeled"
+        }
+      },
+      "description": "Expanded primitives (added by Perfectionist)"
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low", "informational"],
+      "description": "Assessed severity (added by Strict Triager)"
+    },
+    "triager_notes": {
+      "type": "string",
+      "description": "Triager's assessment notes (added by Strict Triager)"
+    },
+    "chains": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Chain IDs this bug participates in (added by Bug Chainer)"
+    }
+  }
+}
