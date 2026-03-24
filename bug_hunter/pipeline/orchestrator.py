@@ -40,10 +40,11 @@ PIPELINE_STAGES = [
     ("scoper", 1),
     ("bug_hunter", 2),
     ("deduplicator", 3),
-    ("strict_validator", 4),
-    ("perfectionist", 5),
-    ("strict_triager", 6),
-    ("bug_chainer", 7),
+    ("scope_validator", 4),
+    ("strict_validator", 5),
+    ("perfectionist", 6),
+    ("strict_triager", 7),
+    ("bug_chainer", 8),
 ]
 
 # Keep legacy constants for backward compatibility
@@ -72,7 +73,7 @@ class PipelineOrchestrator:
         filtered = []
         for name, order in stages:
             if name == "deduplicator" and not self.config.deduplicator.enabled:
-                if len(self.config.broad_bug_hunter.agents) <= 1:
+                if len(self.config.bug_hunter.agents) <= 1:
                     continue
             filtered.append((name, order))
 

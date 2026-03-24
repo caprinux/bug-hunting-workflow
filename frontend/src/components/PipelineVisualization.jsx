@@ -6,6 +6,7 @@ const STAGE_LABELS = {
   scoper: 'Scoper',
   bug_hunter: 'Bug Hunter',
   deduplicator: 'De-duplicator',
+  scope_validator: 'Scope Check',
   strict_validator: 'Validator',
   perfectionist: 'Perfectionist',
   strict_triager: 'Triager',

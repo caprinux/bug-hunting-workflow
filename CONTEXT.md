@@ -290,44 +290,28 @@ pipeline:
   output_dir: "./audit_output"
   verbose: true
   retry_limit: 3
-  subagent_timeout: 300
+  subagent_timeout: 3600                # 1 hour per subagent
   resume: true
-  bug_schema_version: "1.0"
+  auto_install_tools: true
   request_delay: 0                      # seconds between requests to target
   max_concurrent_infra_agents: 5
 
 engagement:
   type: "source_code"                   # or "black_box"
-  source_path: ""                       # local directory (source_code)
-  source_repo: ""                       # git URL, cloned at setup (source_code)
+  source_path: ""                       # local directory
+  source_repo: ""                       # git URL(s), comma-separated
   target_domains: []                    # domains/wildcards (black_box)
   scope_definition: ""                  # unstructured text
   infra_config: ""                      # unstructured text
 
-workload_divider:
-  enabled: false
-  subsystem_strategy: "auto"
-  manual_subsystems: []
-
-broad_bug_hunter:
-  agents: ["claude"]                    # models/CLIs to use concurrently
-  context_budget: 150000               # tokens per subagent chunk
-  phase2_enabled: true
-  shared_code_paths: []
-  file_extensions: []
-  exclude_paths: []
-
-scope_enumerator:
-  recon_mode: "both"                    # active | passive | both
-
-black_box_bug_hunter:
-  checkpoint_context_threshold: 0.7
+bug_hunter:
+  agents: ["claude", "codex"]           # models to run concurrently
+  exclude_paths: []                     # dirs to skip
+  codex_model: "gpt-5.4"               # model for Codex CLI
 
 deduplicator:
   enabled: false                        # auto-enabled if multiple agents
   similarity_threshold: 0.8
-
-scope_validator: {}                     # no additional config
 
 strict_validator:
   destructive_poc_policy: "cannot_validate"
@@ -343,16 +327,11 @@ strict_triager:
 
 bug_chainer:
   max_concurrent: 2
-  rehunt_auto_approve: false            # always false
 
 models:
-  workload_divider: "opus"
-  bug_hunter_orchestrator: "opus"
+  scoper: "opus"
   bug_hunter_subagent: "opus"
-  scope_enumerator: "opus"
-  black_box_bug_hunter: "opus"
   deduplicator: "opus"
-  scope_validator: "opus"
   strict_validator: "opus"
   perfectionist: "opus"
   strict_triager: "opus"
@@ -361,6 +340,8 @@ models:
 auth:
   password: ""                          # auto-generated if empty
 ```
+
+Engagement config can be modified between runs via the Settings panel on the engagement detail page (e.g., switch agents from Claude-only to Claude+Codex for the next run).
 
 ---
 
@@ -599,8 +580,11 @@ Agent files are loaded via `--append-system-prompt-file` (Claude Code) or includ
 
 ## Key Design Decisions and Rationale
 
+### Why separate Scoper and Bug Hunter instead of one combined agent?
+The Scoper's job is fast and broad — read directory structure, entry points, config, route definitions. The Bug Hunter's job is slow and deep — read implementation code line by line, trace data flows, write PoCs. Merging them either wastes context on architecture analysis that should be done once, or rushes the mapping. The Scoper runs once and its output is reused across Bug Hunter iterations.
+
 ### Why separate agent files per engagement type instead of one agent handling both modes?
-Source code validation (static code trace → write PoC → execute) and black box validation (analyze HTTP evidence → reproduce → verify) are fundamentally different methodologies. Cramming both into one file with conditional logic bloats instructions, wastes context on irrelevant methodology, and prevents independent tuning. Agents that are genuinely identical across modes (Triager, Bug Chainer, Scope Validator, De-duplicator) remain shared.
+Source code validation (static code trace → write PoC → execute) and black box validation (analyze HTTP evidence → reproduce → verify) are fundamentally different methodologies. Agents that are identical across modes (Triager, Bug Chainer, De-duplicator) remain shared.
 
 ### Why no static analysis tools (Semgrep, CodeQL)?
 The pipeline is designed to be fully agentic. LLM agents reason about code directly. This avoids dependency on rule sets, produces findings that include reasoning (not just pattern matches), and can catch logic bugs that static analysis tools miss. Static analysis output can be injected at the De-duplicator stage if desired, but the pipeline does not depend on it.

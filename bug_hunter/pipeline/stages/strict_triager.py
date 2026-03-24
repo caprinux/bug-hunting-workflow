@@ -1,10 +1,13 @@
-"""Triager stage — bug bounty triager that judges scope, impact, and validity.
+"""Triager stage — lightweight bug quality tagger.
 
-Acts as a strict bug bounty triager:
-- Valid: real security impact, in scope, properly validated
-- Informational: true findings with no direct security impact (useful intelligence)
-- Out of Scope: real bugs but outside the engagement's scope definition
-- Discarded: false positives, contrived scenarios, no real impact
+Tags each bug as "strong", "weak", or "informational" based on:
+- Bug details and root cause clarity
+- PoC quality and execution results
+- Demonstrated security impact
+- Expanded primitives (if any)
+
+This is a fast pass, not a deep re-evaluation. Does not remove bugs —
+just tags them for human review prioritization.
 """
 
 from __future__ import annotations
@@ -36,151 +39,142 @@ class StrictTriagerStage(PipelineStage):
             bugs = list_bugs(context.engagement_id, status="validated", run_id=context.run_id)
 
         if not bugs:
-            self.write_output(context, "confirmed_bugs.json", [])
-            self.write_output(context, "informational.json", [])
-            self.write_output(context, "out_of_scope.json", [])
-            self.write_output(context, "discarded.json", [])
+            self.write_output(context, "tagged_bugs.json", [])
             return StageResult(success=True, input_count=0, output_count=0)
 
-        eng_config = context.engagement["config"]
-        scope_def = eng_config.get("engagement", {}).get("scope_definition", "")
-
-        # Load scope data for qualifying/non-qualifying vuln types
-        scope_data = self.read_previous_output(context, "scoper", "scope.json")
-        scope_notes = {}
-        if scope_data:
-            scope_notes = scope_data.get("scope_notes", {})
-
         bug_data_list = [b["bug_data"] for b in bugs]
-        contrived_threshold = context.config.strict_triager.contrived_threshold
 
         await event_manager.emit_log(
             context.engagement_id, context.run_id, self.name,
-            f"Triaging {len(bug_data_list)} findings as bug bounty triager",
+            f"Tagging {len(bug_data_list)} findings as strong/weak/informational",
         )
 
-        prompt = f"""You are a bug bounty triager evaluating security vulnerability submissions.
-Your job is to strictly judge each bug and categorize it.
-
-SCOPE DEFINITION:
-{scope_def}
-
-QUALIFYING VULNERABILITIES: {json.dumps(scope_notes.get("qualifying", []))}
-NON-QUALIFYING VULNERABILITIES: {json.dumps(scope_notes.get("non_qualifying", []))}
-EXCLUDED PATHS: {json.dumps(scope_notes.get("excluded_paths", []))}
+        prompt = f"""You are evaluating the quality and strength of security vulnerability findings.
+Tag each bug as "strong", "weak", or "informational".
 
 FINDINGS ({len(bug_data_list)} total):
 {json.dumps(bug_data_list, indent=2)[:80000]}
 
-CONTRIVED THRESHOLD: {contrived_threshold}
-(If exploitation requires {contrived_threshold}+ improbable preconditions an attacker cannot control, it's contrived)
+TAGGING CRITERIA:
 
-CATEGORIZE each finding into one of four buckets:
+**strong** — High-confidence, impactful finding:
+- Clear root cause with specific code/endpoint reference
+- Working PoC with successful execution result
+- Meaningful security impact (data access, auth bypass, RCE, etc.)
+- Well-documented exploitation path
 
-1. **VALID** — Real security impact, in scope, properly validated
-   - Assign severity: critical / high / medium / low
-   - IDOR exposing sensitive data = valid (not informational)
-   - Any bug with working PoC demonstrating real impact = valid
+**weak** — Real finding but needs work:
+- Plausible vulnerability but PoC failed, is missing, or is incomplete
+- Impact is unclear or requires unlikely preconditions
+- Root cause is vague or the exploitation path is theoretical
+- Valid finding that a program might accept but at lower confidence
 
-2. **INFORMATIONAL** — True findings, no direct exploitable security impact
-   - Internal IPs, version strings, stack traces, architecture details
-   - Useful as intelligence but not a security vulnerability
+**informational** — Not a vulnerability, but useful intelligence:
+- Internal IPs, version strings, stack traces, debug info
+- No direct exploitable security impact
+- Useful context for other bugs (chain construction, infrastructure mapping)
 
-3. **OUT OF SCOPE** — Real bugs but outside the scope definition
-   - Vulnerability in excluded component
-   - Non-qualifying vulnerability type
-   - Explain what scope rule excludes it
-
-4. **DISCARDED** — Not real or not useful
-   - False positives
-   - Contrived exploitation scenarios ({contrived_threshold}+ improbable preconditions)
-   - Self-XSS, clickjacking on non-sensitive pages, missing headers with no impact
-
-For each finding, provide triager_notes explaining your judgment.
+For each finding, output its id, tag, and a brief note explaining why.
 
 Output JSON:
 {{
-  "valid": [{{...bugs with "severity" and "triager_notes" added...}}],
-  "informational": [{{...}}],
-  "out_of_scope": [{{...with "scope_reasoning"...}}],
-  "discarded": [{{...with "triager_notes"...}}]
+  "tagged": [
+    {{"id": "bug-001", "tag": "strong", "note": "Working SQLi with database dump PoC"}},
+    {{"id": "bug-002", "tag": "weak", "note": "SSRF identified but PoC could not reach internal services"}},
+    {{"id": "bug-003", "tag": "informational", "note": "Server version disclosed in headers"}}
+  ]
 }}"""
 
         agent_file = os.path.join(AGENTS_DIR, "shared", "triager.md")
         if not os.path.exists(agent_file):
-            agent_file = os.path.join(AGENTS_DIR, "shared", "strict_triager.md")
+            agent_file = None
 
         record_dir, record_meta = self.prepare_agent_run(
-            context, "claude", "triage",
-            {"model": context.config.models.strict_triager, "finding_count": len(bug_data_list)},
+            context, "claude", "triage_tagging",
+            {"finding_count": len(bug_data_list)},
         )
 
         result = await run_claude(
-            prompt=prompt, agent_file=agent_file,
+            prompt=prompt,
+            agent_file=agent_file,
             model=context.config.models.strict_triager,
-            timeout=context.config.pipeline.subagent_timeout,
-            record_dir=record_dir, record_metadata=record_meta,
+            timeout=min(context.config.pipeline.subagent_timeout, 600),  # fast pass
+            record_dir=record_dir,
+            record_metadata=record_meta,
         )
 
         if not result.success:
+            # On failure, tag everything as "untagged" and continue
             for bug in bugs:
-                update_bug(bug["id"], status="triage_failed")
-            self.write_output(context, "confirmed_bugs.json", [])
-            self.write_output(context, "informational.json", [])
-            self.write_output(context, "out_of_scope.json", [])
-            self.write_output(context, "discarded.json", [])
-            self.write_output(context, "triage_failed.json", bug_data_list)
+                merged = dict(bug["bug_data"])
+                merged["tag"] = "untagged"
+                merged["triager_notes"] = "Triager failed — untagged"
+                update_bug(bug["id"], status="confirmed", bug_data=merged)
+            self.write_output(context, "tagged_bugs.json", [dict(b["bug_data"], tag="untagged") for b in bugs])
 
             await event_manager.emit_error(
                 context.engagement_id, context.run_id, self.name,
-                f"Triager failed — {len(bugs)} bugs moved to triage_failed for human review",
+                f"Triager failed — {len(bugs)} bugs passed through as untagged",
             )
             return StageResult(
-                success=True, input_count=len(bugs), output_count=0,
+                success=True, input_count=len(bugs), output_count=len(bugs),
                 cost_usd=result.cost_usd,
-                metadata={"triage_failed": True, "triage_failed_count": len(bugs)},
+                metadata={"triage_failed": True},
             )
 
         triage_result = result.result if isinstance(result.result, dict) else {}
-        valid = triage_result.get("valid", triage_result.get("confirmed", []))
-        informational = triage_result.get("informational", [])
-        out_of_scope = triage_result.get("out_of_scope", [])
-        discarded = triage_result.get("discarded", [])
+        tagged_list = triage_result.get("tagged", [])
+        tag_map = {t.get("id"): t for t in tagged_list}
 
-        self.write_output(context, "confirmed_bugs.json", valid)
-        self.write_output(context, "informational.json", informational)
-        self.write_output(context, "out_of_scope.json", out_of_scope)
-        self.write_output(context, "discarded.json", discarded)
-
-        valid_ids = {f.get("id") for f in valid}
-        info_ids = {f.get("id") for f in informational}
-        oos_ids = {f.get("id") for f in out_of_scope}
-        discarded_ids = {f.get("id") for f in discarded}
+        strong_count = 0
+        weak_count = 0
+        info_count = 0
 
         for bug in bugs:
             bid = bug["bug_data"].get("id")
-            if bid in valid_ids:
-                matched = next((c for c in valid if c.get("id") == bid), None)
-                if matched:
-                    update_bug(bug["id"], status="confirmed", bug_data=matched)
-            elif bid in info_ids:
-                matched = next((i for i in informational if i.get("id") == bid), None)
-                if matched:
-                    update_bug(bug["id"], status="informational", bug_data=matched)
-            elif bid in oos_ids:
-                update_bug(bug["id"], status="out_of_scope")
-            elif bid in discarded_ids:
-                update_bug(bug["id"], status="discarded")
+            tag_info = tag_map.get(bid, {})
+            tag = tag_info.get("tag", "untagged")
+            note = tag_info.get("note", "")
+
+            merged = dict(bug["bug_data"])
+            merged["tag"] = tag
+            merged["triager_notes"] = note
+
+            if tag == "informational":
+                merged["severity"] = "informational"
+                update_bug(bug["id"], status="informational", bug_data=merged)
+                info_count += 1
+            else:
+                update_bug(bug["id"], status="confirmed", bug_data=merged)
+                if tag == "strong":
+                    strong_count += 1
+                else:
+                    weak_count += 1
+
+        all_tagged = []
+        for bug in bugs:
+            bid = bug["bug_data"].get("id")
+            tag_info = tag_map.get(bid, {})
+            entry = dict(bug["bug_data"])
+            entry["tag"] = tag_info.get("tag", "untagged")
+            entry["triager_notes"] = tag_info.get("note", "")
+            all_tagged.append(entry)
+
+        self.write_output(context, "tagged_bugs.json", all_tagged)
+
+        await event_manager.emit_log(
+            context.engagement_id, context.run_id, self.name,
+            f"Tagged: {strong_count} strong, {weak_count} weak, {info_count} informational",
+        )
 
         return StageResult(
             success=True,
             input_count=len(bugs),
-            output_count=len(valid),
+            output_count=strong_count + weak_count,
             cost_usd=result.cost_usd,
             metadata={
-                "valid": len(valid),
-                "informational": len(informational),
-                "out_of_scope": len(out_of_scope),
-                "discarded": len(discarded),
+                "strong": strong_count,
+                "weak": weak_count,
+                "informational": info_count,
             },
         )

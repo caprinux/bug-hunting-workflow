@@ -37,32 +37,10 @@ class EngagementConfig:
 
 
 @dataclass
-class WorkloadDividerConfig:
-    enabled: bool = False
-    subsystem_strategy: str = "auto"
-    manual_subsystems: list[str] = field(default_factory=list)
-
-
-@dataclass
-class BroadBugHunterConfig:
+class BugHunterConfig:
     agents: list[str] = field(default_factory=lambda: ["claude", "codex"])
-    context_budget: int = 150000
-    phase2_enabled: bool = True
-    max_concurrent_subagents: Optional[int] = None
-    shared_code_paths: list[str] = field(default_factory=list)
-    file_extensions: list[str] = field(default_factory=list)
     exclude_paths: list[str] = field(default_factory=list)
-    codex_model: str = "gpt-5.4"  # model passed to codex CLI via -m flag
-
-
-@dataclass
-class ScopeEnumeratorConfig:
-    recon_mode: str = "both"  # "active", "passive", "both"
-
-
-@dataclass
-class BlackBoxBugHunterConfig:
-    checkpoint_context_threshold: float = 0.7
+    codex_model: str = "gpt-5.4"
 
 
 @dataclass
@@ -115,10 +93,7 @@ class AuthConfig:
 class AppConfig:
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
     engagement: EngagementConfig = field(default_factory=EngagementConfig)
-    workload_divider: WorkloadDividerConfig = field(default_factory=WorkloadDividerConfig)
-    broad_bug_hunter: BroadBugHunterConfig = field(default_factory=BroadBugHunterConfig)
-    scope_enumerator: ScopeEnumeratorConfig = field(default_factory=ScopeEnumeratorConfig)
-    black_box_bug_hunter: BlackBoxBugHunterConfig = field(default_factory=BlackBoxBugHunterConfig)
+    bug_hunter: BugHunterConfig = field(default_factory=BugHunterConfig)
     deduplicator: DeduplicatorConfig = field(default_factory=DeduplicatorConfig)
     strict_validator: StrictValidatorConfig = field(default_factory=StrictValidatorConfig)
     perfectionist: PerfectionistConfig = field(default_factory=PerfectionistConfig)
@@ -126,6 +101,8 @@ class AppConfig:
     bug_chainer: BugChainerConfig = field(default_factory=BugChainerConfig)
     models: ModelsConfig = field(default_factory=ModelsConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
+    # Legacy aliases for backward compatibility with existing config files
+    broad_bug_hunter: BugHunterConfig = field(default_factory=BugHunterConfig)
 
 
 def _merge_dict_into_dataclass(dc: object, data: dict) -> None:
@@ -134,9 +111,8 @@ def _merge_dict_into_dataclass(dc: object, data: dict) -> None:
         if not hasattr(dc, key):
             continue
         current = getattr(dc, key)
-        if isinstance(current, (PipelineConfig, EngagementConfig, WorkloadDividerConfig,
-                                BroadBugHunterConfig, ScopeEnumeratorConfig,
-                                BlackBoxBugHunterConfig, DeduplicatorConfig,
+        if isinstance(current, (PipelineConfig, EngagementConfig,
+                                BugHunterConfig, DeduplicatorConfig,
                                 StrictValidatorConfig, PerfectionistConfig,
                                 StrictTriagerConfig, BugChainerConfig,
                                 ModelsConfig, AuthConfig)):

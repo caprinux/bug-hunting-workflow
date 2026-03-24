@@ -530,11 +530,12 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 0
   font-family: 'JetBrains Mono', monospace; font-size: 12px;
 }
 
-.rehunt-form {
+.rehunt-form, .engagement-settings-panel {
   padding: 18px; background: var(--bg-secondary); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); margin-bottom: 16px;
+  border-radius: var(--radius-lg, 8px); margin-bottom: 16px;
   display: flex; flex-direction: column; gap: 10px;
 }
+.engagement-settings-panel h3 { font-size: 15px; margin: 0; }
 .rehunt-info {
   padding: 14px 16px; background: var(--bg-secondary); border: 1px solid var(--border);
   border-radius: var(--radius); margin-bottom: 16px; font-size: 14px;

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { api } from '../utils/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useAutoRefresh } from '../hooks/useAutoRefresh'
 
 export default function EngagementDetail() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const [engagement, setEngagement] = useState(null)
   const [bugs, setBugs] = useState([])
   const [chains, setChains] = useState([])
@@ -13,6 +14,9 @@ export default function EngagementDetail() {
   const [startingRun, setStartingRun] = useState(false)
   const [rehuntTarget, setRehuntTarget] = useState('')
   const [showRehunt, setShowRehunt] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [engConfig, setEngConfig] = useState({})
+  const [savingConfig, setSavingConfig] = useState(false)
   const { events, connected } = useWebSocket(id)
 
   async function loadAll() {
@@ -25,6 +29,13 @@ export default function EngagementDetail() {
       setEngagement(eng)
       setBugs(bugData)
       setChains(chainData)
+      // Extract editable config
+      const cfg = eng.config || {}
+      setEngConfig({
+        agents: cfg.bug_hunter?.agents || cfg.broad_bug_hunter?.agents || ['claude', 'codex'],
+        codex_model: cfg.bug_hunter?.codex_model || cfg.broad_bug_hunter?.codex_model || 'gpt-5.4',
+        subagent_timeout: cfg.pipeline?.subagent_timeout || 3600,
+      })
     } catch (e) {
       console.error(e)
     }
@@ -102,6 +113,16 @@ export default function EngagementDetail() {
               <button className="btn btn-secondary" onClick={() => setShowRehunt(!showRehunt)}>
                 Re-hunt
               </button>
+              <button className="btn btn-secondary" onClick={() => setShowSettings(!showSettings)}>
+                Settings
+              </button>
+              <button className="btn btn-danger" onClick={async () => {
+                if (!confirm(`Delete engagement "${engagement.name}"? This removes all runs, bugs, and output files permanently.`)) return
+                try {
+                  await api.deleteEngagement(id)
+                  navigate('/')
+                } catch (e) { console.error(e) }
+              }}>Delete</button>
             </>
           )}
         </div>
@@ -109,13 +130,80 @@ export default function EngagementDetail() {
 
       {showRehunt && (
         <div className="rehunt-form">
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+            The Bug Hunter will read its previous BUGS.json and attack_surfaces.json, then continue
+            scanning surfaces it hasn't covered yet. Add specific instructions below, or leave as default.
+          </p>
           <textarea value={rehuntTarget} onChange={e => setRehuntTarget(e.target.value)}
-                    placeholder="Describe what to hunt for (e.g., 'Find stored XSS in the admin panel to chain with confirmed CSRF bug-004')"
+                    placeholder="Continue scanning unscanned attack surfaces and look for bugs not yet found. Focus on areas marked not_scanned."
                     rows={3} />
-          <button className="btn btn-primary" onClick={() => startRun('rehunt', rehuntTarget)}
-                  disabled={!rehuntTarget.trim()}>
-            Start Re-hunt
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn btn-primary" onClick={() => startRun('rehunt',
+              rehuntTarget.trim() || 'Continue scanning unscanned attack surfaces and look for bugs not yet found. Focus on areas marked not_scanned.'
+            )}>
+              Start Re-hunt
+            </button>
+            <button className="btn btn-secondary" onClick={() => setShowRehunt(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Settings panel */}
+      {showSettings && !hasActiveRun && (
+        <div className="engagement-settings-panel">
+          <h3>Run Settings</h3>
+          <p className="muted" style={{ fontSize: '13px', marginBottom: '12px' }}>
+            These settings apply to the next run. Changes are saved to the engagement config.
+          </p>
+          <div className="config-grid">
+            <div className="form-group">
+              <label>Bug Hunter Agents</label>
+              <div className="agent-checkboxes">
+                <label className="toggle-label">
+                  <input type="checkbox" checked={engConfig.agents?.includes('claude')}
+                    onChange={e => {
+                      const next = e.target.checked
+                        ? [...new Set([...(engConfig.agents || []), 'claude'])]
+                        : (engConfig.agents || []).filter(a => a !== 'claude')
+                      if (next.length > 0) setEngConfig(c => ({ ...c, agents: next }))
+                    }} />
+                  <span>Claude</span>
+                </label>
+                <label className="toggle-label">
+                  <input type="checkbox" checked={engConfig.agents?.includes('codex')}
+                    onChange={e => {
+                      const next = e.target.checked
+                        ? [...new Set([...(engConfig.agents || []), 'codex'])]
+                        : (engConfig.agents || []).filter(a => a !== 'codex')
+                      if (next.length > 0) setEngConfig(c => ({ ...c, agents: next }))
+                    }} />
+                  <span>Codex</span>
+                </label>
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Subagent Timeout (s)</label>
+              <input type="number" value={engConfig.subagent_timeout || 3600}
+                onChange={e => setEngConfig(c => ({ ...c, subagent_timeout: parseInt(e.target.value) || 3600 }))} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+            <button className="btn btn-primary" disabled={savingConfig} onClick={async () => {
+              setSavingConfig(true)
+              try {
+                await api.updateEngagementConfig(id, {
+                  bug_hunter: { agents: engConfig.agents, codex_model: engConfig.codex_model },
+                  pipeline: { subagent_timeout: engConfig.subagent_timeout },
+                })
+                setShowSettings(false)
+                await loadAll()
+              } catch (e) { console.error(e) }
+              setSavingConfig(false)
+            }}>
+              {savingConfig ? 'Saving...' : 'Save Settings'}
+            </button>
+            <button className="btn btn-secondary" onClick={() => setShowSettings(false)}>Cancel</button>
+          </div>
         </div>
       )}
 

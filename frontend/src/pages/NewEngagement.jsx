@@ -36,12 +36,12 @@ export default function NewEngagement() {
     api.getSettings()
       .then(settings => {
         setAdvanced({
-          agents: settings?.broad_bug_hunter?.agents?.length ? settings.broad_bug_hunter.agents : DEFAULT_ADVANCED.agents,
+          agents: settings?.bug_hunter?.agents?.length ? settings.bug_hunter.agents : DEFAULT_ADVANCED.agents,
           retry_limit: settings?.pipeline?.retry_limit ?? DEFAULT_ADVANCED.retry_limit,
           subagent_timeout: settings?.pipeline?.subagent_timeout ?? DEFAULT_ADVANCED.subagent_timeout,
           max_concurrent_infra_agents: settings?.pipeline?.max_concurrent_infra_agents ?? DEFAULT_ADVANCED.max_concurrent_infra_agents,
           request_delay: settings?.pipeline?.request_delay ?? DEFAULT_ADVANCED.request_delay,
-          phase2_enabled: settings?.broad_bug_hunter?.phase2_enabled ?? DEFAULT_ADVANCED.phase2_enabled,
+          phase2_enabled: settings?.bug_hunter?.phase2_enabled ?? DEFAULT_ADVANCED.phase2_enabled,
           workload_divider_enabled: settings?.workload_divider?.enabled ?? DEFAULT_ADVANCED.workload_divider_enabled,
           destructive_poc_policy: settings?.strict_validator?.destructive_poc_policy ?? DEFAULT_ADVANCED.destructive_poc_policy,
           contrived_threshold: settings?.strict_triager?.contrived_threshold ?? DEFAULT_ADVANCED.contrived_threshold,
@@ -64,7 +64,7 @@ export default function NewEngagement() {
           max_concurrent_infra_agents: advanced.max_concurrent_infra_agents,
           request_delay: advanced.request_delay,
         },
-        broad_bug_hunter: {
+        bug_hunter: {
           agents: advanced.agents,
           phase2_enabled: advanced.phase2_enabled,
         },

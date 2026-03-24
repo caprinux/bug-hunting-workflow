@@ -14,6 +14,7 @@ from bug_hunter.core.auth import issue_session_token
 from bug_hunter.core.config import AppConfig, DEFAULT_CONFIG_PATH, config_to_dict, load_config
 from bug_hunter.core.database import (
     create_engagement, get_engagement, list_engagements, update_engagement,
+    delete_engagement,
     create_run, get_run, list_runs, list_stage_results,
     list_bugs, get_bug, list_chains,
 )
@@ -92,6 +93,25 @@ async def api_create_engagement(req: CreateEngagementRequest):
     return engagement
 
 
+@router.delete("/engagements/{engagement_id}")
+async def api_delete_engagement(engagement_id: str):
+    eng = get_engagement(engagement_id)
+    if not eng:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    # Don't delete if a run is active
+    active = [r for r in list_runs(engagement_id) if r["status"] == "running"]
+    if active:
+        raise HTTPException(status_code=409, detail="Cannot delete engagement with active runs")
+    # Delete output files
+    output_dir = _engagement_output_dir(eng)
+    eng_dir = os.path.join(output_dir, "engagements", engagement_id)
+    if os.path.isdir(eng_dir):
+        import shutil
+        shutil.rmtree(eng_dir, ignore_errors=True)
+    delete_engagement(engagement_id)
+    return {"status": "deleted"}
+
+
 @router.get("/engagements/{engagement_id}")
 async def api_get_engagement(engagement_id: str):
     eng = get_engagement(engagement_id)
@@ -99,6 +119,36 @@ async def api_get_engagement(engagement_id: str):
         raise HTTPException(status_code=404, detail="Engagement not found")
     eng["runs"] = list_runs(engagement_id)
     return eng
+
+
+@router.patch("/engagements/{engagement_id}/config")
+async def api_update_engagement_config(engagement_id: str, config_updates: dict):
+    """Update engagement config between runs. Blocked while a run is active."""
+    eng = get_engagement(engagement_id)
+    if not eng:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    active = [r for r in list_runs(engagement_id) if r["status"] == "running"]
+    if active:
+        raise HTTPException(status_code=409, detail="Cannot modify config while a run is active")
+
+    current_config = eng["config"]
+    # Deep merge updates into existing config
+    def _deep_merge(base, override):
+        for k, v in override.items():
+            if k in base and isinstance(base[k], dict) and isinstance(v, dict):
+                _deep_merge(base[k], v)
+            else:
+                base[k] = v
+    _deep_merge(current_config, config_updates)
+
+    from bug_hunter.core.database import get_db
+    import json as _json
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE engagements SET config = ?, updated_at = ? WHERE id = ?",
+            (_json.dumps(current_config), __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(), engagement_id),
+        )
+    return get_engagement(engagement_id)
 
 
 @router.post("/engagements/{engagement_id}/runs")

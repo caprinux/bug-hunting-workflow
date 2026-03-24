@@ -253,6 +253,24 @@ def update_engagement(eng_id: str, **kwargs) -> Optional[dict]:
     return get_engagement(eng_id)
 
 
+def delete_engagement(eng_id: str) -> bool:
+    """Delete an engagement and all its runs, bugs, chains, and events."""
+    with get_db() as conn:
+        # Delete in dependency order
+        conn.execute("DELETE FROM events WHERE engagement_id = ?", (eng_id,))
+        conn.execute("DELETE FROM chains WHERE engagement_id = ?", (eng_id,))
+        conn.execute("DELETE FROM bugs WHERE engagement_id = ?", (eng_id,))
+        # Delete stage_results via runs
+        run_ids = [r[0] for r in conn.execute(
+            "SELECT id FROM runs WHERE engagement_id = ?", (eng_id,)
+        ).fetchall()]
+        for rid in run_ids:
+            conn.execute("DELETE FROM stage_results WHERE run_id = ?", (rid,))
+        conn.execute("DELETE FROM runs WHERE engagement_id = ?", (eng_id,))
+        conn.execute("DELETE FROM engagements WHERE id = ?", (eng_id,))
+    return True
+
+
 # --- Run CRUD ---
 
 def create_run(engagement_id: str, run_type: str = "initial",

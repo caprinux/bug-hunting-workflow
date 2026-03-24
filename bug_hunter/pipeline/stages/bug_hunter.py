@@ -40,7 +40,7 @@ class BugHunterStage(PipelineStage):
         stage_dir = self.get_stage_dir(context)
         eng_config = context.engagement["config"]
         eng_type = context.engagement["type"]
-        hunter_config = context.config.broad_bug_hunter
+        hunter_config = context.config.bug_hunter
         infra_config = eng_config.get("engagement", {}).get("infra_config", "")
 
         # Load scope from Scoper stage
@@ -253,7 +253,7 @@ Output a JSON object with "bugs" array and "attack_surfaces" array (updated stat
         elif agent_name == "codex" or agent_name.startswith("codex"):
             return await run_codex(
                 prompt=prompt,
-                model=context.config.broad_bug_hunter.codex_model,
+                model=context.config.bug_hunter.codex_model,
                 cwd=source_path if eng_type == "source_code" else None,
                 timeout=context.config.pipeline.subagent_timeout,
                 on_event=on_event,

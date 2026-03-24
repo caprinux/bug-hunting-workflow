@@ -30,7 +30,7 @@ const SECTIONS = [
     ],
   },
   {
-    key: 'broad_bug_hunter',
+    key: 'bug_hunter',
     label: 'Bug Hunter',
     description: 'Free-form bug hunting with iterative progress tracking.',
     fields: [
