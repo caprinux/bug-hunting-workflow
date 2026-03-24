@@ -310,6 +310,22 @@ a:hover { color: var(--accent-hover); }
   background: var(--color-info); color: #fff; letter-spacing: 0.5px;
 }
 
+/* Quality tag badges */
+.tag-badge {
+  display: inline-block; padding: 1px 8px; border-radius: 4px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.tag-badge.tag-strong { background: var(--color-success); color: #fff; }
+.tag-badge.tag-weak { background: var(--color-warning); color: #fff; }
+.tag-badge.tag-informational { background: var(--severity-info); color: #fff; }
+.tag-badge.tag-untagged { background: var(--color-muted); color: #fff; }
+
+/* Tag filter buttons */
+.tag-filter-btn.tag-strong.active { background: var(--color-success); color: #fff; border-color: var(--color-success); }
+.tag-filter-btn.tag-weak.active { background: var(--color-warning); color: #fff; border-color: var(--color-warning); }
+.tag-filter-btn.tag-informational.active { background: var(--severity-info); color: #fff; border-color: var(--severity-info); }
+
 /* Bug run indicator */
 .bug-run {
   font-size: 11px; color: var(--text-muted);

@@ -11,6 +11,7 @@ export default function BugBrowser() {
   const [runs, setRuns] = useState([])
   const [filter, setFilter] = useState('')
   const [runFilter, setRunFilter] = useState('')
+  const [tagFilter, setTagFilter] = useState('')
   const [expanded, setExpanded] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -35,7 +36,10 @@ export default function BugBrowser() {
 
   let filteredBugs = bugs
   if (runFilter) {
-    filteredBugs = bugs.filter(b => b.run_id === runFilter)
+    filteredBugs = filteredBugs.filter(b => b.run_id === runFilter)
+  }
+  if (tagFilter) {
+    filteredBugs = filteredBugs.filter(b => (b.bug_data?.tag || '') === tagFilter)
   }
 
   const sortedBugs = [...filteredBugs].sort((a, b) => {
@@ -100,6 +104,25 @@ export default function BugBrowser() {
         </div>
       )}
 
+      {/* Tag filter */}
+      {!loading && bugs.some(b => b.bug_data?.tag) && (
+        <div className="filters" style={{ marginBottom: '12px' }}>
+          <span style={{ fontSize: '13px', color: 'var(--text-muted)', marginRight: '8px' }}>Tag:</span>
+          <button className={`btn btn-sm ${!tagFilter ? 'active' : ''}`}
+                  onClick={() => setTagFilter('')}>All</button>
+          {['strong', 'weak', 'informational'].map(t => {
+            const count = bugs.filter(b => b.bug_data?.tag === t).length
+            if (!count) return null
+            return (
+              <button key={t} className={`btn btn-sm tag-filter-btn tag-${t} ${tagFilter === t ? 'active' : ''}`}
+                      onClick={() => setTagFilter(tagFilter === t ? '' : t)}>
+                {t} ({count})
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {loading ? <div className="loading">Loading...</div> : (
         <div className="bug-list">
           {sortedBugs.map(bug => {
@@ -112,6 +135,7 @@ export default function BugBrowser() {
                   <span className={`severity-badge ${d.severity || 'unknown'}`}>
                     {d.severity || bug.status}
                   </span>
+                  {d.tag && <span className={`tag-badge tag-${d.tag}`}>{d.tag}</span>}
                   {isNew && <span className="new-badge">NEW</span>}
                   <span className="bug-id">{d.id}</span>
                   <span className="bug-type">{d.vuln_type}</span>
