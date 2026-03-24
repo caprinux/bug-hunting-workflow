@@ -4,19 +4,12 @@ Improvements organized by priority tier. Items within each tier are roughly orde
 
 ---
 
-## Tier 0 — Next Up
+## Tier 0 — Completed
 
-### Per-agent live visibility during bug hunting
-Currently there's no way to distinguish Claude vs Codex subagents during a live run. Add:
-- Per-agent status tracking in progress events (which agents are running, on which chunks)
-- Per-agent success/failure counts updated in real-time as subagents complete
-- Distinct labeled log streams in the run detail UI so you can tell if one agent is working and the other is stuck
-- Live indicator showing e.g. "Claude: running chunk 3/12, Codex: running chunk 5/12"
+All Tier 0 items have been implemented.
 
-This is critical for debugging multi-agent runs and confirming both agents are functioning.
-
-### Persist WebSocket events across page reloads
-The live event log (progress updates, agent reasoning, errors) is held in React state and lost on reload. Persist events to the database (per-run event log table) so the run detail page can load historical events on mount, then append new ones via WebSocket. This also enables post-mortem debugging of completed/failed runs.
+- **Per-agent live visibility** — agent status cards, per-agent progress events, color-coded event log
+- **Persist WebSocket events** — events table in SQLite, historical event loading on page mount
 
 ---
 
