@@ -3,7 +3,7 @@ const API_BASE = '/api'
 function getAuthHeader() {
   const token = sessionStorage.getItem('bhw_token') || ''
   if (!token) return {}
-  return { 'Authorization': 'Basic ' + btoa('user:' + token) }
+  return { 'Authorization': 'Bearer ' + token }
 }
 
 async function request(path, options = {}) {
@@ -37,13 +37,16 @@ export const api = {
   getCumulative: (engId, filename) => request(`/engagements/${engId}/cumulative/${filename}`),
 
   cancelRun: (engId, runId) => request(`/engagements/${engId}/runs/${runId}/cancel`, { method: 'POST' }),
+  pauseRun: (engId, runId) => request(`/engagements/${engId}/runs/${runId}/pause`, { method: 'POST' }),
+  resumeRun: (engId, runId) => request(`/engagements/${engId}/runs/${runId}/resume`, { method: 'POST' }),
   getRunEvents: (engId, runId) => request(`/engagements/${engId}/runs/${runId}/events`),
 
   getSettings: () => request('/settings'),
   updateSettings: (data) => request('/settings', { method: 'PUT', body: JSON.stringify(data) }),
 
   login: async (password) => {
-    const res = await fetch(`${API_BASE}/engagements`, {
+    const res = await fetch(`${API_BASE}/auth/session`, {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Basic ' + btoa('user:' + password),
@@ -51,6 +54,8 @@ export const api = {
     })
     if (res.status === 401) throw new Error('Invalid password')
     if (!res.ok) throw new Error('Server error')
-    return true
+    const data = await res.json()
+    if (!data.token) throw new Error('Authentication failed')
+    return data.token
   },
 }

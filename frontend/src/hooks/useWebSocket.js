@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
 function getAuthToken() {
-  // Extract password from basic auth credentials stored by the browser.
-  // When basic auth is used, we can read it from a meta tag or pass it explicitly.
-  // Fallback: read from sessionStorage where the app stores it after first auth.
+  // The frontend stores the signed session token after a successful login.
   return sessionStorage.getItem('bhw_token') || ''
 }
 

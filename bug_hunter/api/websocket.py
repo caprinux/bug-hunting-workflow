@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import secrets
-
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, status
 
+from bug_hunter.core.auth import get_auth_password, verify_session_token
 from bug_hunter.core.events import event_manager
 
 ws_router = APIRouter()
@@ -19,12 +18,10 @@ async def websocket_endpoint(
 ):
     """WebSocket connection for real-time updates.
 
-    Connect to /ws?token=<password> for global updates,
-    or /ws?token=<password>&engagement_id=xxx for engagement-specific updates.
+    Connect to /ws?token=<session-token> for global updates,
+    or /ws?token=<session-token>&engagement_id=xxx for engagement-specific updates.
     """
-    from bug_hunter.main import AUTH_PASSWORD
-
-    if AUTH_PASSWORD and not secrets.compare_digest(token.encode(), AUTH_PASSWORD.encode()):
+    if get_auth_password() and not verify_session_token(token):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
         return
 

@@ -1,0 +1,63 @@
+pipeline:
+  output_dir: ./audit_output
+  verbose: true
+  retry_limit: 3
+  subagent_timeout: 3600
+  resume: true
+  auto_install_tools: true
+  bug_schema_version: '1.0'
+  request_delay: 0
+  max_concurrent_infra_agents: 5
+engagement:
+  type: source_code
+  source_path: ''
+  source_repo: ''
+  target_domains: []
+  scope_definition: ''
+  infra_config: ''
+workload_divider:
+  enabled: false
+  subsystem_strategy: auto
+  manual_subsystems: []
+broad_bug_hunter:
+  agents:
+  - codex
+  context_budget: 200000
+  phase2_enabled: true
+  shared_code_paths: []
+  file_extensions: []
+  exclude_paths: []
+  codex_model: gpt-5.4
+scope_enumerator:
+  recon_mode: both
+black_box_bug_hunter:
+  checkpoint_context_threshold: 0.7
+deduplicator:
+  enabled: false
+  similarity_threshold: 0.8
+strict_validator:
+  destructive_poc_policy: cannot_validate
+  max_concurrent: 5
+  poc_language: python
+perfectionist:
+  max_concurrent: 3
+strict_triager:
+  contrived_threshold: 3
+  severity_floor: low
+bug_chainer:
+  max_concurrent: 2
+  rehunt_auto_approve: false
+models:
+  workload_divider: opus
+  bug_hunter_orchestrator: opus
+  bug_hunter_subagent: opus
+  scope_enumerator: opus
+  black_box_bug_hunter: opus
+  deduplicator: opus
+  scope_validator: opus
+  strict_validator: opus
+  perfectionist: opus
+  strict_triager: opus
+  bug_chainer: opus
+auth:
+  password: ''

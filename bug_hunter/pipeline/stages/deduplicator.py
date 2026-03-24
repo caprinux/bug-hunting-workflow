@@ -67,12 +67,20 @@ Output a JSON object with:
 }}"""
 
         agent_file = os.path.join(AGENTS_DIR, "shared", "deduplicator.md")
+        record_dir, record_metadata = self.prepare_agent_run(
+            context,
+            "claude",
+            "deduplicate_findings",
+            {"model": context.config.models.deduplicator, "finding_count": len(bug_data_list)},
+        )
 
         result = await run_claude(
             prompt=prompt,
             agent_file=agent_file,
             model=context.config.models.deduplicator,
             timeout=context.config.pipeline.subagent_timeout,
+            record_dir=record_dir,
+            record_metadata=record_metadata,
         )
 
         if not result.success:
@@ -86,7 +94,7 @@ Output a JSON object with:
                 metadata={"dedup_failed": True, "error": result.error},
             )
 
-        dedup_result = result.result or {}
+        dedup_result = result.result if isinstance(result.result, dict) else {}
         deduplicated = dedup_result.get("deduplicated", bug_data_list)
         groups = dedup_result.get("duplicate_groups", [])
 

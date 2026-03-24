@@ -105,12 +105,14 @@ async def _clone_multiple_repos(
 
         if clone_dir.exists():
             existing_commit = await _get_git_commit(str(clone_dir))
-            if existing_commit:
+            if existing_commit and (not commit or existing_commit.startswith(commit)):
                 results.append(AcquisitionResult(
                     success=True, local_path=str(clone_dir),
                     repo_url=parsed_url, branch=branch, commit=existing_commit,
                 ))
                 continue
+            import shutil
+            shutil.rmtree(clone_dir, ignore_errors=True)
 
         cmd = ["git", "clone"]
         if branch:
@@ -140,6 +142,8 @@ async def _clone_multiple_repos(
             co_stdout, co_stderr = await checkout.communicate()
             if checkout.returncode != 0:
                 error = co_stderr.decode("utf-8", errors="replace")
+                import shutil
+                shutil.rmtree(clone_dir, ignore_errors=True)
                 errors.append(f"{parsed_url}: checkout failed for '{commit}': {error}")
                 continue
 
@@ -238,12 +242,14 @@ async def _clone_repo_immutable(repo_url: str, output_dir: str, run_id: str) -> 
     if clone_dir.exists():
         # Run-specific dir already exists (resume case) — verify commit
         existing_commit = await _get_git_commit(str(clone_dir))
-        if existing_commit:
+        if existing_commit and (not commit or existing_commit.startswith(commit)):
             logger.info(f"Repo snapshot exists at {clone_dir} (commit: {existing_commit[:8]})")
             return AcquisitionResult(
                 success=True, local_path=str(clone_dir), repo_url=url,
                 branch=branch, commit=existing_commit,
             )
+        import shutil
+        shutil.rmtree(clone_dir, ignore_errors=True)
 
     cmd = ["git", "clone"]
     if branch:
@@ -272,6 +278,8 @@ async def _clone_repo_immutable(repo_url: str, output_dir: str, run_id: str) -> 
         co_stdout, co_stderr = await checkout_process.communicate()
         if checkout_process.returncode != 0:
             error = co_stderr.decode("utf-8", errors="replace")
+            import shutil
+            shutil.rmtree(clone_dir, ignore_errors=True)
             return AcquisitionResult(
                 success=False,
                 error=f"Git checkout failed for ref '{commit}': {error}",

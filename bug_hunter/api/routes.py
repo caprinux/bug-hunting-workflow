@@ -10,7 +10,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from bug_hunter.core.config import AppConfig, config_to_dict, load_config
+from bug_hunter.core.auth import issue_session_token
+from bug_hunter.core.config import AppConfig, DEFAULT_CONFIG_PATH, config_to_dict, load_config
 from bug_hunter.core.database import (
     create_engagement, get_engagement, list_engagements, update_engagement,
     create_run, get_run, list_runs, list_stage_results,
@@ -25,6 +26,16 @@ from bug_hunter.pipeline.orchestrator import PipelineOrchestrator
 router = APIRouter(prefix="/api")
 
 _orchestrators: dict[str, PipelineOrchestrator] = {}
+
+
+def _engagement_output_dir(engagement: dict) -> str:
+    """Resolve the output directory for an engagement from its stored config."""
+    return (
+        engagement.get("config", {})
+        .get("pipeline", {})
+        .get("output_dir")
+        or load_config().pipeline.output_dir
+    )
 
 
 @router.get("/engagements")
@@ -47,6 +58,12 @@ async def api_list_engagements():
             sev[s] = sev.get(s, 0) + 1
         eng["bug_counts"]["by_severity"] = sev
     return engagements
+
+
+@router.post("/auth/session")
+async def api_create_session():
+    """Mint a signed session token for API and WebSocket auth."""
+    return {"token": issue_session_token()}
 
 
 @router.post("/engagements")
@@ -132,6 +149,48 @@ async def api_cancel_run(engagement_id: str, run_id: str):
     return {"status": "cancelled", "run_id": run_id}
 
 
+@router.post("/engagements/{engagement_id}/runs/{run_id}/pause")
+async def api_pause_run(engagement_id: str, run_id: str):
+    _verify_run_ownership(engagement_id, run_id)
+    orchestrator = _orchestrators.get(engagement_id)
+    if not orchestrator:
+        raise HTTPException(status_code=404, detail="No active orchestrator for this engagement")
+    paused = await orchestrator.pause_run()
+    if not paused:
+        raise HTTPException(status_code=409, detail="No running pipeline to pause")
+    return {"status": "pausing", "run_id": run_id}
+
+
+@router.post("/engagements/{engagement_id}/runs/{run_id}/resume")
+async def api_resume_run(engagement_id: str, run_id: str):
+    run = _verify_run_ownership(engagement_id, run_id)
+
+    active_runs = [r for r in list_runs(engagement_id) if r["status"] == "running" and r["id"] != run_id]
+    if active_runs:
+        raise HTTPException(
+            status_code=409,
+            detail="Another run is already active for this engagement. Wait for it to complete.",
+        )
+
+    if run["status"] not in ("paused", "failed"):
+        raise HTTPException(status_code=409, detail="Only paused or failed runs can be resumed")
+
+    eng = get_engagement(engagement_id)
+    if not eng:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    config = load_config()
+    from bug_hunter.core.config import _merge_dict_into_dataclass
+    _merge_dict_into_dataclass(config, eng["config"])
+
+    orchestrator = PipelineOrchestrator(config, engagement_id)
+    _orchestrators[engagement_id] = orchestrator
+    resumed = await orchestrator.resume_run(run_id)
+    if not resumed:
+        raise HTTPException(status_code=409, detail="Run could not be resumed")
+    return {"status": "running", "run_id": run_id}
+
+
 @router.get("/engagements/{engagement_id}/runs")
 async def api_list_runs(engagement_id: str):
     return list_runs(engagement_id)
@@ -176,8 +235,10 @@ async def api_list_chains(engagement_id: str):
 async def api_get_stage_output(engagement_id: str, run_id: str, stage_name: str,
                                 path: str = Query(default="")):
     """Browse stage output files."""
-    config = load_config()
     _verify_run_ownership(engagement_id, run_id)
+    engagement = get_engagement(engagement_id)
+    if not engagement:
+        raise HTTPException(status_code=404, detail="Engagement not found")
 
     stages = list_stage_results(run_id)
     stage = next((s for s in stages if s["stage_name"] == stage_name), None)
@@ -186,7 +247,7 @@ async def api_get_stage_output(engagement_id: str, run_id: str, stage_name: str,
 
     stage_order = stage["stage_order"]
     stage_dir = os.path.join(
-        config.pipeline.output_dir, "engagements", engagement_id,
+        _engagement_output_dir(engagement), "engagements", engagement_id,
         "runs", run_id, f"{stage_order:02d}_{stage_name}",
     )
 
@@ -219,9 +280,11 @@ async def api_get_stage_output(engagement_id: str, run_id: str, stage_name: str,
 @router.get("/engagements/{engagement_id}/cumulative/{filename}")
 async def api_get_cumulative(engagement_id: str, filename: str):
     """Get cumulative engagement files."""
-    config = load_config()
+    engagement = get_engagement(engagement_id)
+    if not engagement:
+        raise HTTPException(status_code=404, detail="Engagement not found")
     cumulative_dir = os.path.join(
-        config.pipeline.output_dir, "engagements", engagement_id, "cumulative",
+        _engagement_output_dir(engagement), "engagements", engagement_id, "cumulative",
     )
     filepath = os.path.join(cumulative_dir, filename)
 
@@ -235,13 +298,10 @@ async def api_get_cumulative(engagement_id: str, filename: str):
         return {"content": json.loads(f.read())}
 
 
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml")
-
-
 @router.get("/settings")
 async def api_get_settings():
     """Get the current global configuration."""
-    config = load_config(CONFIG_FILE if os.path.exists(CONFIG_FILE) else None)
+    config = load_config()
     full = config_to_dict(config)
     # Don't send auth config to the frontend
     full.pop("auth", None)
@@ -252,13 +312,13 @@ async def api_get_settings():
 @router.put("/settings")
 async def api_update_settings(settings: dict):
     """Update global configuration. Merges with existing config."""
-    config = load_config(CONFIG_FILE if os.path.exists(CONFIG_FILE) else None)
+    config = load_config()
     # Don't allow overriding auth or engagement defaults via settings
     settings.pop("auth", None)
     settings.pop("engagement", None)
     from bug_hunter.core.config import _merge_dict_into_dataclass, save_config
     _merge_dict_into_dataclass(config, settings)
-    save_config(config, CONFIG_FILE)
+    save_config(config, DEFAULT_CONFIG_PATH)
     full = config_to_dict(config)
     full.pop("auth", None)
     full.pop("engagement", None)

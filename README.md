@@ -8,94 +8,66 @@ You point it at a codebase or a set of web domains. The platform deploys a team 
 
 ### The Agents
 
-**Broad Bug Hunter** — Casts the widest possible net. For source code, it maps the entire codebase, splits it into context-sized chunks, and deploys subagents in parallel to audit every file. It then reads the functionality summaries from each chunk to identify cross-component logic bugs that span multiple modules (Phase 2). Multiple models (Claude, Codex) can hunt concurrently for maximum coverage. No filtering — it flags everything suspicious.
+**Scoper** — First agent to run. Quickly reads the codebase structure (or performs recon on black-box targets) and produces a prioritized attack surface map. Understands the architecture, identifies all entry points, maps security-relevant modules, and notes qualifying/non-qualifying vulnerability types from the scope definition. Runs once — the Bug Hunter reuses its output across iterations.
 
-**Scope Enumerator** *(black box only)* — Performs active and passive reconnaissance on target domains. Uses tools like subfinder, amass, httpx, and nmap to enumerate subdomains, scan ports, fingerprint technology stacks, and map endpoints. Produces a structured attack surface map that guides the Bug Hunter.
+**Bug Hunter** — The core agent. Given the Scoper's attack surface map, it hunts for vulnerabilities freely — reading code, tracing data flows, following interesting leads across files. It updates two structured files as it works: `attack_surfaces.json` (marks surfaces as scanned, adds new ones discovered) and `BUGS.json` (documents each bug with root cause, security impact, PoC, and validation status). Can run for multiple iterations — each iteration reads previous progress and continues into unexplored areas. Multiple models (Claude, Codex) can hunt concurrently.
 
-**Workload Divider** *(optional, for massive codebases)* — Splits codebases like the Linux kernel into independent subsystems so multiple Bug Hunter orchestrators can work in parallel. Identifies cross-subsystem interfaces and includes them as shared context.
+**De-duplicator** *(optional)* — When multiple agents (Claude + Codex) hunt concurrently, they may flag the same bugs independently. The De-duplicator merges duplicate findings while preserving distinct bugs at different locations. Multi-agent agreement is a confidence signal.
 
-**De-duplicator** *(optional)* — When multiple agents audit the same code, they flag the same bugs independently. The De-duplicator merges duplicate findings while preserving distinct bugs at different locations. Merges reasoning from all agents — multi-agent agreement is a confidence signal.
+**Validator** — Quick verification pass. The Bug Hunter already attempts to validate its own findings with PoCs. The Validator confirms that each PoC actually works. For bugs without PoCs or with failed validation, it writes and executes its own. Destructive PoCs are never executed — flagged as "likely exploitable, PoC destructive."
 
-**Scope Validator** — Filters findings against the engagement's scope definition. Interprets whatever scope description is provided (bug bounty page, pentest SOW, free-form text) and makes a binary in-scope/out-of-scope decision with reasoning.
+**Perfectionist** — Given a validated bug, pushes the exploitation primitive to its absolute maximum. SQLi read becomes SQLi write becomes RCE. SSRF becomes cloud credential theft becomes account takeover. Each escalation step is demonstrated via live PoC execution. Single-bug expansion only.
 
-**Strict Validator** — The proving ground. Takes each suspected bug, traces the code path (source code) or analyzes the HTTP evidence (black box), writes a proof-of-concept exploit, and executes it against live infrastructure. Bugs that can't be proven go to the cannot-validate bin with a reason. Destructive PoCs (DoS, data deletion) are never executed — they're flagged as "likely exploitable, PoC destructive."
+**Triager** — Acts as a bug bounty triager. Strictly judges each bug against the scope definition and categorizes it: valid (real security impact, in scope), informational (useful intelligence but not a bug), out of scope (real bug, wrong target), or discarded (false positive, contrived). Fails closed — if the triager fails, bugs go to a review queue, never silently promoted.
 
-**Perfectionist** — Given a validated bug with a working PoC, pushes the exploitation primitive to its absolute maximum. SQLi read becomes SQLi write becomes RCE. SSRF becomes cloud credential theft becomes account takeover. Each escalation step is demonstrated via live PoC execution. Single-bug expansion only — no cross-bug chaining.
-
-**Strict Triager** — The final quality gate. Aggressively questions each bug and categorizes it into three buckets: confirmed bugs (real security impact), informational findings (internal IPs, version strings — useful intelligence but not bugs), or discarded (contrived, false positive, no real impact). Fails closed — if the triager itself fails, bugs go to a review queue, never silently promoted.
-
-**Bug Chainer** — The capstone. Takes all confirmed bugs across all runs, reads the intelligence file for context (leaked internal IPs, version strings), and constructs exploit chains that combine multiple bugs for maximum combined impact. Suggests specific re-hunt targets ("find a stored XSS to chain with this CSRF") that require human approval before executing.
+**Bug Chainer** — Takes all confirmed bugs across all runs, reads the intelligence file for context, and constructs exploit chains that combine multiple bugs for maximum combined impact. Suggests specific re-hunt targets that require human approval before executing.
 
 ### Two Modes
 
-**Source Code Audit** — Feed it a local codebase or a GitHub repo. Multiple AI models can audit concurrently. The system splits the code into manageable chunks, scans each in parallel, then looks for cross-component logic bugs that span multiple modules.
+**Source Code Audit** — Feed it a local codebase or a GitHub repo. The Scoper maps the architecture, then the Bug Hunter audits it with full freedom to follow leads. Multiple models can hunt concurrently.
 
-**Black Box Pentest** — Give it target domains (including wildcards). It enumerates subdomains, maps the attack surface, then deploys agents to test each target — deciding on its own when to use tools like curl, sqlmap, ffuf, or a headless browser.
+**Black Box Pentest** — Give it target domains (including wildcards). The Scoper performs recon, then the Bug Hunter tests each attack surface using tools like curl, sqlmap, ffuf, or a headless browser.
 
 ### The Pipeline
 
 ```
-Source Code Audit:
-
-  [Source Code]
+  [Source Code or Target Domains]
        │
        ▼
   ┌──────────────────┐
-  │ WORKLOAD DIVIDER │ [optional, for massive codebases]
+  │     SCOPER       │  map architecture + attack surfaces
   └────────┬─────────┘
            ▼
   ┌──────────────────┐
-  │  BROAD BUG HUNTER│ Phase 1: parallel subagents on code chunks
-  │  (orchestrator)  │ Phase 2: cross-component logic bugs
+  │   BUG HUNTER     │  free-form hunting, updates BUGS.json
+  │                  │  iterative — re-hunt to continue
   └────────┬─────────┘
            ▼
   ┌──────────────────┐
-  │  DE-DUPLICATOR   │ [optional, auto-enabled if multiple agents]
+  │  DE-DUPLICATOR   │  [optional, if multiple agents]
   └────────┬─────────┘
            ▼
   ┌──────────────────┐
-  │ SCOPE VALIDATOR  │ in-scope ──→ continue
-  └────────┬─────────┘ out-of-scope ──→ logged
+  │    VALIDATOR     │  quick pass — verify PoCs work
+  └────────┬─────────┘  cannot validate ──→ OUTPUT #1
            ▼
   ┌──────────────────┐
-  │ STRICT VALIDATOR │ validated + PoC ──→ continue
-  └────────┬─────────┘ cannot validate ──→ OUTPUT #1
-           ▼
-  ┌──────────────────┐
-  │  PERFECTIONIST   │ expand single-bug primitives (per-bug)
+  │  PERFECTIONIST   │  expand single-bug primitives
   └────────┬─────────┘
            ▼
   ┌──────────────────┐
-  │  STRICT TRIAGER  │ confirmed ──→ continue
-  └────────┬─────────┘ informational ──→ OUTPUT #3
-           │            discarded ──→ gone
+  │    TRIAGER       │  valid ──→ continue
+  └────────┬─────────┘  informational ──→ OUTPUT #3
+           │            out of scope / discarded ──→ logged
            ▼
   ┌──────────────────┐
-  │   BUG CHAINER    │ chains + re-hunt suggestions
+  │   BUG CHAINER    │  chains + re-hunt suggestions
   └────────┬─────────┘
            ▼
       [FINAL REPORT] ──→ OUTPUT #2
            │
      (human decision)
-     re-hunt? ──→ back to Bug Hunter
-
-
-Black Box Pentest:
-
-  [Target Domains]
-       │
-       ▼
-  ┌──────────────────┐
-  │ SCOPE ENUMERATOR │ active + passive recon
-  └────────┬─────────┘
-           ▼
-  ┌──────────────────┐
-  │ BUG HUNTER       │ one agent per target, LLM-driven tool selection
-  │ (black box)      │ checkpoint-resume for large targets
-  └────────┬─────────┘
-           ▼
-       [shared pipeline: De-duplicator → Scope Validator → Strict Validator
-        → Perfectionist → Strict Triager → Bug Chainer → Report]
+     re-hunt? ──→ Bug Hunter reads BUGS.json, continues
 ```
 
 ### Outputs

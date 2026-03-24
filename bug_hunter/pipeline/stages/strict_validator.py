@@ -1,8 +1,14 @@
-"""Strict Validator stage — prove exploitability via PoC execution against live infra."""
+"""Validator stage — quick pass to ensure all bugs have been validated with working PoCs.
+
+Assumes the Bug Hunter already attempted validation. For bugs marked as validated
+with a working PoC, this is a pass-through. For bugs without PoCs or with failed
+validation, the Validator attempts to write and execute a PoC itself.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -25,7 +31,7 @@ class StrictValidatorStage(PipelineStage):
         return "strict_validator"
 
     async def execute(self, context: StageContext) -> StageResult:
-        bugs = list_bugs(context.engagement_id, status="in_scope", run_id=context.run_id)
+        bugs = list_bugs(context.engagement_id, status="found", run_id=context.run_id)
         if not bugs:
             self.write_output(context, "validated_bugs.json", [])
             self.write_output(context, "cannot_validate.json", [])
@@ -35,40 +41,59 @@ class StrictValidatorStage(PipelineStage):
         eng_type = context.engagement["type"]
         infra_config = eng_config.get("engagement", {}).get("infra_config", "")
 
-        summaries = self.read_previous_output(context, "bug_hunter", "all_summaries.json")
-        summaries_text = json.dumps(summaries, indent=2)[:30000] if summaries else "Not available"
+        # Load scope/architecture context
+        scope_data = self.read_previous_output(context, "scoper", "scope.json")
+        scope_text = json.dumps(scope_data, indent=2)[:20000] if scope_data else "Not available"
 
         stage_dir = self.get_stage_dir(context)
         pocs_dir = os.path.join(stage_dir, "pocs")
         os.makedirs(pocs_dir, exist_ok=True)
 
-        validated = []
-        cannot_validate = []
         total_cost = 0.0
-
         semaphore = asyncio.Semaphore(context.config.strict_validator.max_concurrent)
 
         async def validate_bug(bug: dict):
             nonlocal total_cost
             async with semaphore:
                 bug_data = bug["bug_data"]
+                bug_id = bug_data.get("id", "unknown")
+
+                # Check if bug hunter already validated this bug
+                already_validated = (
+                    bug_data.get("validated") is True
+                    and bug_data.get("poc", {}).get("execution_result") == "success"
+                )
+
+                if already_validated:
+                    await event_manager.emit_log(
+                        context.engagement_id, context.run_id, self.name,
+                        f"Already validated: {bug_id} — passing through",
+                    )
+                    update_bug(bug["id"], status="validated", bug_data=bug_data)
+                    return
+
                 await event_manager.emit_log(
                     context.engagement_id, context.run_id, self.name,
-                    f"Validating: {bug_data.get('id', 'unknown')} - {bug_data.get('vuln_type', '')}",
+                    f"Validating: {bug_id} — {bug_data.get('vuln_type', '')}",
+                )
+
+                record_dir, record_meta = self.prepare_agent_run(
+                    context, "claude", f"validate_{bug_id}",
+                    {"model": context.config.models.strict_validator, "bug_id": bug_id},
                 )
 
                 result = await self._validate_single_bug(
-                    context, bug_data, infra_config, summaries_text, eng_type, pocs_dir,
+                    context, bug_data, infra_config, scope_text, eng_type,
+                    pocs_dir, record_dir, record_meta,
                 )
                 total_cost += result.get("cost_usd", 0)
 
                 if result.get("validated"):
                     bug_data.update(result.get("updates", {}))
-                    validated.append(bug_data)
+                    bug_data["validated"] = True
                     update_bug(bug["id"], status="validated", bug_data=bug_data)
                 else:
                     bug_data["cannot_validate_reason"] = result.get("reason", "Unknown")
-                    cannot_validate.append(bug_data)
                     update_bug(bug["id"], status="cannot_validate", bug_data=bug_data)
 
         await event_manager.emit_progress(
@@ -76,16 +101,28 @@ class StrictValidatorStage(PipelineStage):
             0, len(bugs), f"Validating {len(bugs)} bugs",
         )
 
-        tasks = [validate_bug(bug) for bug in bugs]
+        tasks = [asyncio.create_task(validate_bug(bug)) for bug in bugs]
         completed = 0
-        for coro in asyncio.as_completed(tasks):
-            await coro
-            completed += 1
-            await event_manager.emit_progress(
-                context.engagement_id, context.run_id, self.name,
-                completed, len(bugs), f"Validated {completed}/{len(bugs)}",
-            )
+        try:
+            for coro in asyncio.as_completed(tasks):
+                await coro
+                completed += 1
+                await event_manager.emit_progress(
+                    context.engagement_id, context.run_id, self.name,
+                    completed, len(bugs), f"Validated {completed}/{len(bugs)}",
+                )
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            for task in tasks:
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
+        validated = [b["bug_data"] for b in list_bugs(
+            context.engagement_id, status="validated", run_id=context.run_id)]
+        cannot_validate = [b["bug_data"] for b in list_bugs(
+            context.engagement_id, status="cannot_validate", run_id=context.run_id)]
         self.write_output(context, "validated_bugs.json", validated)
         self.write_output(context, "cannot_validate.json", cannot_validate)
 
@@ -97,87 +134,57 @@ class StrictValidatorStage(PipelineStage):
             metadata={"validated": len(validated), "cannot_validate": len(cannot_validate)},
         )
 
-    async def _validate_single_bug(self, context: StageContext, bug_data: dict,
-                                    infra_config: str, summaries_text: str,
-                                    eng_type: str, pocs_dir: str) -> dict:
-        """Validate a single bug with PoC execution."""
+    async def _validate_single_bug(self, context, bug_data, infra_config, scope_text,
+                                    eng_type, pocs_dir, record_dir, record_meta):
         bug_json = json.dumps(bug_data, indent=2)
         bug_id = bug_data.get("id", "unknown")
         destructive_policy = context.config.strict_validator.destructive_poc_policy
-        poc_language = context.config.strict_validator.poc_language
 
         if eng_type == "source_code":
-            agent_file = os.path.join(AGENTS_DIR, "source_code", "strict_validator.md")
-            method_instructions = """METHOD:
-1. Trace the data flow statically through the source code
-2. Understand how user input reaches the vulnerable sink
-3. Identify sanitization/validation in the path
-4. Write a PoC that demonstrates exploitability
-5. Execute the PoC against the live infrastructure
-6. Report the result"""
+            agent_file = os.path.join(AGENTS_DIR, "source_code", "validator.md")
         else:
-            agent_file = os.path.join(AGENTS_DIR, "black_box", "strict_validator.md")
-            method_instructions = """METHOD:
-1. Analyze the Bug Hunter's HTTP evidence (request/response)
-2. Reproduce the triggering request
-3. Verify the response confirms exploitation
-4. Write a clean, standalone PoC
-5. Execute the PoC
-6. Report the result"""
+            agent_file = os.path.join(AGENTS_DIR, "black_box", "validator.md")
 
-        prompt = f"""Validate the following security vulnerability by writing and executing a proof-of-concept.
+        # Fallback to old agent files if new ones don't exist yet
+        if not os.path.exists(agent_file):
+            if eng_type == "source_code":
+                agent_file = os.path.join(AGENTS_DIR, "source_code", "strict_validator.md")
+            else:
+                agent_file = os.path.join(AGENTS_DIR, "black_box", "strict_validator.md")
 
-BUG FINDING:
+        prompt = f"""Validate this security vulnerability by confirming the PoC works or writing a new one.
+
+BUG:
 {bug_json}
 
 INFRASTRUCTURE ACCESS:
 {infra_config}
 
 APPLICATION CONTEXT:
-{summaries_text[:15000]}
-
-{method_instructions}
+{scope_text[:10000]}
 
 DESTRUCTIVE POC POLICY: {destructive_policy}
-- If the PoC would be destructive (DoS, data deletion, resource exhaustion):
-  {"Route to cannot-validate with note: 'likely exploitable, PoC destructive'" if destructive_policy == "cannot_validate" else "Proceed with execution"}
+- If destructive: route to cannot-validate with note "likely exploitable, PoC destructive"
 
-DEFAULT POC LANGUAGE: {poc_language} (you may use another language if more appropriate)
+If the bug already has a PoC, verify it works. If not, write and execute one.
 
-Write the PoC to: {pocs_dir}/bug_{bug_id}_poc.py (or appropriate extension)
-
-Output a JSON object:
-{{
-  "validated": true/false,
-  "poc": {{
-    "language": "{poc_language}",
-    "code": "the PoC source code",
-    "file": "path to saved PoC file",
-    "execution_result": "success|failure|error|destructive_skipped",
-    "output": "execution output"
-  }},
-  "reason": "if not validated, explain why",
-  "is_destructive": true/false
-}}"""
+Output JSON: {{"validated": true/false, "poc": {{...}}, "reason": "if not validated"}}"""
 
         result = await run_claude(
-            prompt=prompt,
-            agent_file=agent_file,
+            prompt=prompt, agent_file=agent_file,
             model=context.config.models.strict_validator,
             timeout=context.config.pipeline.subagent_timeout,
+            record_dir=record_dir, record_metadata=record_meta,
         )
 
         if not result.success:
             return {"validated": False, "reason": f"Validator failed: {result.error}",
                     "cost_usd": result.cost_usd}
 
-        validation = result.result or {}
-        is_validated = validation.get("validated", False)
-        poc_data = validation.get("poc", {})
-
+        validation = result.result if isinstance(result.result, dict) else {}
         return {
-            "validated": is_validated,
+            "validated": validation.get("validated", False),
             "reason": validation.get("reason", ""),
-            "updates": {"poc": poc_data} if is_validated else {},
+            "updates": {"poc": validation.get("poc", {})} if validation.get("validated") else {},
             "cost_usd": result.cost_usd,
         }

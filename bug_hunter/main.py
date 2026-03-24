@@ -6,6 +6,7 @@ import logging
 import os
 import secrets
 import sys
+from base64 import b64decode
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, status
@@ -16,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from bug_hunter.api.routes import router
 from bug_hunter.api.websocket import ws_router
+from bug_hunter.core.auth import get_auth_password, set_auth_password, verify_password, verify_session_token
 from bug_hunter.core.config import load_config
 from bug_hunter.core.database import init_db
 
@@ -41,19 +43,50 @@ app.add_middleware(
 
 security = HTTPBasic()
 
-AUTH_PASSWORD = os.environ.get("BHW_PASSWORD", "")
+AUTH_PASSWORD = ""
 
 
-def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
-    if not AUTH_PASSWORD:
-        return credentials
-    if not secrets.compare_digest(credentials.password.encode(), AUTH_PASSWORD.encode()):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credentials
+def _resolve_auth_password() -> str:
+    env_password = os.environ.get("BHW_PASSWORD", "").strip()
+    if env_password:
+        return env_password
+
+    config_password = load_config().auth.password.strip()
+    if config_password:
+        return config_password
+
+    return ""
+
+
+AUTH_PASSWORD = _resolve_auth_password()
+set_auth_password(AUTH_PASSWORD)
+
+def verify_credentials(request: Request):
+    auth_header = request.headers.get("authorization", "")
+    active_password = get_auth_password()
+
+    if not active_password:
+        return True
+
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+        if verify_session_token(token):
+            return True
+    elif auth_header.startswith("Basic "):
+        encoded = auth_header[6:].strip()
+        try:
+            decoded = b64decode(encoded).decode("utf-8")
+            _, password = decoded.split(":", 1)
+        except Exception:
+            password = ""
+        if verify_password(password):
+            return True
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid credentials",
+        headers={"WWW-Authenticate": "Basic"},
+    )
 
 
 app.include_router(router, dependencies=[Depends(verify_credentials)])
@@ -72,12 +105,14 @@ async def startup():
     logger.info(f"Database initialized at {db_path}")
 
     global AUTH_PASSWORD
+    AUTH_PASSWORD = _resolve_auth_password()
     if not AUTH_PASSWORD:
         AUTH_PASSWORD = secrets.token_urlsafe(24)
         logger.info("Generated new authentication password (see console output)")
         print(f"\n{'='*60}", flush=True)
         print(f"  Authentication Password: {AUTH_PASSWORD}", flush=True)
         print(f"{'='*60}\n", flush=True)
+    set_auth_password(AUTH_PASSWORD)
 
 
 @app.get("/health")

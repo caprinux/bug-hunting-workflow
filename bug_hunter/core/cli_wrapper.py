@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import json
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,10 +16,71 @@ from typing import Any, AsyncIterator, Callable, Optional
 logger = logging.getLogger(__name__)
 
 
+def _parse_result_payload(payload: Any) -> Any:
+    """Best-effort normalization for CLI payloads that should contain JSON."""
+    if not isinstance(payload, str):
+        return payload
+
+    text = payload.strip()
+    if not text:
+        return text
+
+    candidates = [text]
+    candidates.extend(
+        match.group(1).strip()
+        for match in re.finditer(
+            r"```(?:json)?\s*(.*?)```",
+            text,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        if match.group(1).strip()
+    )
+
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    decoder = json.JSONDecoder()
+    for idx, char in enumerate(text):
+        if char not in "[{":
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(text[idx:])
+            return parsed
+        except json.JSONDecodeError:
+            continue
+
+    return payload
+
+
+def _json_default(value: Any) -> str:
+    if isinstance(value, Path):
+        return str(value)
+    return repr(value)
+
+
+def _write_json(path: str, payload: dict) -> None:
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2, default=_json_default)
+
+
+def _write_text(path: str, content: str) -> None:
+    with open(path, "w") as f:
+        f.write(content)
+
+
+def _append_jsonl(path: str, payload: dict) -> None:
+    with open(path, "a") as f:
+        json.dump(payload, f, default=_json_default)
+        f.write("\n")
+
+
 @dataclass
 class CLIResult:
     success: bool
-    result: Optional[dict | list] = None
+    result: Optional[Any] = None
     raw_output: str = ""
     error: str = ""
     duration_ms: int = 0
@@ -43,6 +106,8 @@ async def run_claude(
     on_event: Optional[Callable[[StreamEvent], None]] = None,
     max_budget_usd: Optional[float] = None,
     additional_dirs: Optional[list[str]] = None,
+    record_dir: Optional[str] = None,
+    record_metadata: Optional[dict] = None,
 ) -> CLIResult:
     """Run Claude Code CLI as a subprocess and capture output.
 
@@ -79,7 +144,29 @@ async def run_claude(
     env = os.environ.copy()
     env["IS_SANDBOX"] = "1"
 
-    return await _run_cli_process(cmd, env, cwd, timeout, on_event)
+    command_preview = list(cmd)
+    if "--json-schema" in command_preview:
+        schema_idx = command_preview.index("--json-schema") + 1
+        if schema_idx < len(command_preview):
+            command_preview[schema_idx] = "<json_schema>"
+    if command_preview:
+        command_preview[-1] = "<prompt>"
+
+    return await _run_cli_process(
+        cmd, env, cwd, timeout, on_event,
+        prompt=prompt,
+        record_dir=record_dir,
+        record_request={
+            "cli": "claude",
+            "model": model,
+            "agent_file": str(Path(agent_file).resolve()) if agent_file else "",
+            "json_schema_file": str(Path(json_schema_file).resolve()) if json_schema_file else "",
+            "max_budget_usd": max_budget_usd,
+            "additional_dirs": additional_dirs or [],
+            "command_preview": command_preview,
+            "metadata": record_metadata or {},
+        },
+    )
 
 
 async def run_codex(
@@ -89,6 +176,8 @@ async def run_codex(
     timeout: int = 300,
     on_event: Optional[Callable[[StreamEvent], None]] = None,
     additional_dirs: Optional[list[str]] = None,
+    record_dir: Optional[str] = None,
+    record_metadata: Optional[dict] = None,
 ) -> CLIResult:
     """Run Codex CLI as a subprocess and capture output."""
     cmd = ["codex", "exec",
@@ -105,7 +194,22 @@ async def run_codex(
 
     cmd.append(prompt)
 
-    return await _run_cli_process(cmd, None, cwd if not cwd else None, timeout, on_event)
+    command_preview = list(cmd)
+    if command_preview:
+        command_preview[-1] = "<prompt>"
+
+    return await _run_cli_process(
+        cmd, None, cwd if not cwd else None, timeout, on_event,
+        prompt=prompt,
+        record_dir=record_dir,
+        record_request={
+            "cli": "codex",
+            "model": model,
+            "additional_dirs": additional_dirs or [],
+            "command_preview": command_preview,
+            "metadata": record_metadata or {},
+        },
+    )
 
 
 async def _run_cli_process(
@@ -114,14 +218,53 @@ async def _run_cli_process(
     cwd: Optional[str],
     timeout: int,
     on_event: Optional[Callable[[StreamEvent], None]],
+    prompt: str,
+    record_dir: Optional[str] = None,
+    record_request: Optional[dict] = None,
 ) -> CLIResult:
     """Run a CLI process, stream events, and return the result."""
     start_time = time.monotonic()
+    started_at = datetime.now(timezone.utc).isoformat()
     raw_lines: list[str] = []
     result_data = None
     cost_usd = 0.0
     session_id = ""
     error_msg = ""
+
+    if record_dir:
+        os.makedirs(record_dir, exist_ok=True)
+        _write_text(os.path.join(record_dir, "prompt.txt"), prompt)
+        _write_json(
+            os.path.join(record_dir, "request.json"),
+            {
+                **(record_request or {}),
+                "cwd": cwd or "",
+                "timeout_seconds": timeout,
+                "started_at": started_at,
+            },
+        )
+
+    def finalize_record(result: CLIResult) -> CLIResult:
+        if not record_dir:
+            return result
+
+        stderr_path = os.path.join(record_dir, "stderr.txt")
+        result_path = os.path.join(record_dir, "result.json")
+        _write_text(stderr_path, result.error if result.error and not os.path.exists(stderr_path) else "")
+        _write_json(
+            result_path,
+            {
+                "success": result.success,
+                "result": result.result,
+                "error": result.error,
+                "duration_ms": result.duration_ms,
+                "cost_usd": result.cost_usd,
+                "session_id": result.session_id,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "raw_output_line_count": len(raw_lines),
+            },
+        )
+        return result
 
     try:
         process = await asyncio.create_subprocess_exec(
@@ -146,6 +289,15 @@ async def _run_cli_process(
                 if not line_str:
                     continue
                 raw_lines.append(line_str)
+                if record_dir:
+                    _append_jsonl(
+                        os.path.join(record_dir, "stream.jsonl"),
+                        {
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "stream": "stdout",
+                            "raw": line_str,
+                        },
+                    )
 
                 try:
                     event_data = json.loads(line_str)
@@ -193,19 +345,25 @@ async def _run_cli_process(
 
         stderr_data = await process.stderr.read()
         stderr_str = stderr_data.decode("utf-8", errors="replace").strip()
+        if record_dir:
+            _write_text(os.path.join(record_dir, "stderr.txt"), stderr_str)
+            for line in stderr_str.splitlines():
+                _append_jsonl(
+                    os.path.join(record_dir, "stream.jsonl"),
+                    {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "stream": "stderr",
+                        "raw": line,
+                    },
+                )
         if stderr_str and not error_msg:
             error_msg = stderr_str
 
         duration_ms = int((time.monotonic() - start_time) * 1000)
 
         if result_data:
-            parsed_result = result_data.get("result")
-            if isinstance(parsed_result, str):
-                try:
-                    parsed_result = json.loads(parsed_result)
-                except (json.JSONDecodeError, TypeError):
-                    pass
-            return CLIResult(
+            parsed_result = _parse_result_payload(result_data.get("result"))
+            return finalize_record(CLIResult(
                 success=not result_data.get("is_error", False),
                 result=parsed_result,
                 raw_output="\n".join(raw_lines),
@@ -213,30 +371,51 @@ async def _run_cli_process(
                 duration_ms=duration_ms,
                 cost_usd=cost_usd,
                 session_id=session_id,
-            )
+            ))
 
-        return CLIResult(
+        return finalize_record(CLIResult(
             success=False,
             raw_output="\n".join(raw_lines),
             error=error_msg or "No result received from CLI",
             duration_ms=duration_ms,
             cost_usd=cost_usd,
-        )
+        ))
 
+    except asyncio.CancelledError:
+        try:
+            if "process" in locals() and process.returncode is None:
+                process.kill()
+                await process.wait()
+        except Exception:
+            pass
+        if record_dir:
+            _write_json(
+                os.path.join(record_dir, "result.json"),
+                {
+                    "success": False,
+                    "error": "Cancelled",
+                    "duration_ms": int((time.monotonic() - start_time) * 1000),
+                    "cost_usd": cost_usd,
+                    "session_id": session_id,
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "raw_output_line_count": len(raw_lines),
+                },
+            )
+        raise
     except FileNotFoundError as e:
         duration_ms = int((time.monotonic() - start_time) * 1000)
-        return CLIResult(
+        return finalize_record(CLIResult(
             success=False,
             error=f"CLI not found: {e}",
             duration_ms=duration_ms,
-        )
+        ))
     except Exception as e:
         duration_ms = int((time.monotonic() - start_time) * 1000)
-        return CLIResult(
+        return finalize_record(CLIResult(
             success=False,
             error=str(e),
             duration_ms=duration_ms,
-        )
+        ))
 
 
 def _parse_stream_event(data: dict) -> StreamEvent:
@@ -245,7 +424,14 @@ def _parse_stream_event(data: dict) -> StreamEvent:
 
     if event_type == "result":
         return StreamEvent(type="result", data=data)
-    elif event_type in ("assistant", "message"):
+    elif event_type in (
+        "assistant",
+        "message",
+        "message_delta",
+        "content_block_start",
+        "content_block_delta",
+        "content_block_stop",
+    ):
         return StreamEvent(type="assistant", data=data)
     elif event_type == "init":
         return StreamEvent(type="init", data=data)

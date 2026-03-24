@@ -118,12 +118,24 @@ Output a JSON object:
 }}"""
 
         agent_file = os.path.join(AGENTS_DIR, "shared", "bug_chainer.md")
+        record_dir, record_metadata = self.prepare_agent_run(
+            context,
+            "claude",
+            "bug_chainer",
+            {
+                "model": context.config.models.bug_chainer,
+                "confirmed_count": len(confirmed_data),
+                "informational_count": len(intel_data),
+            },
+        )
 
         result = await run_claude(
             prompt=prompt,
             agent_file=agent_file,
             model=context.config.models.bug_chainer,
             timeout=context.config.pipeline.subagent_timeout * 2,
+            record_dir=record_dir,
+            record_metadata=record_metadata,
         )
 
         if not result.success:
@@ -136,7 +148,7 @@ Output a JSON object:
                 cost_usd=result.cost_usd, metadata={"chaining_failed": True},
             )
 
-        chainer_result = result.result or {}
+        chainer_result = result.result if isinstance(result.result, dict) else {}
         individual = chainer_result.get("individual_bugs", confirmed_data)
         demonstrated = chainer_result.get("demonstrated_chains", [])
         proposed = chainer_result.get("proposed_chains", [])

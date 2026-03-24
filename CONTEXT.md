@@ -61,39 +61,17 @@ Sequential runs within an engagement share cumulative context. The Bug Chainer s
 6. **Configurable parameters**: Nearly every aspect of the pipeline is configurable via YAML — concurrency limits, timeouts, model selection per stage, tool toggles, thresholds, etc.
 7. **No static analysis tools**: The pipeline is fully agentic. It does not use Semgrep, CodeQL, or other static analysis tools. All bug finding is done by LLM agents reasoning about code or interacting with targets.
 
-### Shared Pipeline (both engagement types)
+### Unified Pipeline (both engagement types)
 
-Both engagement types produce bug findings in a standardized schema. After the type-specific Bug Hunter stage, findings converge into this shared pipeline:
-
-```
-Bug Findings → De-duplicator [optional] → Scope Validator → Strict Validator → Perfectionist → Strict Triager → Bug Chainer → Outputs
-```
-
-### Source Code Audit Pipeline
+Both source code and black box engagements use the same pipeline. The Scoper adapts its behavior based on engagement type (codebase mapping vs recon).
 
 ```
-Source Code
-  → Workload Divider [optional, for massive codebases]
-  → Broad Bug Hunter Orchestrator
-    → Phase 1: Parallel broad sweep (N subagents on code chunks)
-    → Phase 2: Cross-component logic bug hunting (targeted subagents)
-  → [shared pipeline]
-```
-
-### Black Box Pentest Pipeline
-
-```
-Target Domains
-  → Scope Enumeration Agent (active + passive recon)
-  → Bug Hunter (one per target, with checkpoint-resume)
-  → [shared pipeline]
+Setup → Scoper → Bug Hunter (N iterations) → [De-duplicator] → Validator → Perfectionist → Triager → Bug Chainer → Outputs
 ```
 
 ---
 
 ## Agent Descriptions
-
-### Source Code Agents
 
 #### Workload Divider (`agents/source_code/workload_divider.md`)
 - **Purpose**: Splits massive codebases (e.g., Linux kernel) into independent subsystems so each can be assigned its own Bug Hunter Orchestrator.
@@ -597,26 +575,23 @@ The pipeline auto-installs missing tools at startup based on engagement type. Re
 agents/
 ├── shared/
 │   ├── deduplicator.md
-│   ├── scope_validator.md
-│   ├── strict_triager.md
+│   ├── triager.md
 │   └── bug_chainer.md
 │
 ├── source_code/
-│   ├── workload_divider.md
-│   ├── bug_hunter_orchestrator.md
-│   ├── bug_hunter_subagent.md
-│   ├── bug_hunter_logic_subagent.md
+│   ├── scoper.md
+│   ├── bug_hunter.md
 │   ├── strict_validator.md
 │   └── perfectionist.md
 │
 └── black_box/
-    ├── scope_enumerator.md
+    ├── scoper.md
     ├── bug_hunter.md
     ├── strict_validator.md
     └── perfectionist.md
 ```
 
-13 agent files total. Each is a markdown file containing the agent's role, methodology, behavioral constraints, and output format requirements. The agent file defines the role; the subprocess call provides the specific work item as the task prompt.
+11 agent files total. Each is a markdown file containing the agent's role, methodology, behavioral constraints, and output format requirements. The agent file defines the role; the subprocess call provides the specific work item as the task prompt.
 
 Agent files are loaded via `--append-system-prompt-file` (Claude Code) or included in the prompt (Codex CLI). Dynamic context (the specific bug to analyze, infra config, functionality summaries) is passed as the task prompt argument.
 

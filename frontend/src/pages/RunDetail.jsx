@@ -13,6 +13,8 @@ export default function RunDetail() {
   const [loading, setLoading] = useState(true)
   const [selectedStage, setSelectedStage] = useState(null)
   const [cancelling, setCancelling] = useState(false)
+  const [pausing, setPausing] = useState(false)
+  const [resuming, setResuming] = useState(false)
   const [historicalEvents, setHistoricalEvents] = useState([])
   const [showAgentStream, setShowAgentStream] = useState(false)
   const streamRef = useRef(null)
@@ -49,7 +51,7 @@ export default function RunDetail() {
   }, [events, showAgentStream])
 
   async function handleCancel() {
-    if (!confirm('Cancel this run? The pipeline will stop after the current subagent finishes.')) return
+    if (!confirm('Cancel this run? In-flight subagents will be stopped and the run cannot be resumed.')) return
     setCancelling(true)
     try {
       await api.cancelRun(engagementId, runId)
@@ -58,6 +60,29 @@ export default function RunDetail() {
       console.error(e)
     }
     setCancelling(false)
+  }
+
+  async function handlePause() {
+    if (!confirm('Pause this run? The current stage will be replayed from the start when you resume.')) return
+    setPausing(true)
+    try {
+      await api.pauseRun(engagementId, runId)
+      await loadRun()
+    } catch (e) {
+      console.error(e)
+    }
+    setPausing(false)
+  }
+
+  async function handleResume() {
+    setResuming(true)
+    try {
+      await api.resumeRun(engagementId, runId)
+      await loadRun()
+    } catch (e) {
+      console.error(e)
+    }
+    setResuming(false)
   }
 
   if (loading) return <div className="loading">Loading...</div>
@@ -102,7 +127,7 @@ export default function RunDetail() {
             {run.status === 'running' && (
               <ElapsedTimer startTime={run.created_at} active={true} />
             )}
-            {run.current_stage && run.status === 'running' && (
+            {run.current_stage && (run.status === 'running' || run.status === 'paused') && (
               <span className="current-stage">Current: {run.current_stage}</span>
             )}
             {totalCost > 0 && (
@@ -122,10 +147,18 @@ export default function RunDetail() {
               >
                 {showAgentStream ? 'Hide' : 'Show'} Agent Stream
               </button>
+              <button className="btn btn-secondary" onClick={handlePause} disabled={pausing || cancelling}>
+                {pausing ? 'Pausing...' : 'Pause Run'}
+              </button>
               <button className="btn btn-danger" onClick={handleCancel} disabled={cancelling}>
                 {cancelling ? 'Cancelling...' : 'Stop Run'}
               </button>
             </>
+          )}
+          {run.status === 'paused' && (
+            <button className="btn btn-primary" onClick={handleResume} disabled={resuming}>
+              {resuming ? 'Resuming...' : 'Resume Run'}
+            </button>
           )}
         </div>
       </div>

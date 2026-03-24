@@ -12,9 +12,9 @@ export default function Login({ onLogin, theme, toggleTheme }) {
     setLoading(true)
     setError(null)
     try {
-      await api.login(password)
-      sessionStorage.setItem('bhw_token', password)
-      setAuthToken(password)
+      const token = await api.login(password)
+      sessionStorage.setItem('bhw_token', token)
+      setAuthToken(token)
       onLogin()
     } catch (e) {
       setError(e.message)

@@ -32,39 +32,11 @@ const SECTIONS = [
   {
     key: 'broad_bug_hunter',
     label: 'Bug Hunter',
-    description: 'Controls for the Broad Bug Hunter stage.',
+    description: 'Free-form bug hunting with iterative progress tracking.',
     fields: [
       { key: 'agents', label: 'Agents', type: 'agent_checkboxes', help: 'Which AI agents to run concurrently during bug hunting' },
       { key: 'codex_model', label: 'Codex Model', type: 'select', options: CODEX_MODEL_OPTIONS, help: 'Model used by Codex CLI (only applies when Codex is enabled)' },
-      { key: 'context_budget', label: 'Context Budget (tokens)', type: 'number', help: 'Max tokens per subagent code chunk' },
-      { key: 'phase2_enabled', label: 'Phase 2 (Logic Bugs)', type: 'bool', help: 'Enable cross-component logic bug hunting' },
       { key: 'exclude_paths', label: 'Exclude Paths', type: 'tags', help: 'Directories to skip (e.g. node_modules, vendor)' },
-      { key: 'file_extensions', label: 'File Extensions', type: 'tags', help: 'Limit to specific extensions (empty = all)' },
-    ],
-  },
-  {
-    key: 'workload_divider',
-    label: 'Workload Divider',
-    description: 'For massive codebases — splits into independent subsystems.',
-    fields: [
-      { key: 'enabled', label: 'Enabled', type: 'bool', help: 'Enable workload splitting for large codebases' },
-      { key: 'subsystem_strategy', label: 'Strategy', type: 'select', options: ['auto', 'manual'], help: 'Auto-detect subsystems or use manual list' },
-    ],
-  },
-  {
-    key: 'scope_enumerator',
-    label: 'Scope Enumerator',
-    description: 'Reconnaissance settings for black box pentesting.',
-    fields: [
-      { key: 'recon_mode', label: 'Recon Mode', type: 'select', options: ['both', 'active', 'passive'], help: 'Active, passive, or both' },
-    ],
-  },
-  {
-    key: 'black_box_bug_hunter',
-    label: 'Black Box Bug Hunter',
-    description: 'Settings for black box per-target bug hunting.',
-    fields: [
-      { key: 'checkpoint_context_threshold', label: 'Checkpoint Threshold', type: 'float', help: 'Checkpoint at this context usage ratio (0.0-1.0)' },
     ],
   },
   {
@@ -78,8 +50,8 @@ const SECTIONS = [
   },
   {
     key: 'strict_validator',
-    label: 'Strict Validator',
-    description: 'PoC execution and exploitability validation.',
+    label: 'Validator',
+    description: 'Quick verification that all bugs have working PoCs.',
     fields: [
       { key: 'destructive_poc_policy', label: 'Destructive PoC Policy', type: 'select', options: ['cannot_validate', 'allow'], help: 'How to handle PoCs that would damage the target' },
       { key: 'max_concurrent', label: 'Max Concurrent', type: 'number', help: 'Parallel PoC executions against infra' },
@@ -96,8 +68,8 @@ const SECTIONS = [
   },
   {
     key: 'strict_triager',
-    label: 'Strict Triager',
-    description: 'Final quality gate — filters noise.',
+    label: 'Triager',
+    description: 'Bug bounty triager — judges scope, impact, and validity.',
     fields: [
       { key: 'contrived_threshold', label: 'Contrived Threshold', type: 'number', help: 'Max improbable preconditions before a bug is considered contrived' },
       { key: 'severity_floor', label: 'Severity Floor', type: 'select', options: ['low', 'medium', 'high', 'critical'], help: 'Minimum severity to survive triage' },
@@ -116,16 +88,12 @@ const SECTIONS = [
     label: 'Models',
     description: 'LLM model selection per pipeline stage.',
     fields: [
-      { key: 'workload_divider', label: 'Workload Divider', type: 'select', options: CLAUDE_MODEL_OPTIONS },
-      { key: 'bug_hunter_orchestrator', label: 'Bug Hunter Orchestrator', type: 'select', options: CLAUDE_MODEL_OPTIONS },
-      { key: 'bug_hunter_subagent', label: 'Bug Hunter Subagent', type: 'select', options: CLAUDE_MODEL_OPTIONS },
-      { key: 'scope_enumerator', label: 'Scope Enumerator', type: 'select', options: CLAUDE_MODEL_OPTIONS },
-      { key: 'black_box_bug_hunter', label: 'Black Box Bug Hunter', type: 'select', options: CLAUDE_MODEL_OPTIONS },
+      { key: 'scoper', label: 'Scoper', type: 'select', options: CLAUDE_MODEL_OPTIONS },
+      { key: 'bug_hunter_subagent', label: 'Bug Hunter', type: 'select', options: CLAUDE_MODEL_OPTIONS },
       { key: 'deduplicator', label: 'De-duplicator', type: 'select', options: CLAUDE_MODEL_OPTIONS },
-      { key: 'scope_validator', label: 'Scope Validator', type: 'select', options: CLAUDE_MODEL_OPTIONS },
-      { key: 'strict_validator', label: 'Strict Validator', type: 'select', options: CLAUDE_MODEL_OPTIONS },
+      { key: 'strict_validator', label: 'Validator', type: 'select', options: CLAUDE_MODEL_OPTIONS },
       { key: 'perfectionist', label: 'Perfectionist', type: 'select', options: CLAUDE_MODEL_OPTIONS },
-      { key: 'strict_triager', label: 'Strict Triager', type: 'select', options: CLAUDE_MODEL_OPTIONS },
+      { key: 'strict_triager', label: 'Triager', type: 'select', options: CLAUDE_MODEL_OPTIONS },
       { key: 'bug_chainer', label: 'Bug Chainer', type: 'select', options: CLAUDE_MODEL_OPTIONS },
     ],
   },
@@ -199,23 +167,29 @@ export default function Settings() {
           </select>
         )
       case 'agent_checkboxes':
+        const selectedAgents = Array.isArray(value) && value.length > 0 ? value : ['claude']
+        const toggleAgent = (agent, checked) => {
+          const next = checked
+            ? [...new Set([...selectedAgents, agent])]
+            : selectedAgents.filter(a => a !== agent)
+          if (next.length === 0) return
+          onChange(next)
+        }
         return (
           <div className="agent-checkboxes">
             <label className="toggle-label">
-              <input type="checkbox" checked={true} disabled />
+              <input
+                type="checkbox"
+                checked={selectedAgents.includes('claude')}
+                onChange={e => toggleAgent('claude', e.target.checked)}
+              />
               <span>Claude (Claude Opus 4.6)</span>
             </label>
             <label className="toggle-label">
               <input
                 type="checkbox"
-                checked={(value || []).includes('codex')}
-                onChange={e => {
-                  if (e.target.checked) {
-                    onChange([...new Set([...(value || ['claude']), 'codex'])])
-                  } else {
-                    onChange((value || []).filter(a => a !== 'codex'))
-                  }
-                }}
+                checked={selectedAgents.includes('codex')}
+                onChange={e => toggleAgent('codex', e.target.checked)}
               />
               <span>Codex (OpenAI)</span>
             </label>

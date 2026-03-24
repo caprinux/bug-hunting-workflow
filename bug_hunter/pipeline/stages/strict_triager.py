@@ -1,4 +1,11 @@
-"""Strict Triager stage — evaluate impact, filter noise, produce three output categories."""
+"""Triager stage — bug bounty triager that judges scope, impact, and validity.
+
+Acts as a strict bug bounty triager:
+- Valid: real security impact, in scope, properly validated
+- Informational: true findings with no direct security impact (useful intelligence)
+- Out of Scope: real bugs but outside the engagement's scope definition
+- Discarded: false positives, contrived scenarios, no real impact
+"""
 
 from __future__ import annotations
 
@@ -31,72 +38,88 @@ class StrictTriagerStage(PipelineStage):
         if not bugs:
             self.write_output(context, "confirmed_bugs.json", [])
             self.write_output(context, "informational.json", [])
+            self.write_output(context, "out_of_scope.json", [])
             self.write_output(context, "discarded.json", [])
             return StageResult(success=True, input_count=0, output_count=0)
 
+        eng_config = context.engagement["config"]
+        scope_def = eng_config.get("engagement", {}).get("scope_definition", "")
+
+        # Load scope data for qualifying/non-qualifying vuln types
+        scope_data = self.read_previous_output(context, "scoper", "scope.json")
+        scope_notes = {}
+        if scope_data:
+            scope_notes = scope_data.get("scope_notes", {})
+
         bug_data_list = [b["bug_data"] for b in bugs]
         contrived_threshold = context.config.strict_triager.contrived_threshold
-        severity_floor = context.config.strict_triager.severity_floor
 
         await event_manager.emit_log(
             context.engagement_id, context.run_id, self.name,
-            f"Triaging {len(bug_data_list)} findings",
+            f"Triaging {len(bug_data_list)} findings as bug bounty triager",
         )
 
-        prompt = f"""You are the final quality gate for security vulnerability findings. Your job is to
-aggressively question each bug and categorize it into one of three buckets.
+        prompt = f"""You are a bug bounty triager evaluating security vulnerability submissions.
+Your job is to strictly judge each bug and categorize it.
+
+SCOPE DEFINITION:
+{scope_def}
+
+QUALIFYING VULNERABILITIES: {json.dumps(scope_notes.get("qualifying", []))}
+NON-QUALIFYING VULNERABILITIES: {json.dumps(scope_notes.get("non_qualifying", []))}
+EXCLUDED PATHS: {json.dumps(scope_notes.get("excluded_paths", []))}
 
 FINDINGS ({len(bug_data_list)} total):
 {json.dumps(bug_data_list, indent=2)[:80000]}
 
-CONFIGURATION:
-- Contrived threshold: {contrived_threshold} (if exploitation requires {contrived_threshold}+
-  improbable preconditions that an attacker cannot control, it's contrived)
-- Severity floor: {severity_floor} (minimum severity to survive as a confirmed bug)
+CONTRIVED THRESHOLD: {contrived_threshold}
+(If exploitation requires {contrived_threshold}+ improbable preconditions an attacker cannot control, it's contrived)
 
-THREE OUTPUT CATEGORIES:
+CATEGORIZE each finding into one of four buckets:
 
-1. CONFIRMED BUGS — Real vulnerabilities with demonstrated security impact.
-   - IDOR exposing sensitive data (PII, private messages, credentials) = confirmed bug
-   - Any bug with a working PoC demonstrating real security impact = confirmed
-   - Evaluate both the base bug AND the Perfectionist's demonstrated expansions
+1. **VALID** — Real security impact, in scope, properly validated
+   - Assign severity: critical / high / medium / low
+   - IDOR exposing sensitive data = valid (not informational)
+   - Any bug with working PoC demonstrating real impact = valid
 
-2. INFORMATIONAL — True and factual findings with no direct security impact, but valuable as intelligence.
-   - Internal IP addresses leaked via error messages or headers
-   - Software version strings exposed
-   - Stack traces in error responses
-   - Architecture details, debug information
-   - These are NOT bugs but are useful for infrastructure mapping
+2. **INFORMATIONAL** — True findings, no direct exploitable security impact
+   - Internal IPs, version strings, stack traces, architecture details
+   - Useful as intelligence but not a security vulnerability
 
-3. DISCARDED — Kill these:
-   - Findings requiring {contrived_threshold}+ improbable preconditions an attacker cannot control
-   - Findings that are not real vulnerabilities
-   - Findings below the severity floor of "{severity_floor}"
-   - Findings that are purely theoretical with no demonstrated impact
+3. **OUT OF SCOPE** — Real bugs but outside the scope definition
+   - Vulnerability in excluded component
+   - Non-qualifying vulnerability type
+   - Explain what scope rule excludes it
 
-For each finding, assign a severity (critical/high/medium/low/informational) and write
-detailed triager notes explaining your reasoning.
+4. **DISCARDED** — Not real or not useful
+   - False positives
+   - Contrived exploitation scenarios ({contrived_threshold}+ improbable preconditions)
+   - Self-XSS, clickjacking on non-sensitive pages, missing headers with no impact
 
-Output a JSON object:
+For each finding, provide triager_notes explaining your judgment.
+
+Output JSON:
 {{
-  "confirmed": [
-    // bugs with added "severity" and "triager_notes" fields
-  ],
-  "informational": [
-    // informational findings with "severity": "informational" and "triager_notes"
-  ],
-  "discarded": [
-    // discarded findings with "triager_notes" explaining why
-  ]
+  "valid": [{{...bugs with "severity" and "triager_notes" added...}}],
+  "informational": [{{...}}],
+  "out_of_scope": [{{...with "scope_reasoning"...}}],
+  "discarded": [{{...with "triager_notes"...}}]
 }}"""
 
-        agent_file = os.path.join(AGENTS_DIR, "shared", "strict_triager.md")
+        agent_file = os.path.join(AGENTS_DIR, "shared", "triager.md")
+        if not os.path.exists(agent_file):
+            agent_file = os.path.join(AGENTS_DIR, "shared", "strict_triager.md")
+
+        record_dir, record_meta = self.prepare_agent_run(
+            context, "claude", "triage",
+            {"model": context.config.models.strict_triager, "finding_count": len(bug_data_list)},
+        )
 
         result = await run_claude(
-            prompt=prompt,
-            agent_file=agent_file,
+            prompt=prompt, agent_file=agent_file,
             model=context.config.models.strict_triager,
             timeout=context.config.pipeline.subagent_timeout,
+            record_dir=record_dir, record_metadata=record_meta,
         )
 
         if not result.success:
@@ -104,6 +127,7 @@ Output a JSON object:
                 update_bug(bug["id"], status="triage_failed")
             self.write_output(context, "confirmed_bugs.json", [])
             self.write_output(context, "informational.json", [])
+            self.write_output(context, "out_of_scope.json", [])
             self.write_output(context, "discarded.json", [])
             self.write_output(context, "triage_failed.json", bug_data_list)
 
@@ -111,47 +135,52 @@ Output a JSON object:
                 context.engagement_id, context.run_id, self.name,
                 f"Triager failed — {len(bugs)} bugs moved to triage_failed for human review",
             )
-
             return StageResult(
                 success=True, input_count=len(bugs), output_count=0,
                 cost_usd=result.cost_usd,
                 metadata={"triage_failed": True, "triage_failed_count": len(bugs)},
             )
 
-        triage_result = result.result or {}
-        confirmed = triage_result.get("confirmed", [])
+        triage_result = result.result if isinstance(result.result, dict) else {}
+        valid = triage_result.get("valid", triage_result.get("confirmed", []))
         informational = triage_result.get("informational", [])
+        out_of_scope = triage_result.get("out_of_scope", [])
         discarded = triage_result.get("discarded", [])
 
-        self.write_output(context, "confirmed_bugs.json", confirmed)
+        self.write_output(context, "confirmed_bugs.json", valid)
         self.write_output(context, "informational.json", informational)
+        self.write_output(context, "out_of_scope.json", out_of_scope)
         self.write_output(context, "discarded.json", discarded)
 
-        confirmed_ids = {f.get("id") for f in confirmed}
-        informational_ids = {f.get("id") for f in informational}
+        valid_ids = {f.get("id") for f in valid}
+        info_ids = {f.get("id") for f in informational}
+        oos_ids = {f.get("id") for f in out_of_scope}
         discarded_ids = {f.get("id") for f in discarded}
 
         for bug in bugs:
             bid = bug["bug_data"].get("id")
-            if bid in confirmed_ids:
-                matched = next((c for c in confirmed if c.get("id") == bid), None)
+            if bid in valid_ids:
+                matched = next((c for c in valid if c.get("id") == bid), None)
                 if matched:
                     update_bug(bug["id"], status="confirmed", bug_data=matched)
-            elif bid in informational_ids:
+            elif bid in info_ids:
                 matched = next((i for i in informational if i.get("id") == bid), None)
                 if matched:
                     update_bug(bug["id"], status="informational", bug_data=matched)
+            elif bid in oos_ids:
+                update_bug(bug["id"], status="out_of_scope")
             elif bid in discarded_ids:
                 update_bug(bug["id"], status="discarded")
 
         return StageResult(
             success=True,
             input_count=len(bugs),
-            output_count=len(confirmed),
+            output_count=len(valid),
             cost_usd=result.cost_usd,
             metadata={
-                "confirmed": len(confirmed),
+                "valid": len(valid),
                 "informational": len(informational),
+                "out_of_scope": len(out_of_scope),
                 "discarded": len(discarded),
             },
         )

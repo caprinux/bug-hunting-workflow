@@ -54,9 +54,19 @@ class PerfectionistStage(PipelineStage):
                     f"Expanding: {bug_id} - {bug_data.get('vuln_type', '')}",
                 )
 
+                record_dir, record_metadata = self.prepare_agent_run(
+                    context,
+                    "claude",
+                    f"expand_{bug_id}",
+                    {
+                        "model": context.config.models.perfectionist,
+                        "bug_id": bug_id,
+                        "engagement_type": eng_type,
+                    },
+                )
                 result = await self._expand_single_bug(
                     context, bug_data, infra_config, summaries_text,
-                    eng_type, expanded_pocs_dir,
+                    eng_type, expanded_pocs_dir, record_dir, record_metadata,
                 )
                 total_cost += result.get("cost_usd", 0)
 
@@ -92,7 +102,8 @@ class PerfectionistStage(PipelineStage):
 
     async def _expand_single_bug(self, context: StageContext, bug_data: dict,
                                   infra_config: str, summaries_text: str,
-                                  eng_type: str, expanded_pocs_dir: str) -> dict:
+                                  eng_type: str, expanded_pocs_dir: str,
+                                  record_dir: str, record_metadata: dict) -> dict:
         """Expand a single bug's primitives."""
         bug_json = json.dumps(bug_data, indent=2)
         bug_id = bug_data.get("id", "unknown")
@@ -153,12 +164,14 @@ Output a JSON object:
             agent_file=agent_file,
             model=context.config.models.perfectionist,
             timeout=context.config.pipeline.subagent_timeout,
+            record_dir=record_dir,
+            record_metadata=record_metadata,
         )
 
         if not result.success:
             return {"expanded": False, "cost_usd": result.cost_usd}
 
-        expansion = result.result or {}
+        expansion = result.result if isinstance(result.result, dict) else {}
         return {
             "expanded": expansion.get("expanded", False),
             "expanded_primitives": expansion.get("expanded_primitives", {"demonstrated": [], "theoretical": []}),

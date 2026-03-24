@@ -3,14 +3,12 @@ import ElapsedTimer from './ElapsedTimer'
 
 const STAGE_LABELS = {
   setup: 'Setup',
-  workload_divider: 'Workload Divider',
-  scope_enumerator: 'Scope Enumerator',
+  scoper: 'Scoper',
   bug_hunter: 'Bug Hunter',
   deduplicator: 'De-duplicator',
-  scope_validator: 'Scope Validator',
-  strict_validator: 'Strict Validator',
+  strict_validator: 'Validator',
   perfectionist: 'Perfectionist',
-  strict_triager: 'Strict Triager',
+  strict_triager: 'Triager',
   bug_chainer: 'Bug Chainer',
 }
 

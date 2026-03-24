@@ -95,3 +95,46 @@ class PipelineStage(ABC):
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "w") as f:
             json.dump(data, f, indent=2)
+
+    def prepare_agent_run(self, context: StageContext, agent_name: str, label: str,
+                          metadata: Optional[dict] = None) -> tuple[str, dict]:
+        """Create a per-invocation log directory and append a stage index entry."""
+        import json
+        import os
+        import re
+        from datetime import datetime, timezone
+        from uuid import uuid4
+
+        def _slug(value: str) -> str:
+            slug = re.sub(r"[^A-Za-z0-9._-]+", "_", value or "").strip("._-")
+            return slug or "run"
+
+        created_at = datetime.now(timezone.utc).isoformat()
+        invocation_id = (
+            f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}"
+            f"_{_slug(agent_name)}_{_slug(label)}_{uuid4().hex[:8]}"
+        )
+
+        runs_dir = os.path.join(self.get_stage_dir(context), "agent_runs")
+        os.makedirs(runs_dir, exist_ok=True)
+
+        record_dir = os.path.join(runs_dir, invocation_id)
+        os.makedirs(record_dir, exist_ok=True)
+
+        index_entry = {
+            "invocation_id": invocation_id,
+            "created_at": created_at,
+            "stage": self.name,
+            "engagement_id": context.engagement_id,
+            "run_id": context.run_id,
+            "agent": agent_name,
+            "label": label,
+        }
+        if metadata:
+            index_entry["metadata"] = metadata
+
+        with open(os.path.join(runs_dir, "index.jsonl"), "a") as f:
+            json.dump(index_entry, f)
+            f.write("\n")
+
+        return record_dir, index_entry

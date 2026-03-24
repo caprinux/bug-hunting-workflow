@@ -10,6 +10,9 @@ from typing import Optional
 import yaml
 
 
+DEFAULT_CONFIG_PATH = str(Path(__file__).resolve().parents[2] / "config.yaml")
+
+
 @dataclass
 class PipelineConfig:
     output_dir: str = "./audit_output"
@@ -45,6 +48,7 @@ class BroadBugHunterConfig:
     agents: list[str] = field(default_factory=lambda: ["claude", "codex"])
     context_budget: int = 150000
     phase2_enabled: bool = True
+    max_concurrent_subagents: Optional[int] = None
     shared_code_paths: list[str] = field(default_factory=list)
     file_extensions: list[str] = field(default_factory=list)
     exclude_paths: list[str] = field(default_factory=list)
@@ -93,13 +97,9 @@ class BugChainerConfig:
 
 @dataclass
 class ModelsConfig:
-    workload_divider: str = "opus"
-    bug_hunter_orchestrator: str = "opus"
+    scoper: str = "opus"
     bug_hunter_subagent: str = "opus"
-    scope_enumerator: str = "opus"
-    black_box_bug_hunter: str = "opus"
     deduplicator: str = "opus"
-    scope_validator: str = "opus"
     strict_validator: str = "opus"
     perfectionist: str = "opus"
     strict_triager: str = "opus"
@@ -149,6 +149,9 @@ def _merge_dict_into_dataclass(dc: object, data: dict) -> None:
 def load_config(config_path: Optional[str] = None) -> AppConfig:
     """Load configuration from YAML file, falling back to defaults."""
     config = AppConfig()
+
+    if config_path is None and Path(DEFAULT_CONFIG_PATH).exists():
+        config_path = DEFAULT_CONFIG_PATH
 
     if config_path and Path(config_path).exists():
         with open(config_path) as f:

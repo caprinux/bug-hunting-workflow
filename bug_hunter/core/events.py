@@ -21,8 +21,9 @@ class EventManager:
         self._global_connections: set[WebSocket] = set()
         self._lock = asyncio.Lock()
 
-    async def connect(self, websocket: WebSocket, engagement_id: str = None):
-        await websocket.accept()
+    async def connect(self, websocket: WebSocket, engagement_id: str = None,
+                      subprotocol: str | None = None):
+        await websocket.accept(subprotocol=subprotocol)
         async with self._lock:
             if engagement_id:
                 if engagement_id not in self._connections:

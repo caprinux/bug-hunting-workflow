@@ -1,5 +1,13 @@
-"""Bug Hunter stage — source code audit (Phase 1 broad sweep + Phase 2 logic bugs)
-and black box pentesting."""
+"""Bug Hunter stage — free-form vulnerability hunting with progress tracking.
+
+The Bug Hunter is a single agent that:
+1. Reads the Scoper's attack surface map
+2. Hunts for bugs freely, following interesting leads
+3. Updates structured files to track progress:
+   - attack_surfaces.json — marks surfaces as scanned, adds new ones found
+   - BUGS.json — documents all bugs found with root cause, impact, PoC, validation status
+4. Can run for N iterations — each iteration reads previous progress and continues
+"""
 
 from __future__ import annotations
 
@@ -13,12 +21,11 @@ from typing import Any
 from bug_hunter.core.cli_wrapper import CLIResult, StreamEvent, run_claude, run_codex
 from bug_hunter.core.database import create_bug
 from bug_hunter.core.events import event_manager
-from bug_hunter.utils.schema_validator import validate_findings_list
 from bug_hunter.pipeline.stages.base import PipelineStage, StageContext, StageResult
 from bug_hunter.pipeline.stages.registry import register
+from bug_hunter.utils.schema_validator import validate_findings_list
 
 logger = logging.getLogger(__name__)
-
 AGENTS_DIR = Path(__file__).parent.parent.parent.parent / "agents"
 
 
@@ -30,18 +37,18 @@ class BugHunterStage(PipelineStage):
         return "bug_hunter"
 
     async def execute(self, context: StageContext) -> StageResult:
-        eng_type = context.engagement["type"]
-        if eng_type == "source_code":
-            return await self._execute_source_code(context)
-        else:
-            return await self._execute_black_box(context)
-
-    async def _execute_source_code(self, context: StageContext) -> StageResult:
-        """Source code audit: map codebase, deploy subagents, run Phase 1 + Phase 2."""
         stage_dir = self.get_stage_dir(context)
         eng_config = context.engagement["config"]
+        eng_type = context.engagement["type"]
         hunter_config = context.config.broad_bug_hunter
+        infra_config = eng_config.get("engagement", {}).get("infra_config", "")
 
+        # Load scope from Scoper stage
+        scope_data = self.read_previous_output(context, "scoper", "scope.json")
+        if not scope_data:
+            return StageResult(success=False, error="No scope data from Scoper stage")
+
+        # Get source path
         setup_data = self.read_previous_output(context, "setup", "setup.json")
         source_path = ""
         if setup_data and "source" in setup_data:
@@ -49,376 +56,158 @@ class BugHunterStage(PipelineStage):
         if not source_path:
             source_path = eng_config.get("engagement", {}).get("source_path", "")
 
-        if not source_path or not os.path.isdir(source_path):
-            return StageResult(success=False, error=f"Source path not found: {source_path}")
+        # Initialize progress files if first iteration
+        attack_surfaces_file = os.path.join(stage_dir, "attack_surfaces.json")
+        bugs_file = os.path.join(stage_dir, "BUGS.json")
+
+        if not os.path.exists(attack_surfaces_file):
+            with open(attack_surfaces_file, "w") as f:
+                json.dump(scope_data.get("attack_surfaces", []), f, indent=2)
+
+        if not os.path.exists(bugs_file):
+            with open(bugs_file, "w") as f:
+                json.dump([], f, indent=2)
+
+        with open(attack_surfaces_file) as f:
+            attack_surfaces = json.load(f)
+        with open(bugs_file) as f:
+            existing_bugs = json.load(f)
 
         await event_manager.emit_log(
             context.engagement_id, context.run_id, self.name,
-            f"Mapping codebase at: {source_path}",
+            f"Bug hunting iteration — {len(attack_surfaces)} surfaces, {len(existing_bugs)} bugs found so far",
         )
 
-        codebase_map = await self._map_codebase(source_path, hunter_config)
-        self.write_output(context, "codebase_map.json", codebase_map)
-
-        chunks = self._split_into_chunks(codebase_map, hunter_config.context_budget)
-        total_chunks = len(chunks)
-
-        await event_manager.emit_progress(
-            context.engagement_id, context.run_id, self.name,
-            0, total_chunks, f"Phase 1: Deploying {total_chunks} subagents",
-        )
-
-        all_findings = []
-        all_summaries = []
+        agents = hunter_config.agents
         total_cost = 0.0
+        all_new_bugs = []
 
-        phase1_dir = os.path.join(stage_dir, "phase1")
-        os.makedirs(phase1_dir, exist_ok=True)
+        agent_stats = {agent: {"succeeded": 0, "failed": 0, "running": 0, "total": 1} for agent in agents}
 
-        semaphore = asyncio.Semaphore(len(hunter_config.agents) * 3)
-
-        # Per-agent tracking
-        agent_stats: dict[str, dict] = {
-            agent: {"succeeded": 0, "failed": 0, "running": 0, "total": 0}
-            for agent in hunter_config.agents
-        }
-        # Count total per agent
-        for chunk in chunks:
-            for agent in hunter_config.agents:
-                agent_stats[agent]["total"] += 1
-
-        async def emit_agent_progress(agent_name: str, status: str, chunk_idx: int = -1):
-            stats = agent_stats[agent_name]
-            await event_manager.emit(
-                "agent_progress", context.engagement_id, context.run_id, self.name,
-                {
-                    "agent": agent_name,
-                    "status": status,
-                    "current_chunk": chunk_idx if status == "running" else None,
-                    "total_chunks": stats["total"],
-                    "succeeded": stats["succeeded"],
-                    "failed": stats["failed"],
-                    "running": stats["running"],
-                },
-            )
-
-        async def run_chunk(chunk_idx: int, chunk: dict, agent_name: str):
+        async def run_agent(agent_name: str):
             nonlocal total_cost
-            async with semaphore:
-                agent_stats[agent_name]["running"] += 1
-                await emit_agent_progress(agent_name, "running", chunk_idx)
+            agent_stats[agent_name]["running"] = 1
+            await event_manager.emit("agent_progress", context.engagement_id, context.run_id, self.name, {
+                "agent": agent_name, "status": "running", "total_chunks": 1,
+                "succeeded": 0, "failed": 0, "running": 1,
+            })
 
-                result = await self._run_subagent(
-                    context, chunk, agent_name, source_path,
-                )
-                total_cost += result.cost_usd
-                agent_stats[agent_name]["running"] -= 1
-
-                chunk_file = f"chunk_{chunk_idx:03d}_{agent_name}"
-                if result.success and result.result:
-                    findings = result.result.get("findings", [])
-                    summary = result.result.get("functionality_summary", {})
-
-                    run_prefix = context.run_id[:8]
-                    for i, finding in enumerate(findings):
-                        if "id" not in finding:
-                            finding["id"] = f"{run_prefix}/bug-{chunk_idx:03d}-{i:03d}"
-                        finding["found_by"] = [agent_name]
-
-                    with open(os.path.join(phase1_dir, f"{chunk_file}_findings.json"), "w") as f:
-                        json.dump(findings, f, indent=2)
-                    with open(os.path.join(phase1_dir, f"{chunk_file}_summary.json"), "w") as f:
-                        json.dump(summary, f, indent=2)
-
-                    agent_stats[agent_name]["succeeded"] += 1
-                    await emit_agent_progress(agent_name, "chunk_done", chunk_idx)
-                    return findings, summary
-                else:
-                    logger.warning(f"Chunk {chunk_idx} ({agent_name}) failed: {result.error}")
-                    with open(os.path.join(phase1_dir, f"{chunk_file}_error.json"), "w") as f:
-                        json.dump({"error": result.error, "raw": result.raw_output[:2000]}, f, indent=2)
-
-                    agent_stats[agent_name]["failed"] += 1
-                    await event_manager.emit_log(
-                        context.engagement_id, context.run_id, self.name,
-                        f"[{agent_name}] Chunk {chunk_idx} failed: {result.error[:200]}",
-                    )
-                    await emit_agent_progress(agent_name, "chunk_failed", chunk_idx)
-                    return [], {}
-
-        tasks = []
-        for chunk_idx, chunk in enumerate(chunks):
-            for agent_name in hunter_config.agents:
-                tasks.append(run_chunk(chunk_idx, chunk, agent_name))
-
-        completed = 0
-        succeeded = 0
-        failed = 0
-        for coro in asyncio.as_completed(tasks):
-            findings, summary = await coro
-            all_findings.extend(findings)
-            if summary:
-                all_summaries.append(summary)
-                succeeded += 1
-            else:
-                failed += 1
-            completed += 1
-            await event_manager.emit_progress(
-                context.engagement_id, context.run_id, self.name,
-                completed, len(tasks), f"Phase 1: {completed}/{len(tasks)} subagents complete",
+            result = await self._run_hunter(
+                context, agent_name, scope_data, attack_surfaces,
+                existing_bugs, source_path, infra_config, eng_type, stage_dir,
             )
+            total_cost += result.cost_usd
+            agent_stats[agent_name]["running"] = 0
 
-        coverage_ratio = succeeded / len(tasks) if tasks else 0
-        is_degraded = coverage_ratio < 0.5
+            if result.success and result.result:
+                data = result.result if isinstance(result.result, dict) else {}
+                new_bugs = data.get("bugs", [])
+                updated_surfaces = data.get("attack_surfaces", [])
 
-        if is_degraded:
-            await event_manager.emit_error(
-                context.engagement_id, context.run_id, self.name,
-                f"Degraded coverage: only {succeeded}/{len(tasks)} subagents succeeded ({coverage_ratio:.0%})",
-            )
+                run_prefix = context.run_id[:8]
+                for i, bug in enumerate(new_bugs):
+                    if "id" not in bug:
+                        bug["id"] = f"{run_prefix}/{agent_name}-{len(existing_bugs) + i:03d}"
+                    bug["found_by"] = [agent_name]
 
-        if hunter_config.phase2_enabled and all_summaries:
-            await event_manager.emit_log(
-                context.engagement_id, context.run_id, self.name,
-                "Phase 2: Analyzing cross-component interactions",
-            )
-            phase2_findings = await self._run_phase2(
-                context, all_summaries, source_path, stage_dir,
-            )
-            all_findings.extend(phase2_findings)
+                if updated_surfaces:
+                    self._merge_attack_surfaces(attack_surfaces_file, updated_surfaces)
 
-        quarantine_dir = os.path.join(stage_dir, "quarantined")
-        valid_findings, quarantined = validate_findings_list(all_findings, quarantine_dir)
-        if quarantined:
-            await event_manager.emit_log(
-                context.engagement_id, context.run_id, self.name,
-                f"Quarantined {len(quarantined)} malformed findings (see quarantined/)",
-            )
-
-        self.write_output(context, "all_findings.json", valid_findings)
-        self.write_output(context, "all_summaries.json", all_summaries)
-
-        for finding in valid_findings:
-            create_bug(context.engagement_id, context.run_id, finding)
-
-        return StageResult(
-            success=True,
-            input_count=len(chunks),
-            output_count=len(valid_findings),
-            cost_usd=total_cost,
-            metadata={
-                "phase1_chunks": len(chunks),
-                "quarantined": len(quarantined),
-                "phase2_enabled": hunter_config.phase2_enabled,
-                "subagents_succeeded": succeeded,
-                "subagents_failed": failed,
-                "coverage_ratio": round(coverage_ratio, 2),
-                "degraded": is_degraded,
-            },
-        )
-
-    async def _execute_black_box(self, context: StageContext) -> StageResult:
-        """Black box pentest: deploy per-target bug hunters."""
-        stage_dir = self.get_stage_dir(context)
-        eng_config = context.engagement["config"]
-
-        enum_data = self.read_previous_output(context, "scope_enumerator", "attack_surface_map.json")
-        if not enum_data:
-            return StageResult(success=False, error="No attack surface map from scope enumerator")
-
-        targets = enum_data.get("targets", [])
-        if not targets:
-            return StageResult(success=False, error="No targets found by scope enumerator")
-
-        infra_config = eng_config.get("engagement", {}).get("infra_config", "")
-        all_findings = []
-        total_cost = 0.0
-
-        semaphore = asyncio.Semaphore(context.config.pipeline.max_concurrent_infra_agents)
-
-        async def hunt_target(target_idx: int, target: dict):
-            """Returns (findings_list, agent_succeeded)."""
-            nonlocal total_cost
-            async with semaphore:
-                target_dir = os.path.join(stage_dir, f"target_{target_idx:03d}")
-                os.makedirs(target_dir, exist_ok=True)
-
-                result = await self._run_black_box_hunter(
-                    context, target, infra_config, target_dir,
-                )
-                total_cost += result.cost_usd
-
-                if result.success:
-                    findings = []
-                    if result.result:
-                        findings = result.result if isinstance(result.result, list) else result.result.get("findings", [])
-                    run_prefix = context.run_id[:8]
-                    for i, finding in enumerate(findings):
-                        if "id" not in finding:
-                            finding["id"] = f"{run_prefix}/bb-{target_idx:03d}-{i:03d}"
-                        finding["found_by"] = ["claude"]
-
-                    with open(os.path.join(target_dir, "findings.json"), "w") as f:
-                        json.dump(findings, f, indent=2)
-                    return findings, True
-                else:
-                    with open(os.path.join(target_dir, "error.json"), "w") as f:
-                        json.dump({"error": result.error}, f, indent=2)
-                    return [], False
-
-        tasks = [hunt_target(i, t) for i, t in enumerate(targets)]
-
-        completed = 0
-        succeeded = 0
-        failed = 0
-        for coro in asyncio.as_completed(tasks):
-            findings, agent_ok = await coro
-            all_findings.extend(findings)
-            if agent_ok:
-                succeeded += 1
-            else:
-                failed += 1
-            completed += 1
-            await event_manager.emit_progress(
-                context.engagement_id, context.run_id, self.name,
-                completed, len(targets), f"Hunting: {completed}/{len(targets)} targets complete",
-            )
-
-        coverage_ratio = succeeded / len(targets) if targets else 0
-        is_degraded = coverage_ratio < 0.5
-
-        if is_degraded:
-            await event_manager.emit_error(
-                context.engagement_id, context.run_id, self.name,
-                f"Degraded coverage: only {succeeded}/{len(targets)} target agents completed successfully ({coverage_ratio:.0%})",
-            )
-
-        self.write_output(context, "all_findings.json", all_findings)
-
-        for finding in all_findings:
-            create_bug(context.engagement_id, context.run_id, finding)
-
-        return StageResult(
-            success=True,
-            input_count=len(targets),
-            output_count=len(all_findings),
-            cost_usd=total_cost,
-            metadata={
-                "targets_succeeded": succeeded,
-                "targets_failed": failed,
-                "coverage_ratio": round(coverage_ratio, 2),
-                "degraded": is_degraded,
-            },
-        )
-
-    async def _map_codebase(self, source_path: str, config) -> dict:
-        """Map the codebase directory structure."""
-        codebase_map = {"root": source_path, "modules": [], "total_files": 0, "total_lines": 0}
-        exclude = set(config.exclude_paths or [
-            "node_modules", ".git", "__pycache__", "vendor", ".venv", "venv",
-            "dist", "build", ".next", ".nuxt", "target",
-        ])
-        extensions = set(config.file_extensions) if config.file_extensions else None
-
-        for root, dirs, files in os.walk(source_path):
-            dirs[:] = [d for d in dirs if d not in exclude]
-
-            rel_root = os.path.relpath(root, source_path)
-            module_files = []
-
-            for f in files:
-                if extensions and not any(f.endswith(ext) for ext in extensions):
-                    continue
-                filepath = os.path.join(root, f)
-                try:
-                    line_count = sum(1 for _ in open(filepath, "r", errors="ignore"))
-                    size = os.path.getsize(filepath)
-                    module_files.append({
-                        "path": os.path.relpath(filepath, source_path),
-                        "lines": line_count,
-                        "size": size,
-                    })
-                    codebase_map["total_files"] += 1
-                    codebase_map["total_lines"] += line_count
-                except (OSError, UnicodeDecodeError):
-                    continue
-
-            if module_files:
-                total_lines = sum(f["lines"] for f in module_files)
-                codebase_map["modules"].append({
-                    "path": rel_root,
-                    "files": module_files,
-                    "total_lines": total_lines,
-                    "file_count": len(module_files),
+                agent_stats[agent_name]["succeeded"] = 1
+                await event_manager.emit("agent_progress", context.engagement_id, context.run_id, self.name, {
+                    "agent": agent_name, "status": "done",
+                    "bugs_found": len(new_bugs), "total_chunks": 1,
+                    "succeeded": 1, "failed": 0, "running": 0,
                 })
-
-        return codebase_map
-
-    def _split_into_chunks(self, codebase_map: dict, context_budget: int) -> list[dict]:
-        """Split codebase modules into context-sized chunks."""
-        tokens_per_line = 1.3
-        max_lines_per_chunk = int(context_budget / tokens_per_line * 0.6)
-
-        modules = sorted(codebase_map["modules"], key=lambda m: m["total_lines"], reverse=True)
-        chunks = []
-        current_chunk = {"modules": [], "total_lines": 0, "files": []}
-
-        for module in modules:
-            if module["total_lines"] > max_lines_per_chunk:
-                file_batch = {"modules": [module["path"]], "total_lines": 0, "files": []}
-                for f in module["files"]:
-                    if file_batch["total_lines"] + f["lines"] > max_lines_per_chunk:
-                        if file_batch["files"]:
-                            chunks.append(file_batch)
-                        file_batch = {"modules": [module["path"]], "total_lines": 0, "files": []}
-                    file_batch["files"].append(f["path"])
-                    file_batch["total_lines"] += f["lines"]
-                if file_batch["files"]:
-                    chunks.append(file_batch)
-            elif current_chunk["total_lines"] + module["total_lines"] > max_lines_per_chunk:
-                if current_chunk["files"]:
-                    chunks.append(current_chunk)
-                current_chunk = {
-                    "modules": [module["path"]],
-                    "total_lines": module["total_lines"],
-                    "files": [f["path"] for f in module["files"]],
-                }
+                return new_bugs
             else:
-                current_chunk["modules"].append(module["path"])
-                current_chunk["total_lines"] += module["total_lines"]
-                current_chunk["files"].extend(f["path"] for f in module["files"])
+                agent_stats[agent_name]["failed"] = 1
+                await event_manager.emit("agent_progress", context.engagement_id, context.run_id, self.name, {
+                    "agent": agent_name, "status": "failed",
+                    "error": result.error[:200] if result.error else "", "total_chunks": 1,
+                    "succeeded": 0, "failed": 1, "running": 0,
+                })
+                logger.warning(f"Bug hunter ({agent_name}) failed: {result.error}")
+                return []
 
-        if current_chunk["files"]:
-            chunks.append(current_chunk)
+        tasks = [run_agent(agent) for agent in agents]
+        for coro in asyncio.as_completed(tasks):
+            new_bugs = await coro
+            all_new_bugs.extend(new_bugs)
 
-        return chunks if chunks else [{"modules": ["."], "total_lines": 0,
-                                       "files": [f["path"] for m in codebase_map["modules"] for f in m["files"]]}]
+        # Append new bugs to BUGS.json
+        combined_bugs = existing_bugs + all_new_bugs
+        with open(bugs_file, "w") as f:
+            json.dump(combined_bugs, f, indent=2)
 
-    async def _run_subagent(self, context: StageContext, chunk: dict,
-                            agent_name: str, source_path: str) -> CLIResult:
-        """Run a single bug hunter subagent on a code chunk."""
-        files_list = "\n".join(chunk["files"][:100])
-        if len(chunk["files"]) > 100:
-            files_list += f"\n... and {len(chunk['files']) - 100} more files"
+        # Validate and persist to DB
+        quarantine_dir = os.path.join(stage_dir, "quarantined")
+        valid_bugs, quarantined = validate_findings_list(all_new_bugs, quarantine_dir)
 
-        prompt = f"""You are auditing the following source code files for security vulnerabilities.
+        self.write_output(context, "all_findings.json", valid_bugs)
+        self.write_output(context, "all_summaries.json", [scope_data.get("architecture", {})])
 
-SOURCE CODE ROOT: {source_path}
+        for bug in valid_bugs:
+            create_bug(context.engagement_id, context.run_id, bug)
 
-FILES TO AUDIT:
-{files_list}
+        succeeded = sum(1 for s in agent_stats.values() if s["succeeded"])
+        failed = sum(1 for s in agent_stats.values() if s["failed"])
 
-MODULES: {', '.join(chunk['modules'])}
+        return StageResult(
+            success=True,
+            input_count=len(attack_surfaces),
+            output_count=len(valid_bugs),
+            cost_usd=total_cost,
+            metadata={
+                "new_bugs_found": len(all_new_bugs),
+                "total_bugs_cumulative": len(combined_bugs),
+                "quarantined": len(quarantined),
+                "agents_succeeded": succeeded,
+                "agents_failed": failed,
+                "coverage_ratio": round(succeeded / len(agents), 2) if agents else 0,
+            },
+        )
+
+    async def _run_hunter(self, context: StageContext, agent_name: str,
+                          scope_data: dict, attack_surfaces: list,
+                          existing_bugs: list, source_path: str,
+                          infra_config: str, eng_type: str, stage_dir: str) -> CLIResult:
+        """Run a single bug hunter agent."""
+        scope_json = json.dumps(scope_data, indent=2)[:20000]
+        surfaces_json = json.dumps(attack_surfaces, indent=2)[:15000]
+        bugs_summary = json.dumps([{
+            "id": b.get("id"), "vuln_type": b.get("vuln_type"),
+            "source_file": b.get("source_file"), "validated": b.get("validated"),
+        } for b in existing_bugs], indent=2)[:10000] if existing_bugs else "[]"
+
+        prompt = f"""You are a security researcher performing a thorough vulnerability assessment.
+
+{"SOURCE CODE ROOT: " + source_path if eng_type == "source_code" else ""}
+{"INFRASTRUCTURE ACCESS:" + chr(10) + infra_config if infra_config else ""}
+
+APPLICATION CONTEXT:
+{scope_json}
+
+ATTACK SURFACES TO INVESTIGATE:
+{surfaces_json}
+
+BUGS ALREADY FOUND (do not duplicate):
+{bugs_summary}
 
 INSTRUCTIONS:
-1. Read and analyze each file thoroughly for security vulnerabilities
-2. Flag ALL potential vulnerabilities — do not filter or prioritize, maximize coverage
-3. For each finding, provide: file path, line range, vulnerability class (CWE), type, description, reasoning, and confidence level
-4. Also produce a security-focused functionality summary of the code you reviewed
+1. Focus on surfaces marked "not_scanned" first, then re-examine "scanned" ones
+2. For source code: read the actual code, trace data flows, identify vulnerabilities
+3. For each bug found, provide root cause, security impact, PoC, and validation status
+4. If you discover NEW attack surfaces, include them in your output
+5. Mark each surface you reviewed with status "scanned"
+6. Be thorough — prioritize high-impact findings
 
-Output your response as JSON matching the required schema."""
+Output a JSON object with "bugs" array and "attack_surfaces" array (updated statuses + any new surfaces discovered)."""
 
-        agent_file = str(AGENTS_DIR / "source_code" / "bug_hunter_subagent.md")
+        if eng_type == "source_code":
+            agent_file = str(AGENTS_DIR / "source_code" / "bug_hunter.md")
+        else:
+            agent_file = str(AGENTS_DIR / "black_box" / "bug_hunter.md")
 
         def on_event(event: StreamEvent):
             text = ""
@@ -438,151 +227,60 @@ Output your response as JSON matching the required schema."""
             if text:
                 try:
                     loop = asyncio.get_running_loop()
-                    loop.create_task(
-                        event_manager.emit_agent_stream(
-                            context.engagement_id, context.run_id, self.name,
-                            agent_name, text[:500],
-                        )
-                    )
+                    loop.create_task(event_manager.emit_agent_stream(
+                        context.engagement_id, context.run_id, self.name,
+                        agent_name, text[:500],
+                    ))
                 except RuntimeError:
                     pass
 
-        schema_file = str(Path(__file__).parent.parent.parent.parent / "schemas" / "bug_hunter_output.json")
+        record_dir, record_meta = self.prepare_agent_run(
+            context, agent_name, "bug_hunt",
+            {"model": context.config.models.bug_hunter_subagent, "engagement_type": eng_type},
+        )
 
         if agent_name == "claude" or agent_name.startswith("claude"):
             return await run_claude(
                 prompt=prompt,
                 agent_file=agent_file,
                 model=context.config.models.bug_hunter_subagent,
-                cwd=source_path,
-                json_schema_file=schema_file,
+                cwd=source_path if eng_type == "source_code" else None,
                 timeout=context.config.pipeline.subagent_timeout,
                 on_event=on_event,
+                record_dir=record_dir,
+                record_metadata=record_meta,
             )
         elif agent_name == "codex" or agent_name.startswith("codex"):
             return await run_codex(
                 prompt=prompt,
                 model=context.config.broad_bug_hunter.codex_model,
-                cwd=source_path,
+                cwd=source_path if eng_type == "source_code" else None,
                 timeout=context.config.pipeline.subagent_timeout,
                 on_event=on_event,
+                record_dir=record_dir,
+                record_metadata=record_meta,
             )
         else:
             return CLIResult(success=False, error=f"Unknown agent: {agent_name}")
 
-    async def _run_phase2(self, context: StageContext, summaries: list[dict],
-                          source_path: str, stage_dir: str) -> list[dict]:
-        """Phase 2: identify cross-component interactions and deploy targeted subagents."""
-        phase2_dir = os.path.join(stage_dir, "phase2")
-        os.makedirs(phase2_dir, exist_ok=True)
+    def _merge_attack_surfaces(self, surfaces_file: str, new_surfaces: list):
+        """Merge updated attack surfaces into the existing file."""
+        try:
+            with open(surfaces_file) as f:
+                existing = json.load(f)
 
-        summaries_text = json.dumps(summaries, indent=2)[:50000]
+            existing_ids = {s.get("id") for s in existing}
+            for surface in new_surfaces:
+                sid = surface.get("id")
+                if sid and sid in existing_ids:
+                    for i, ex in enumerate(existing):
+                        if ex.get("id") == sid:
+                            existing[i].update(surface)
+                            break
+                else:
+                    existing.append(surface)
 
-        orchestrator_prompt = f"""You are analyzing functionality summaries from different parts of a codebase to identify
-potential cross-component security vulnerabilities (logic bugs, trust boundary violations,
-auth bypasses that span modules, etc.).
-
-FUNCTIONALITY SUMMARIES:
-{summaries_text}
-
-For each suspicious cross-component interaction you identify, output a JSON array of objects, each with:
-- "hypothesis": description of the potential vulnerability
-- "modules_involved": list of module paths to examine
-- "files_to_examine": specific files that should be analyzed together
-- "reasoning": why this interaction might be vulnerable
-
-Focus on:
-- Trust boundary violations (one module trusts input that another module allows users to control)
-- Authentication/authorization gaps between modules
-- Data flow paths where sanitization is assumed but not enforced
-- Race conditions in cross-module state management"""
-
-        result = await run_claude(
-            prompt=orchestrator_prompt,
-            model=context.config.models.bug_hunter_orchestrator,
-            cwd=source_path,
-            timeout=context.config.pipeline.subagent_timeout,
-        )
-
-        if not result.success or not result.result:
-            return []
-
-        interactions = result.result if isinstance(result.result, list) else []
-        if isinstance(result.result, dict):
-            interactions = result.result.get("interactions", [])
-
-        phase2_findings = []
-        for i, interaction in enumerate(interactions[:10]):
-            files = interaction.get("files_to_examine", [])
-            hypothesis = interaction.get("hypothesis", "")
-
-            subagent_prompt = f"""Investigate this potential cross-component vulnerability:
-
-HYPOTHESIS: {hypothesis}
-REASONING: {interaction.get('reasoning', '')}
-FILES TO EXAMINE: {json.dumps(files)}
-SOURCE ROOT: {source_path}
-
-Read the specified files and determine if this cross-component interaction creates a real
-security vulnerability. If it does, output findings in the standard bug finding format."""
-
-            agent_file = str(AGENTS_DIR / "source_code" / "bug_hunter_logic_subagent.md")
-            sub_result = await run_claude(
-                prompt=subagent_prompt,
-                agent_file=agent_file,
-                model=context.config.models.bug_hunter_subagent,
-                cwd=source_path,
-                timeout=context.config.pipeline.subagent_timeout,
-            )
-
-            if sub_result.success and sub_result.result:
-                findings = sub_result.result if isinstance(sub_result.result, list) else sub_result.result.get("findings", [])
-                run_prefix = context.run_id[:8]
-                for j, finding in enumerate(findings):
-                    if "id" not in finding:
-                        finding["id"] = f"{run_prefix}/logic-{i:03d}-{j:03d}"
-                    finding["found_by"] = ["claude-phase2"]
-                phase2_findings.extend(findings)
-
-            with open(os.path.join(phase2_dir, f"interaction_{i:03d}.json"), "w") as f:
-                json.dump({
-                    "hypothesis": interaction,
-                    "findings": findings if sub_result.success else [],
-                    "error": sub_result.error if not sub_result.success else "",
-                }, f, indent=2)
-
-        return phase2_findings
-
-    async def _run_black_box_hunter(self, context: StageContext, target: dict,
-                                    infra_config: str, target_dir: str) -> CLIResult:
-        """Run a black box bug hunter on a single target."""
-        target_info = json.dumps(target, indent=2)
-
-        prompt = f"""You are performing a black-box security assessment of the following target.
-
-TARGET INFORMATION:
-{target_info}
-
-INFRASTRUCTURE ACCESS:
-{infra_config}
-
-INSTRUCTIONS:
-1. Understand the target's functionality, endpoints, and attack surface
-2. Use curl, python requests, or other tools to interact with the target
-3. Test for all vulnerability classes: injection, authentication bypass, IDOR, SSRF, XSS, CSRF, etc.
-4. Test all user roles if credentials are provided
-5. For each bug found, include the HTTP request/response evidence
-6. If you hit an authentication barrier you cannot bypass programmatically (MFA, CAPTCHA),
-   note it and move on
-7. Write your progress to {target_dir}/progress.json after each meaningful test
-
-Output findings as a JSON object with a "findings" array."""
-
-        agent_file = str(AGENTS_DIR / "black_box" / "bug_hunter.md")
-
-        return await run_claude(
-            prompt=prompt,
-            agent_file=agent_file,
-            model=context.config.models.black_box_bug_hunter,
-            timeout=context.config.pipeline.subagent_timeout,
-        )
+            with open(surfaces_file, "w") as f:
+                json.dump(existing, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to merge attack surfaces: {e}")
