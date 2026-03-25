@@ -109,27 +109,29 @@ export default function EngagementDetail() {
           <Link to={`/engagements/${id}/bugs`} className="btn btn-secondary">Bugs</Link>
           <Link to={`/engagements/${id}/chains`} className="btn btn-secondary">Chains</Link>
           <Link to={`/engagements/${id}/intel`} className="btn btn-secondary">Intel</Link>
-          {!hasActiveRun && (
-            <>
-              <button className="btn btn-primary" onClick={() => startRun()} disabled={startingRun}>
-                {runs.length === 0 ? 'Start Pipeline' : 'New Run'}
-              </button>
-              <button className="btn btn-secondary" onClick={() => setShowRehunt(!showRehunt)}>
-                Re-hunt
-              </button>
-              <button className="btn btn-secondary" onClick={() => setShowSettings(!showSettings)}>
-                Settings
-              </button>
-              <button className="btn btn-danger" onClick={async () => {
-                if (!confirm(`Delete engagement "${engagement.name}"? This removes all runs, bugs, and output files permanently.`)) return
-                try {
-                  await api.deleteEngagement(id)
-                  navigate('/')
-                } catch (e) { console.error(e) }
-              }}>Delete</button>
-            </>
-          )}
         </div>
+      </div>
+
+      {!hasActiveRun && (
+        <div className="engagement-actions">
+          <button className="btn btn-primary" onClick={() => startRun()} disabled={startingRun}>
+            {runs.length === 0 ? 'Start Pipeline' : 'New Run'}
+          </button>
+          <button className="btn btn-secondary" onClick={() => setShowRehunt(!showRehunt)}>
+            Re-hunt
+          </button>
+          <button className="btn btn-secondary" onClick={() => setShowSettings(!showSettings)}>
+            Settings
+          </button>
+          <button className="btn btn-danger" onClick={async () => {
+            if (!confirm(`Delete engagement "${engagement.name}"? This removes all runs, bugs, and output files permanently.`)) return
+            try {
+              await api.deleteEngagement(id)
+              navigate('/')
+            } catch (e) { console.error(e) }
+          }}>Delete</button>
+        </div>
+      )}
       </div>
 
       {/* Engagement details panel */}

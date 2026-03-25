@@ -565,6 +565,11 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 0
   font-family: 'JetBrains Mono', monospace; font-size: 12px;
 }
 
+/* Engagement action buttons row */
+.engagement-actions {
+  display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;
+}
+
 .rehunt-form, .engagement-settings-panel {
   padding: 18px; background: var(--bg-secondary); border: 1px solid var(--border);
   border-radius: var(--radius-lg, 8px); margin-bottom: 16px;
