@@ -510,12 +510,14 @@ class PipelineOrchestrator:
                 update_stage_result(sr["id"], status="completed")
 
     def _copy_bug_hunter_progress(self, run_id: str, run_dir: Path):
-        """Copy BUGS.json and attack_surfaces.json from the best prior run.
+        """Merge BUGS.json and attack_surfaces.json from ALL completed prior runs.
 
-        Finds the latest prior run that actually has a non-empty BUGS.json,
-        not just the latest run (which may have been cancelled before finding
-        anything). Does NOT mark the stage as completed.
+        Collects bugs from every completed run and deduplicates by ID to build
+        a complete picture of all bugs ever found. Uses the latest completed
+        run's attack_surfaces.json (which has the most up-to-date scan status).
+        Does NOT mark the stage as completed.
         """
+        import json as _json
         import shutil
         from bug_hunter.core.database import list_runs as db_list_runs
 
@@ -536,43 +538,42 @@ class PipelineOrchestrator:
             return
 
         dst_dir = run_dir / f"{bh_order:02d}_bug_hunter"
-
-        # Search prior runs in reverse order for the best BUGS.json
-        best_bugs_src = None
-        best_surfaces_src = None
-        for prior_run in reversed(prior_runs):
-            prior_dir = self._get_run_dir(prior_run["id"])
-            src_dir = prior_dir / f"{bh_order:02d}_bug_hunter"
-
-            if not best_bugs_src:
-                bugs_file = src_dir / "BUGS.json"
-                if bugs_file.exists() and bugs_file.stat().st_size > 10:
-                    best_bugs_src = bugs_file
-
-            if not best_surfaces_src:
-                surfaces_file = src_dir / "attack_surfaces.json"
-                if surfaces_file.exists() and surfaces_file.stat().st_size > 10:
-                    best_surfaces_src = surfaces_file
-
-            if best_bugs_src and best_surfaces_src:
-                break
-
         dst_dir.mkdir(parents=True, exist_ok=True)
 
-        if best_bugs_src:
+        # Merge BUGS.json from ALL completed runs (deduplicate by ID)
+        all_bugs = {}
+        for prior_run in prior_runs:
+            prior_dir = self._get_run_dir(prior_run["id"])
+            bugs_file = prior_dir / f"{bh_order:02d}_bug_hunter" / "BUGS.json"
+            if bugs_file.exists() and bugs_file.stat().st_size > 10:
+                try:
+                    with open(bugs_file) as f:
+                        bugs = _json.load(f)
+                    for bug in bugs:
+                        bug_id = bug.get("id", "")
+                        if bug_id and bug_id not in all_bugs:
+                            all_bugs[bug_id] = bug
+                except Exception as e:
+                    logger.warning(f"Failed to read BUGS.json from run {prior_run['id'][:8]}: {e}")
+
+        if all_bugs:
             dst_file = dst_dir / "BUGS.json"
             if not dst_file.exists():
-                shutil.copy2(str(best_bugs_src), str(dst_file))
-                import json
-                with open(dst_file) as f:
-                    count = len(json.load(f))
-                logger.info(f"Copied BUGS.json ({count} bugs) from prior run for rehunt continuity")
+                merged = list(all_bugs.values())
+                with open(dst_file, "w") as f:
+                    _json.dump(merged, f, indent=2)
+                logger.info(f"Merged BUGS.json from {len(prior_runs)} completed runs: {len(merged)} unique bugs")
 
-        if best_surfaces_src:
-            dst_file = dst_dir / "attack_surfaces.json"
-            if not dst_file.exists():
-                shutil.copy2(str(best_surfaces_src), str(dst_file))
-                logger.info(f"Copied attack_surfaces.json from prior run for rehunt continuity")
+        # Use the latest completed run's attack_surfaces.json (most up-to-date scan status)
+        for prior_run in reversed(prior_runs):
+            prior_dir = self._get_run_dir(prior_run["id"])
+            surfaces_file = prior_dir / f"{bh_order:02d}_bug_hunter" / "attack_surfaces.json"
+            if surfaces_file.exists() and surfaces_file.stat().st_size > 10:
+                dst_file = dst_dir / "attack_surfaces.json"
+                if not dst_file.exists():
+                    shutil.copy2(str(surfaces_file), str(dst_file))
+                    logger.info(f"Copied attack_surfaces.json from run {prior_run['id'][:8]}")
+                break
 
     def _save_pipeline_state(self, run_dir: Path, state: dict):
         state_file = run_dir / "pipeline_state.json"
