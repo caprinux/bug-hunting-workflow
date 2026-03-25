@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { api } from '../utils/api'
 
 const DEFAULT_ADVANCED = {
@@ -15,20 +15,22 @@ const DEFAULT_ADVANCED = {
 
 export default function NewEngagement() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const prefill = location.state?.prefill || null
   const [form, setForm] = useState({
-    name: '',
-    type: 'source_code',
+    name: prefill?.name || '',
+    type: prefill?.source_repo ? 'source_code' : 'source_code',
     source_path: '',
-    source_repo: '',
+    source_repo: prefill?.source_repo || '',
     target_domains: '',
-    qualifying_vulns: '',
-    non_qualifying_vulns: '',
-    assets_in_scope: '',
-    assets_not_in_scope: '',
-    scope_notes: '',
-    additional_context: '',
-    credentials: '',
-    infra_url: '',
+    qualifying_vulns: prefill?.qualifying_vulns || '',
+    non_qualifying_vulns: prefill?.non_qualifying_vulns || '',
+    assets_in_scope: prefill?.assets_in_scope || '',
+    assets_not_in_scope: prefill?.assets_not_in_scope || '',
+    scope_notes: prefill?.scope_notes || '',
+    additional_context: prefill?.additional_context || '',
+    credentials: prefill?.credentials || '',
+    infra_url: prefill?.infra_url || '',
   })
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [advanced, setAdvanced] = useState(DEFAULT_ADVANCED)

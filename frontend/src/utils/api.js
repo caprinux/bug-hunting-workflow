@@ -43,6 +43,13 @@ export const api = {
   resumeRun: (engId, runId) => request(`/engagements/${engId}/runs/${runId}/resume`, { method: 'POST' }),
   getRunEvents: (engId, runId) => request(`/engagements/${engId}/runs/${runId}/events`),
 
+  // Platforms
+  listPlatforms: () => request('/platforms'),
+  scrapePlatform: (name, creds) => request(`/platforms/${name}/scrape`, { method: 'POST', body: JSON.stringify(creds) }),
+  listPlatformPrograms: (name) => request(`/platforms/${name}/programs`),
+  getPlatformProgram: (name, id) => request(`/platforms/${name}/programs/${id}`),
+  importProgram: (name, id) => request(`/platforms/${name}/programs/${id}/import`, { method: 'POST' }),
+
   getSettings: () => request('/settings'),
   updateSettings: (data) => request('/settings', { method: 'PUT', body: JSON.stringify(data) }),
 
