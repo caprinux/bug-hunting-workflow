@@ -204,7 +204,7 @@ class BugHunterStage(PipelineStage):
             "source_file": b.get("source_file"), "validated": b.get("validated"),
         } for b in existing_bugs], indent=2)[:10000] if existing_bugs else "[]"
 
-        prompt = f"""You are a security researcher performing a thorough vulnerability assessment.
+        base_instructions = f"""You are a security researcher performing a thorough vulnerability assessment.
 
 {"SOURCE CODE ROOT: " + source_path if eng_type == "source_code" else ""}
 {"INFRASTRUCTURE ACCESS:" + chr(10) + infra_config if infra_config else ""}
@@ -216,17 +216,70 @@ ATTACK SURFACES TO INVESTIGATE:
 {surfaces_json}
 
 BUGS ALREADY FOUND (do not duplicate):
-{bugs_summary}
+{bugs_summary}"""
 
+        if agent_name == "codex" or agent_name.startswith("codex"):
+            methodology = """
+METHODOLOGY — BE THOROUGH:
+1. For EACH attack surface marked "not_scanned", read the actual source files listed
+2. Do NOT skim — read every function, trace every data flow from user input to dangerous operation
+3. For each potential bug:
+   a. Identify the exact file and line where the vulnerability exists
+   b. Trace the full path from user-controlled input to the vulnerable sink
+   c. Check what sanitization or validation exists in the path
+   d. Write a concrete PoC (Python script with requests library) if infrastructure is available
+   e. Attempt to execute the PoC and record the result
+4. Look for logic bugs across files — check if auth decorators are missing, if validation is inconsistent
+5. After investigating each surface, mark it "scanned" with notes on what you found
+6. Discover NEW attack surfaces not in the original list
+7. Do NOT stop after finding a few bugs — continue scanning ALL surfaces"""
+        else:
+            methodology = """
 INSTRUCTIONS:
 1. Focus on surfaces marked "not_scanned" first, then re-examine "scanned" ones
 2. For source code: read the actual code, trace data flows, identify vulnerabilities
 3. For each bug found, provide root cause, security impact, PoC, and validation status
 4. If you discover NEW attack surfaces, include them in your output
 5. Mark each surface you reviewed with status "scanned"
-6. Be thorough — prioritize high-impact findings
+6. Be thorough — prioritize high-impact findings"""
 
-Output a JSON object with "bugs" array and "attack_surfaces" array (updated statuses + any new surfaces discovered)."""
+        prompt = f"""{base_instructions}
+{methodology}
+
+CRITICAL — OUTPUT FORMAT:
+You MUST output a JSON object at the end. Do NOT output a prose report.
+The JSON must have this exact structure:
+{{
+  "bugs": [
+    {{
+      "id": "unique-id",
+      "source_file": "path/to/file",
+      "line_range": "10-25",
+      "vuln_class": "CWE-89",
+      "vuln_type": "SQL Injection",
+      "description": "Detailed description",
+      "reasoning": "Why this is exploitable",
+      "confidence": "high",
+      "root_cause": "What is wrong in the code",
+      "security_impact": "What an attacker can achieve",
+      "validated": true,
+      "poc": {{
+        "language": "python",
+        "code": "the PoC code",
+        "execution_result": "success or failure",
+        "output": "proof of exploitation"
+      }}
+    }}
+  ],
+  "attack_surfaces": [
+    {{
+      "id": "surface-001",
+      "name": "Updated surface name",
+      "status": "scanned",
+      "findings_notes": "What was found or why it's clean"
+    }}
+  ]
+}}"""
 
         if eng_type == "source_code":
             agent_file = str(AGENTS_DIR / "source_code" / "bug_hunter.md")
