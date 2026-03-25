@@ -100,9 +100,12 @@ async def api_get_program(platform_name: str, program_id: str):
     return result
 
 
+_import_status: dict[str, dict] = {}
+
+
 @router.post("/{platform_name}/programs/{program_id}/import")
 async def api_import_program(platform_name: str, program_id: str):
-    """Use LLM to parse program data into engagement creation form fields."""
+    """Start LLM import of program data (runs in background)."""
     platform = registry.get(platform_name)
     if not platform:
         raise HTTPException(status_code=404, detail=f"Platform '{platform_name}' not found")
@@ -111,10 +114,19 @@ async def api_import_program(platform_name: str, program_id: str):
     if not program:
         raise HTTPException(status_code=404, detail=f"Program '{program_id}' not found")
 
-    # Build prompt with raw program data
-    raw_json = json.dumps(program.raw_data, indent=2, default=str)
+    import_key = f"{platform_name}/{program_id}"
+    if _import_status.get(import_key, {}).get("status") == "running":
+        raise HTTPException(status_code=409, detail="Import already in progress")
 
-    prompt = f"""Parse this bug bounty program data and extract the fields needed to create a security audit engagement.
+    _import_status[import_key] = {"status": "running", "message": "Parsing program data with LLM..."}
+
+    import asyncio
+
+    async def _run_import():
+        try:
+            raw_json = json.dumps(program.raw_data, indent=2, default=str)
+
+            prompt = f"""Parse this bug bounty program data and extract the fields needed to create a security audit engagement.
 
 PROGRAM DATA:
 {raw_json[:50000]}
@@ -137,43 +149,56 @@ Be thorough — include all qualifying and non-qualifying vulnerability types.
 For assets_in_scope, include the scope_type and asset_value for each entry.
 For scope_notes, summarize the key rules — don't include the entire rules text."""
 
-    result = await run_claude(
-        prompt=prompt,
-        model="sonnet",  # Fast model for structured extraction
-        timeout=120,
-    )
+            result = await run_claude(
+                prompt=prompt,
+                model="sonnet",
+                timeout=120,
+            )
 
-    if not result.success:
-        raise HTTPException(status_code=500, detail=f"LLM import failed: {result.error}")
-
-    parsed = result.result
-    if isinstance(parsed, str):
-        try:
-            import re
-            match = re.search(r'\{[\s\S]*\}', parsed)
-            if match:
-                parsed = json.loads(match.group())
-            else:
+            if not result.success:
+                # Fallback to raw data
                 parsed = {}
-        except (json.JSONDecodeError, TypeError):
-            parsed = {}
+            else:
+                parsed = result.result
+                if isinstance(parsed, str):
+                    try:
+                        import re
+                        match = re.search(r'\{[\s\S]*\}', parsed)
+                        if match:
+                            parsed = json.loads(match.group())
+                        else:
+                            parsed = {}
+                    except (json.JSONDecodeError, TypeError):
+                        parsed = {}
 
-    if not isinstance(parsed, dict):
-        parsed = {}
+            if not isinstance(parsed, dict):
+                parsed = {}
 
-    # Fallback: use raw program data if LLM failed to extract
-    if not parsed.get("name"):
-        parsed["name"] = program.name
-    if not parsed.get("qualifying_vulns"):
-        parsed["qualifying_vulns"] = "\n".join(program.qualifying_vulns)
-    if not parsed.get("non_qualifying_vulns"):
-        parsed["non_qualifying_vulns"] = "\n".join(program.non_qualifying_vulns)
-    if not parsed.get("assets_in_scope"):
-        parsed["assets_in_scope"] = "\n".join(
-            f"{s.get('scope', '')} ({s.get('scope_type_name', '')}, {s.get('asset_value', '')})"
-            for s in program.scopes
-        )
-    if not parsed.get("assets_not_in_scope"):
-        parsed["assets_not_in_scope"] = "\n".join(program.out_of_scope)
+            # Fallback fields from raw program data
+            if not parsed.get("name"):
+                parsed["name"] = program.name
+            if not parsed.get("qualifying_vulns"):
+                parsed["qualifying_vulns"] = "\n".join(program.qualifying_vulns)
+            if not parsed.get("non_qualifying_vulns"):
+                parsed["non_qualifying_vulns"] = "\n".join(program.non_qualifying_vulns)
+            if not parsed.get("assets_in_scope"):
+                parsed["assets_in_scope"] = "\n".join(
+                    f"{s.get('scope', '')} ({s.get('scope_type_name', '')}, {s.get('asset_value', '')})"
+                    for s in program.scopes
+                )
+            if not parsed.get("assets_not_in_scope"):
+                parsed["assets_not_in_scope"] = "\n".join(program.out_of_scope)
 
-    return parsed
+            _import_status[import_key] = {"status": "completed", "result": parsed}
+        except Exception as e:
+            _import_status[import_key] = {"status": "failed", "message": str(e)}
+
+    asyncio.create_task(_run_import())
+    return {"status": "started"}
+
+
+@router.get("/{platform_name}/programs/{program_id}/import/status")
+async def api_import_status(platform_name: str, program_id: str):
+    """Check the status of a program import."""
+    import_key = f"{platform_name}/{program_id}"
+    return _import_status.get(import_key, {"status": "idle"})

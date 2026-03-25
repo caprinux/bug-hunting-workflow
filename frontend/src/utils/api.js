@@ -51,6 +51,7 @@ export const api = {
   listPlatformPrograms: (name) => request(`/platforms/${name}/programs`),
   getPlatformProgram: (name, id) => request(`/platforms/${name}/programs/${id}`),
   importProgram: (name, id) => request(`/platforms/${name}/programs/${id}/import`, { method: 'POST' }),
+  importStatus: (name, id) => request(`/platforms/${name}/programs/${id}/import/status`),
 
   getSettings: () => request('/settings'),
   updateSettings: (data) => request('/settings', { method: 'PUT', body: JSON.stringify(data) }),

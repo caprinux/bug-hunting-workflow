@@ -100,9 +100,24 @@ export default function Platforms() {
     setImporting(true)
     setError(null)
     try {
-      const data = await api.importProgram(selectedPlatform.name, selectedProgram.id)
-      // Navigate to new engagement with pre-filled data
-      navigate('/engagements/new', { state: { prefill: data } })
+      await api.importProgram(selectedPlatform.name, selectedProgram.id)
+
+      // Poll for completion
+      for (let i = 0; i < 60; i++) {
+        await new Promise(r => setTimeout(r, 2000))
+        try {
+          const status = await api.importStatus(selectedPlatform.name, selectedProgram.id)
+          if (status.status === 'completed') {
+            navigate('/engagements/new', { state: { prefill: status.result } })
+            return
+          } else if (status.status === 'failed') {
+            setError(status.message || 'Import failed')
+            setImporting(false)
+            return
+          }
+        } catch { break }
+      }
+      setError('Import timed out')
     } catch (e) {
       setError(e.message)
     }
