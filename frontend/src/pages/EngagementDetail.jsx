@@ -94,7 +94,9 @@ export default function EngagementDetail() {
             <span className={`type-badge ${engagement.type}`}>
               {engagement.type === 'source_code' ? 'Source Code Audit' : 'Black Box Pentest'}
             </span>
-            <span className={`badge ${engagement.status}`}>{engagement.status}</span>
+            <span className={`badge ${hasActiveRun ? 'running' : runs.length > 0 ? 'completed' : 'pending'}`}>
+              {hasActiveRun ? 'running' : runs.length > 0 ? 'idle' : 'new'}
+            </span>
             <span className={`ws-status ${connected ? 'connected' : 'disconnected'}`}>
               {connected ? 'Live' : 'Disconnected'}
             </span>

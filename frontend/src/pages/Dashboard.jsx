@@ -86,7 +86,13 @@ export default function Dashboard() {
             <Link key={eng.id} to={`/engagements/${eng.id}`} className="engagement-card" style={{ '--i': i }}>
               <div className="card-header">
                 <h3>{eng.name}</h3>
-                <span className={`badge ${eng.status}`}>{eng.status}</span>
+                {(() => {
+                  const hasRunning = eng.runs?.some(r => r.status === 'running')
+                  const hasRuns = eng.runs?.length > 0
+                  const label = hasRunning ? 'running' : hasRuns ? 'idle' : 'new'
+                  const cls = hasRunning ? 'running' : hasRuns ? 'completed' : 'pending'
+                  return <span className={`badge ${cls}`}>{label}</span>
+                })()}
               </div>
               <div className="card-meta">
                 <span className={`type-badge ${eng.type}`}>
