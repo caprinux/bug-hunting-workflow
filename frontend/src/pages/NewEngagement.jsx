@@ -225,9 +225,10 @@ export default function NewEngagement() {
         <h2 style={{ fontSize: '16px', marginTop: '24px', marginBottom: '12px' }}>Infrastructure</h2>
 
         <div className="form-group">
-          <label>Target URL <span className="muted">(optional)</span></label>
-          <input type="text" value={form.infra_url} onChange={e => update('infra_url', e.target.value)}
-                 placeholder="e.g., https://backend.staging.example.com" />
+          <label>Target URLs <span className="muted">(optional)</span></label>
+          <textarea value={form.infra_url} onChange={e => update('infra_url', e.target.value)}
+                    placeholder={"e.g.:\nhttps://backend.staging.example.com\nhttps://api.staging.example.com\nhttps://admin.staging.example.com"}
+                    rows={3} />
         </div>
 
         <div className="form-group">
