@@ -52,13 +52,113 @@ export default function ConversationView({ engagementId, runId, stageName, jsonl
         <button className="close-btn" onClick={onClose}>Close</button>
       </div>
       <div className="conversation-body" ref={scrollRef}>
-        {messages.map((msg, i) => (
-          <MessageBubble key={i} msg={msg} />
-        ))}
+        {groupMessages(messages).map((item, i) => {
+          if (item.type === 'group') {
+            return <ToolGroup key={i} tools={item.tools} />
+          }
+          return <MessageBubble key={i} msg={item} />
+        })}
         {messages.length === 0 && (
           <div className="empty-state"><p>No messages in this stream</p></div>
         )}
       </div>
+    </div>
+  )
+}
+
+
+/**
+ * Group consecutive tool calls. If 3+ tools appear in a row,
+ * collapse them into a single expandable group.
+ */
+function groupMessages(messages) {
+  const result = []
+  let toolBuffer = []
+
+  function flushTools() {
+    if (toolBuffer.length === 0) return
+    if (toolBuffer.length <= 2) {
+      // Few enough to show inline
+      toolBuffer.forEach(t => result.push(t))
+    } else {
+      // Collapse into a group
+      result.push({ type: 'group', tools: [...toolBuffer] })
+    }
+    toolBuffer = []
+  }
+
+  for (const msg of messages) {
+    if (msg.role === 'tool') {
+      toolBuffer.push(msg)
+    } else {
+      flushTools()
+      result.push(msg)
+    }
+  }
+  flushTools()
+  return result
+}
+
+
+function ToolGroup({ tools }) {
+  const [expanded, setExpanded] = useState(false)
+
+  // Show first and last tool as preview
+  const first = tools[0]
+  const last = tools[tools.length - 1]
+  const hidden = tools.length - 2
+
+  return (
+    <div className="msg-row msg-center">
+      <div className="msg-tool-group">
+        <div className="msg-tool-group-header" onClick={() => setExpanded(!expanded)}>
+          <span className="msg-tool-icon">{expanded ? '▼' : '▶'}</span>
+          <span className="msg-tool-name">{tools.length} tool calls</span>
+          <span className="msg-tool-desc">
+            {first.toolName}{first.toolDesc ? `: ${truncate(first.toolDesc, 30)}` : ''}
+            {hidden > 0 && ` ... +${hidden} more ... `}
+            {last !== first && (last.toolName + (last.toolDesc ? `: ${truncate(last.toolDesc, 30)}` : ''))}
+          </span>
+        </div>
+        {expanded && (
+          <div className="msg-tool-group-body">
+            {tools.map((tool, i) => (
+              <ToolCallInGroup key={i} msg={tool} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+
+function ToolCallInGroup({ msg }) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div className="msg-tool-group-item">
+      <div className="msg-tool" onClick={() => setExpanded(!expanded)}>
+        <span className="msg-tool-icon">{expanded ? '▼' : '▶'}</span>
+        <span className="msg-tool-name">{msg.toolName || 'Tool'}</span>
+        {msg.toolDesc && <span className="msg-tool-desc">{msg.toolDesc}</span>}
+      </div>
+      {expanded && (
+        <div className="msg-tool-body">
+          {msg.input && (
+            <div className="msg-tool-section">
+              <div className="msg-tool-section-label">Input</div>
+              <pre>{typeof msg.input === 'string' ? msg.input : JSON.stringify(msg.input, null, 2)}</pre>
+            </div>
+          )}
+          {msg.output && (
+            <div className="msg-tool-section">
+              <div className="msg-tool-section-label">Output</div>
+              <pre>{truncate(typeof msg.output === 'string' ? msg.output : JSON.stringify(msg.output, null, 2), 2000)}</pre>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

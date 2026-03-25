@@ -864,6 +864,24 @@ h2 {
   color: var(--text-secondary);
 }
 
+/* Tool call groups (collapsed consecutive tools) */
+.msg-tool-group {
+  width: 100%; max-width: 500px;
+}
+.msg-tool-group-header {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; background: var(--bg-tertiary);
+  border: 1px dashed var(--border); border-radius: 16px;
+  font-size: 12px; cursor: pointer; color: var(--text-secondary);
+}
+.msg-tool-group-header:hover { border-color: var(--color-accent); border-style: solid; }
+.msg-tool-group-body {
+  margin-top: 6px; padding: 8px; background: var(--bg-primary, #0d1117);
+  border: 1px solid var(--border); border-radius: 8px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.msg-tool-group-item { padding: 2px 0; }
+
 /* File tag for .jsonl files */
 .file-tag {
   font-size: 10px; background: var(--color-info); color: #fff;
