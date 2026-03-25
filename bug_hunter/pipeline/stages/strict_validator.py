@@ -169,7 +169,17 @@ DESTRUCTIVE POC POLICY: {destructive_policy}
 
 If the bug already has a PoC, verify it works. If not, write and execute one.
 
-Output JSON: {{"validated": true/false, "poc": {{...}}, "reason": "if not validated"}}"""
+CRITICAL: Output ONLY a JSON object with this exact structure:
+{{
+  "validated": true,
+  "poc": {{
+    "language": "python",
+    "code": "the PoC source code",
+    "execution_result": "success|failure|error|destructive_skipped",
+    "output": "proof of exploitation output"
+  }},
+  "reason": "if not validated, explain why"
+}}"""
 
         result = await run_claude(
             prompt=prompt, agent_file=agent_file,

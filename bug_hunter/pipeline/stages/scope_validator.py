@@ -77,7 +77,7 @@ RULES:
 For each finding, output its id and whether it's "in_scope" or "out_of_scope".
 For out_of_scope findings, briefly note which rule excludes it.
 
-Output JSON:
+CRITICAL: Output ONLY a JSON object with this exact structure:
 {{
   "in_scope": ["bug-id-1", "bug-id-2"],
   "out_of_scope": [

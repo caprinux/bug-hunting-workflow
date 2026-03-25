@@ -139,7 +139,7 @@ INSTRUCTIONS:
 5. If an expansion cannot be demonstrated (environment limitation, would be destructive),
    document it as theoretical with the reason.
 
-Output a JSON object:
+CRITICAL: Output ONLY a JSON object with this exact structure:
 {{
   "expanded": true,
   "expanded_primitives": {{

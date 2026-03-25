@@ -53,7 +53,7 @@ RULES:
 5. When merging, combine reasoning from all agents. Note which agents agreed (multi-agent agreement = higher confidence).
 6. Preserve the most specific/detailed version of each field.
 
-Output a JSON object with:
+CRITICAL: Output ONLY a JSON object with this exact structure:
 {{
   "deduplicated": [
     // merged findings with combined reasoning and found_by lists

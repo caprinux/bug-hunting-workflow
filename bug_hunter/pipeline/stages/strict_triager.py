@@ -83,7 +83,7 @@ SEVERITY LEVELS:
 - **medium**: Limited data exposure, CSRF with impact, stored XSS, IDOR on non-critical data
 - **low**: Minor information disclosure, reflected XSS with limited impact, missing security controls
 
-Output JSON:
+CRITICAL: Output ONLY a JSON object with this exact structure:
 {{
   "tagged": [
     {{"id": "bug-001", "tag": "strong", "severity": "high", "note": "Working SQLi with database dump PoC"}},

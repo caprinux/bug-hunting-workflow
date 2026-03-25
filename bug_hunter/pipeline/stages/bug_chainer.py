@@ -81,7 +81,7 @@ INSTRUCTIONS:
 5. Suggest re-hunt targets: specific bug classes that would enable higher-impact chains
    (these will require human approval before re-hunting)
 
-Output a JSON object:
+CRITICAL: Output ONLY a JSON object with this exact structure:
 {{
   "individual_bugs": [
     // all confirmed bugs (unchanged, for the report)

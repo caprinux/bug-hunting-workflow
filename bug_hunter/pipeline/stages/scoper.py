@@ -166,4 +166,29 @@ INSTRUCTIONS:
    - Admin panels or debug endpoints
 3. Produce a structured attack surface map
 
-Output the same JSON structure as above, with attack_surfaces listing each discovered endpoint/feature."""
+CRITICAL: Output ONLY a JSON object with this exact structure:
+{{
+  "architecture": {{
+    "description": "What this application does",
+    "framework": "Technology stack",
+    "entry_points": ["main entry point URLs or files"],
+    "key_modules": ["security-relevant components"]
+  }},
+  "attack_surfaces": [
+    {{
+      "id": "surface-001",
+      "name": "Surface name",
+      "location": ["URLs or endpoints"],
+      "description": "What it does",
+      "inputs": "What user input it accepts",
+      "priority": "high|medium|low",
+      "potential_vulns": ["possible vulnerability types"],
+      "status": "not_scanned"
+    }}
+  ],
+  "scope_notes": {{
+    "qualifying": ["qualifying vuln types"],
+    "non_qualifying": ["non-qualifying vuln types"],
+    "excluded_paths": ["excluded targets"]
+  }}
+}}"""
