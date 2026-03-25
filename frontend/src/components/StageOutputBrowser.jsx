@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { api } from '../utils/api'
+import ConversationView from './ConversationView'
 
 function FolderIcon() {
   return (
@@ -14,6 +15,15 @@ function FileIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">
       <path d="M4 1.5h5.5L13 5v9a1 1 0 01-1 1H4a1 1 0 01-1-1V2.5a1 1 0 011-1z" />
       <path d="M9.5 1.5V5H13" />
+    </svg>
+  )
+}
+
+function ChatIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">
+      <path d="M2 3h12a1 1 0 011 1v7a1 1 0 01-1 1H5l-3 2.5V4a1 1 0 011-1z" />
+      <path d="M5 7h6M5 9.5h3" strokeLinecap="round" />
     </svg>
   )
 }
@@ -314,6 +324,7 @@ export default function StageOutputBrowser({ engagementId, runId, stageName, onC
   const [currentPath, setCurrentPath] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [conversationPath, setConversationPath] = useState(null)
 
   useEffect(() => {
     loadDirectory('')
@@ -369,19 +380,36 @@ export default function StageOutputBrowser({ engagementId, runId, stageName, onC
         <div
           key={file.path}
           className="file-item"
-          onClick={() => loadDirectory(file.path)}
+          onClick={() => {
+            if (file.name.endsWith('.jsonl')) {
+              setConversationPath(file.path)
+            } else {
+              loadDirectory(file.path)
+            }
+          }}
         >
           <span className="file-icon">
-            {file.is_dir ? <FolderIcon /> : <FileIcon />}
+            {file.is_dir ? <FolderIcon /> : file.name.endsWith('.jsonl') ? <ChatIcon /> : <FileIcon />}
           </span>
           <span className="file-name">{file.name}</span>
+          {file.name.endsWith('.jsonl') && <span className="file-tag">conversation</span>}
           {file.size !== undefined && (
             <span className="file-size">{formatSize(file.size)}</span>
           )}
         </div>
       ))}
 
-      {content && (
+      {conversationPath && (
+        <ConversationView
+          engagementId={engagementId}
+          runId={runId}
+          stageName={stageName}
+          jsonlPath={conversationPath}
+          onClose={() => setConversationPath(null)}
+        />
+      )}
+
+      {content && !conversationPath && (
         <div className="file-content">
           {content.type === 'json' ? (
             <SmartContent data={content.content} filename={filename} />
