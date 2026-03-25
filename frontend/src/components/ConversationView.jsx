@@ -35,9 +35,10 @@ export default function ConversationView({ engagementId, runId, stageName, jsonl
     setLoading(false)
   }
 
+  // Start at the top of the conversation
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      scrollRef.current.scrollTop = 0
     }
   }, [messages])
 
