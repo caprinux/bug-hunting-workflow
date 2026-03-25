@@ -187,6 +187,32 @@ async def api_start_run(engagement_id: str, req: StartRunRequest):
     return {"run_id": run_id, "status": "running"}
 
 
+@router.delete("/engagements/{engagement_id}/runs/{run_id}")
+async def api_delete_run(engagement_id: str, run_id: str):
+    """Delete a run and all its data."""
+    run = _verify_run_ownership(engagement_id, run_id)
+    if run["status"] == "running":
+        raise HTTPException(status_code=409, detail="Cannot delete a running run — cancel it first")
+
+    from bug_hunter.core.database import get_db
+    with get_db() as conn:
+        conn.execute("DELETE FROM events WHERE run_id = ?", (run_id,))
+        conn.execute("DELETE FROM bugs WHERE run_id = ?", (run_id,))
+        conn.execute("DELETE FROM stage_results WHERE run_id = ?", (run_id,))
+        conn.execute("DELETE FROM runs WHERE id = ?", (run_id,))
+
+    # Delete output files
+    eng = get_engagement(engagement_id)
+    if eng:
+        output_dir = _engagement_output_dir(eng)
+        run_dir = os.path.join(output_dir, "engagements", engagement_id, "runs", run_id)
+        if os.path.isdir(run_dir):
+            import shutil
+            shutil.rmtree(run_dir, ignore_errors=True)
+
+    return {"status": "deleted"}
+
+
 @router.post("/engagements/{engagement_id}/runs/{run_id}/cancel")
 async def api_cancel_run(engagement_id: str, run_id: str):
     _verify_run_ownership(engagement_id, run_id)

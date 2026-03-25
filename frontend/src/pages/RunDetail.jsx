@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { api } from '../utils/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useAutoRefresh } from '../hooks/useAutoRefresh'
@@ -9,6 +9,7 @@ import ElapsedTimer from '../components/ElapsedTimer'
 
 export default function RunDetail() {
   const { id: engagementId, runId } = useParams()
+  const navigate = useNavigate()
   const [run, setRun] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selectedStage, setSelectedStage] = useState(null)
@@ -167,9 +168,27 @@ export default function RunDetail() {
             </>
           )}
           {(run.status === 'paused' || run.status === 'failed' || run.status === 'cancelled') && (
-            <button className="btn btn-primary" onClick={handleResume} disabled={resuming}>
-              {resuming ? 'Resuming...' : 'Resume Run'}
-            </button>
+            <>
+              <button className="btn btn-primary" onClick={handleResume} disabled={resuming}>
+                {resuming ? 'Resuming...' : 'Resume Run'}
+              </button>
+              <button className="btn btn-danger" onClick={async () => {
+                if (!confirm(`Delete Run #${run.run_number}? This removes all stage outputs, bugs, and events for this run.`)) return
+                try {
+                  await api.deleteRun(engagementId, runId)
+                  navigate(`/engagements/${engagementId}`)
+                } catch (e) { console.error(e) }
+              }}>Delete Run</button>
+            </>
+          )}
+          {run.status === 'completed' && (
+            <button className="btn btn-danger" onClick={async () => {
+              if (!confirm(`Delete Run #${run.run_number}? This removes all stage outputs, bugs, and events for this run.`)) return
+              try {
+                await api.deleteRun(engagementId, runId)
+                navigate(`/engagements/${engagementId}`)
+              } catch (e) { console.error(e) }
+            }}>Delete Run</button>
           )}
         </div>
       </div>
