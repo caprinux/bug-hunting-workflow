@@ -381,7 +381,7 @@ export default function StageOutputBrowser({ engagementId, runId, stageName, onC
           key={file.path}
           className="file-item"
           onClick={() => {
-            if (file.name.endsWith('.jsonl')) {
+            if (file.name === 'stream.jsonl') {
               setConversationPath(file.path)
             } else {
               loadDirectory(file.path)
@@ -389,10 +389,10 @@ export default function StageOutputBrowser({ engagementId, runId, stageName, onC
           }}
         >
           <span className="file-icon">
-            {file.is_dir ? <FolderIcon /> : file.name.endsWith('.jsonl') ? <ChatIcon /> : <FileIcon />}
+            {file.is_dir ? <FolderIcon /> : file.name === 'stream.jsonl' ? <ChatIcon /> : <FileIcon />}
           </span>
           <span className="file-name">{file.name}</span>
-          {file.name.endsWith('.jsonl') && <span className="file-tag">conversation</span>}
+          {file.name === 'stream.jsonl' && <span className="file-tag">conversation</span>}
           {file.size !== undefined && (
             <span className="file-size">{formatSize(file.size)}</span>
           )}
