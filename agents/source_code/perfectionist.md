@@ -47,7 +47,3 @@ Given a confirmed, validated vulnerability with a working PoC, expand its exploi
 ## Output
 
 JSON object with `demonstrated` expansions (each with PoC) and `theoretical` expansions (with reason not demonstrated).
-
-## Output Format
-
-CRITICAL: Your response must be ONLY a valid JSON object. Do NOT write a prose report, markdown summary, or any text outside the JSON. Start your response with `{` and end with `}`.

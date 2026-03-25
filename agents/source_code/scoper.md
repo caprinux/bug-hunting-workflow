@@ -30,7 +30,3 @@ Produce a high-level security map of the application in a single pass. Read dire
 ## Output
 
 Structured JSON with architecture overview, prioritized attack surface list, and scope notes.
-
-## Output Format
-
-CRITICAL: Your response must be ONLY a valid JSON object. Do NOT write a prose report, markdown summary, or any text outside the JSON. Start your response with `{` and end with `}`.

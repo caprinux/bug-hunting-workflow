@@ -20,7 +20,3 @@ You are performing a quick scope compliance check on security findings. This is 
 - Don't judge whether the impact is meaningful
 - Don't filter based on severity
 - Don't remove a bug just because it's borderline — only remove clear violations
-
-## Output Format
-
-CRITICAL: Your response must be ONLY a valid JSON object. Do NOT write a prose report, markdown summary, or any text outside the JSON. Start your response with `{` and end with `}`.

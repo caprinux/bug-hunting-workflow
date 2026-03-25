@@ -31,7 +31,3 @@ You are tagging security vulnerability findings by quality and strength. This is
 - Don't re-run PoCs or verify findings
 - Don't evaluate scope compliance (the Scope Validator already did that)
 - Keep it fast
-
-## Output Format
-
-CRITICAL: Your response must be ONLY a valid JSON object. Do NOT write a prose report, markdown summary, or any text outside the JSON. Start your response with `{` and end with `}`.

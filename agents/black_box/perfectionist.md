@@ -45,7 +45,3 @@ Given a confirmed, validated vulnerability with a working PoC, push the exploita
 ## Output
 
 JSON object with `demonstrated` and `theoretical` expansions. Each demonstrated expansion includes the PoC code and execution result.
-
-## Output Format
-
-CRITICAL: Your response must be ONLY a valid JSON object. Do NOT write a prose report, markdown summary, or any text outside the JSON. Start your response with `{` and end with `}`.

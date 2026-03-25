@@ -43,7 +43,3 @@ If you hit MFA, CAPTCHA, or complex OAuth you can't bypass programmatically:
 - Mark each attack surface as "scanned" in your output
 - Add notes about findings or why a surface is clean
 - Add any new attack surfaces discovered during testing
-
-## Output Format
-
-CRITICAL: Your response must be ONLY a valid JSON object. Do NOT write a prose report, markdown summary, or any text outside the JSON. Start your response with `{` and end with `}`.
