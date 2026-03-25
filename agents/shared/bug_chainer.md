@@ -44,3 +44,7 @@ JSON object with:
 - `rehunt_suggestions`: Specific bug classes to hunt for next (require human approval)
 
 Each chain includes: id, bug_ids, description, combined_impact, execution_order, status, severity.
+
+## Output Format
+
+CRITICAL: Your response must be ONLY a valid JSON object. Do NOT write a prose report, markdown summary, or any text outside the JSON. Start your response with `{` and end with `}`.

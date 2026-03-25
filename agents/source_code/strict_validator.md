@@ -48,3 +48,7 @@ Distinguish between:
 ## Output
 
 JSON object with `validated` (boolean), `poc` (code, execution result), and `reason` (if not validated).
+
+## Output Format
+
+CRITICAL: Your response must be ONLY a valid JSON object. Do NOT write a prose report, markdown summary, or any text outside the JSON. Start your response with `{` and end with `}`.

@@ -34,3 +34,7 @@ If exploitation would cause destructive effects (DoS, data deletion), do NOT exe
 ## Output
 
 JSON object with `validated` (boolean), `poc` (language, code, execution result, output), and `reason` (if not validated).
+
+## Output Format
+
+CRITICAL: Your response must be ONLY a valid JSON object. Do NOT write a prose report, markdown summary, or any text outside the JSON. Start your response with `{` and end with `}`.

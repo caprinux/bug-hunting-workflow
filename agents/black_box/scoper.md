@@ -29,3 +29,7 @@ Enumerate the target, understand its functionality, and produce a structured att
 ## Output
 
 Structured JSON with architecture overview, prioritized attack surface list, and scope notes.
+
+## Output Format
+
+CRITICAL: Your response must be ONLY a valid JSON object. Do NOT write a prose report, markdown summary, or any text outside the JSON. Start your response with `{` and end with `}`.
