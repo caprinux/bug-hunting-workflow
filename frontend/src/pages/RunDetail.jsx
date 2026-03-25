@@ -112,8 +112,19 @@ export default function RunDetail() {
     }
   }
 
-  // Run cost
+  // Run cost and token usage
   const totalCost = stages.reduce((sum, s) => sum + (s.cost_usd || 0), 0)
+  const totalUsage = stages.reduce((acc, s) => {
+    const meta = s.metadata ? (typeof s.metadata === 'string' ? JSON.parse(s.metadata) : s.metadata) : {}
+    const u = meta.usage || {}
+    return {
+      input: acc.input + (u.input_tokens || 0),
+      output: acc.output + (u.output_tokens || 0),
+      cache_read: acc.cache_read + (u.cache_read_input_tokens || 0),
+      cache_create: acc.cache_create + (u.cache_creation_input_tokens || 0),
+    }
+  }, { input: 0, output: 0, cache_read: 0, cache_create: 0 })
+  const totalTokens = totalUsage.input + totalUsage.output + totalUsage.cache_read + totalUsage.cache_create
 
   return (
     <div className="page run-detail">
@@ -186,6 +197,48 @@ export default function RunDetail() {
         </div>
       )}
 
+      {/* Run stats */}
+      {(totalCost > 0 || totalTokens > 0) && (
+        <div className="run-stats-bar">
+          {totalCost > 0 && (
+            <div className="run-stat">
+              <span className="run-stat-value">${totalCost.toFixed(2)}</span>
+              <span className="run-stat-label">Cost</span>
+            </div>
+          )}
+          {totalTokens > 0 && (
+            <div className="run-stat">
+              <span className="run-stat-value">{formatTokens(totalTokens)}</span>
+              <span className="run-stat-label">Total Tokens</span>
+            </div>
+          )}
+          {totalUsage.input > 0 && (
+            <div className="run-stat">
+              <span className="run-stat-value">{formatTokens(totalUsage.input)}</span>
+              <span className="run-stat-label">Input</span>
+            </div>
+          )}
+          {totalUsage.output > 0 && (
+            <div className="run-stat">
+              <span className="run-stat-value">{formatTokens(totalUsage.output)}</span>
+              <span className="run-stat-label">Output</span>
+            </div>
+          )}
+          {totalUsage.cache_read > 0 && (
+            <div className="run-stat">
+              <span className="run-stat-value">{formatTokens(totalUsage.cache_read)}</span>
+              <span className="run-stat-label">Cache Read</span>
+            </div>
+          )}
+          {totalUsage.cache_create > 0 && (
+            <div className="run-stat">
+              <span className="run-stat-value">{formatTokens(totalUsage.cache_create)}</span>
+              <span className="run-stat-label">Cache Create</span>
+            </div>
+          )}
+        </div>
+      )}
+
       <h2>Pipeline</h2>
       <PipelineVisualization
         stages={stages}
@@ -242,4 +295,10 @@ export default function RunDetail() {
       </div>
     </div>
   )
+}
+
+function formatTokens(n) {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
+  return String(n)
 }

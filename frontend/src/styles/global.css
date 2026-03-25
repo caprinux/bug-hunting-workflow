@@ -250,6 +250,25 @@ a:hover { color: var(--accent-hover); }
 .btn-danger:hover { opacity: 0.9; }
 
 /* Agent status bar */
+/* Run stats bar */
+.run-stats-bar {
+  display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.run-stat {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 10px 20px; background: var(--bg-secondary);
+  border: 1px solid var(--border); border-radius: 8px; min-width: 80px;
+}
+.run-stat-value {
+  font-size: 18px; font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-primary);
+}
+.run-stat-label {
+  font-size: 11px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.3px; margin-top: 2px;
+}
+
 .agent-status-bar {
   display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
 }

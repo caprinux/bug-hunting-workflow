@@ -86,6 +86,7 @@ class CLIResult:
     duration_ms: int = 0
     cost_usd: float = 0.0
     session_id: str = ""
+    usage: Optional[dict] = None  # token usage: input_tokens, output_tokens, etc.
 
 
 @dataclass
@@ -363,6 +364,7 @@ async def _run_cli_process(
 
         if result_data:
             parsed_result = _parse_result_payload(result_data.get("result"))
+            usage = result_data.get("usage")
             return finalize_record(CLIResult(
                 success=not result_data.get("is_error", False),
                 result=parsed_result,
@@ -371,6 +373,7 @@ async def _run_cli_process(
                 duration_ms=duration_ms,
                 cost_usd=cost_usd,
                 session_id=session_id,
+                usage=usage,
             ))
 
         return finalize_record(CLIResult(

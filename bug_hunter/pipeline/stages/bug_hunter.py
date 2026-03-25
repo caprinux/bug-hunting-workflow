@@ -80,6 +80,7 @@ class BugHunterStage(PipelineStage):
 
         agents = hunter_config.agents
         total_cost = 0.0
+        total_usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
         all_new_bugs = []
 
         agent_stats = {agent: {"succeeded": 0, "failed": 0, "running": 0, "total": 1} for agent in agents}
@@ -97,6 +98,9 @@ class BugHunterStage(PipelineStage):
                 existing_bugs, source_path, infra_config, eng_type, stage_dir,
             )
             total_cost += result.cost_usd
+            if result.usage:
+                for k in total_usage:
+                    total_usage[k] += result.usage.get(k, 0)
             agent_stats[agent_name]["running"] = 0
 
             if result.success and result.result:
@@ -189,6 +193,7 @@ class BugHunterStage(PipelineStage):
                 "agents_succeeded": succeeded,
                 "agents_failed": failed,
                 "coverage_ratio": round(succeeded / len(agents), 2) if agents else 0,
+                "usage": total_usage,
             },
         )
 
