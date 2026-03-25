@@ -39,6 +39,7 @@ class EngagementConfig:
 @dataclass
 class BugHunterConfig:
     agents: list[str] = field(default_factory=lambda: ["claude", "codex"])
+    iterations: int = 1
     exclude_paths: list[str] = field(default_factory=list)
     codex_model: str = "gpt-5.4"
 

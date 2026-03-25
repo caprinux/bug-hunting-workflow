@@ -36,6 +36,7 @@ const SECTIONS = [
     fields: [
       { key: 'agents', label: 'Agents', type: 'agent_checkboxes', help: 'Which AI agents to run concurrently during bug hunting' },
       { key: 'codex_model', label: 'Codex Model', type: 'select', options: CODEX_MODEL_OPTIONS, help: 'Model used by Codex CLI (only applies when Codex is enabled)' },
+      { key: 'iterations', label: 'Hunt Iterations', type: 'number', help: 'Number of times to run the Bug Hunter before proceeding to validation (default: 1)' },
       { key: 'exclude_paths', label: 'Exclude Paths', type: 'tags', help: 'Directories to skip (e.g. node_modules, vendor)' },
     ],
   },

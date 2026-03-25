@@ -68,91 +68,115 @@ class BugHunterStage(PipelineStage):
             with open(bugs_file, "w") as f:
                 json.dump([], f, indent=2)
 
-        with open(attack_surfaces_file) as f:
-            attack_surfaces = json.load(f)
-        with open(bugs_file) as f:
-            existing_bugs = json.load(f)
-
-        await event_manager.emit_log(
-            context.engagement_id, context.run_id, self.name,
-            f"Bug hunting iteration — {len(attack_surfaces)} surfaces, {len(existing_bugs)} bugs found so far",
-        )
-
+        iterations = max(1, hunter_config.iterations)
         agents = hunter_config.agents
         total_cost = 0.0
         total_usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
         all_new_bugs = []
+        agent_stats = {agent: {"succeeded": 0, "failed": 0, "running": 0, "total": iterations} for agent in agents}
 
-        agent_stats = {agent: {"succeeded": 0, "failed": 0, "running": 0, "total": 1} for agent in agents}
+        for iteration in range(1, iterations + 1):
+            # Reload progress files each iteration (previous iteration updated them)
+            with open(attack_surfaces_file) as f:
+                attack_surfaces = json.load(f)
+            with open(bugs_file) as f:
+                existing_bugs = json.load(f)
 
-        async def run_agent(agent_name: str):
-            nonlocal total_cost
-            agent_stats[agent_name]["running"] = 1
-            await event_manager.emit("agent_progress", context.engagement_id, context.run_id, self.name, {
-                "agent": agent_name, "status": "running", "total_chunks": 1,
-                "succeeded": 0, "failed": 0, "running": 1,
-            })
-
-            result = await self._run_hunter(
-                context, agent_name, scope_data, attack_surfaces,
-                existing_bugs, source_path, infra_config, eng_type, stage_dir,
+            await event_manager.emit_log(
+                context.engagement_id, context.run_id, self.name,
+                f"Iteration {iteration}/{iterations} — {len(attack_surfaces)} surfaces, {len(existing_bugs)} bugs found so far",
             )
-            total_cost += result.cost_usd
-            if result.usage:
-                for k in total_usage:
-                    total_usage[k] += result.usage.get(k, 0)
-            agent_stats[agent_name]["running"] = 0
 
-            if result.success and result.result:
-                from bug_hunter.utils.result_parser import parse_agent_result
-                raw_file = os.path.join(stage_dir, f"raw_output_{agent_name}.md")
-                data = parse_agent_result(
-                    result.result, ["bugs", "attack_surfaces"],
-                    f"bug_hunter/{agent_name}", save_raw_to=raw_file,
+            async def _run_agent_iteration(agent_name, _attack_surfaces, _existing_bugs):
+                nonlocal total_cost
+                agent_stats[agent_name]["running"] += 1
+                await event_manager.emit("agent_progress", context.engagement_id, context.run_id, self.name, {
+                    "agent": agent_name, "status": "running", "total_chunks": iterations,
+                    "succeeded": agent_stats[agent_name]["succeeded"],
+                    "failed": agent_stats[agent_name]["failed"],
+                    "running": agent_stats[agent_name]["running"],
+                })
+
+                result = await self._run_hunter(
+                    context, agent_name, scope_data, _attack_surfaces,
+                    _existing_bugs, source_path, infra_config, eng_type, stage_dir,
                 )
-                if not data.get("bugs") and isinstance(result.result, str):
-                    await event_manager.emit_log(
-                        context.engagement_id, context.run_id, self.name,
-                        f"[{agent_name}] Returned text instead of JSON — saved to raw_output_{agent_name}.md",
+                total_cost += result.cost_usd
+                if result.usage:
+                    for k in total_usage:
+                        total_usage[k] += result.usage.get(k, 0)
+                agent_stats[agent_name]["running"] -= 1
+
+                if result.success and result.result:
+                    from bug_hunter.utils.result_parser import parse_agent_result
+                    raw_file = os.path.join(stage_dir, f"raw_output_{agent_name}_iter{iteration}.md")
+                    data = parse_agent_result(
+                        result.result, ["bugs", "attack_surfaces"],
+                        f"bug_hunter/{agent_name}", save_raw_to=raw_file,
                     )
-                new_bugs = data.get("bugs", [])
-                updated_surfaces = data.get("attack_surfaces", [])
+                    if not data.get("bugs") and isinstance(result.result, str):
+                        await event_manager.emit_log(
+                            context.engagement_id, context.run_id, self.name,
+                            f"[{agent_name}] iter {iteration}: text instead of JSON — saved to raw_output",
+                        )
+                    new_bugs = data.get("bugs", [])
+                    updated_surfaces = data.get("attack_surfaces", [])
 
-                run_prefix = context.run_id[:8]
-                for i, bug in enumerate(new_bugs):
-                    if "id" not in bug:
-                        bug["id"] = f"{run_prefix}/{agent_name}-{len(existing_bugs) + i:03d}"
-                    bug["found_by"] = [agent_name]
+                    run_prefix = context.run_id[:8]
+                    for i, bug in enumerate(new_bugs):
+                        if "id" not in bug:
+                            bug["id"] = f"{run_prefix}/{agent_name}-i{iteration}-{len(_existing_bugs) + i:03d}"
+                        bug["found_by"] = [agent_name]
 
-                if updated_surfaces:
-                    self._merge_attack_surfaces(attack_surfaces_file, updated_surfaces)
+                    if updated_surfaces:
+                        self._merge_attack_surfaces(attack_surfaces_file, updated_surfaces)
 
-                agent_stats[agent_name]["succeeded"] = 1
-                await event_manager.emit("agent_progress", context.engagement_id, context.run_id, self.name, {
-                    "agent": agent_name, "status": "done",
-                    "bugs_found": len(new_bugs), "total_chunks": 1,
-                    "succeeded": 1, "failed": 0, "running": 0,
-                })
-                return new_bugs
-            else:
-                agent_stats[agent_name]["failed"] = 1
-                await event_manager.emit("agent_progress", context.engagement_id, context.run_id, self.name, {
-                    "agent": agent_name, "status": "failed",
-                    "error": result.error[:200] if result.error else "", "total_chunks": 1,
-                    "succeeded": 0, "failed": 1, "running": 0,
-                })
-                logger.warning(f"Bug hunter ({agent_name}) failed: {result.error}")
-                return []
+                    agent_stats[agent_name]["succeeded"] += 1
+                    await event_manager.emit("agent_progress", context.engagement_id, context.run_id, self.name, {
+                        "agent": agent_name, "status": "iteration_done",
+                        "bugs_found": len(new_bugs), "total_chunks": iterations,
+                        "succeeded": agent_stats[agent_name]["succeeded"],
+                        "failed": agent_stats[agent_name]["failed"],
+                        "running": agent_stats[agent_name]["running"],
+                    })
+                    return new_bugs
+                else:
+                    agent_stats[agent_name]["failed"] += 1
+                    await event_manager.emit("agent_progress", context.engagement_id, context.run_id, self.name, {
+                        "agent": agent_name, "status": "iteration_failed",
+                        "error": result.error[:200] if result.error else "", "total_chunks": iterations,
+                        "succeeded": agent_stats[agent_name]["succeeded"],
+                        "failed": agent_stats[agent_name]["failed"],
+                        "running": agent_stats[agent_name]["running"],
+                    })
+                    logger.warning(f"Bug hunter ({agent_name}) iter {iteration} failed: {result.error}")
+                    return []
 
-        tasks = [run_agent(agent) for agent in agents]
-        for coro in asyncio.as_completed(tasks):
-            new_bugs = await coro
-            all_new_bugs.extend(new_bugs)
+            # Run all agents concurrently for this iteration
+            iteration_bugs = []
+            tasks = [_run_agent_iteration(agent, attack_surfaces, existing_bugs) for agent in agents]
+            for coro in asyncio.as_completed(tasks):
+                new_bugs = await coro
+                iteration_bugs.extend(new_bugs)
 
-        # Append new bugs to BUGS.json
-        combined_bugs = existing_bugs + all_new_bugs
-        with open(bugs_file, "w") as f:
-            json.dump(combined_bugs, f, indent=2)
+            all_new_bugs.extend(iteration_bugs)
+
+            # Update BUGS.json so next iteration sees cumulative bugs
+            with open(bugs_file) as f:
+                current_bugs = json.load(f)
+            current_bugs.extend(iteration_bugs)
+            with open(bugs_file, "w") as f:
+                json.dump(current_bugs, f, indent=2)
+
+            await event_manager.emit_progress(
+                context.engagement_id, context.run_id, self.name,
+                iteration, iterations,
+                f"Iteration {iteration}/{iterations} complete — {len(iteration_bugs)} new bugs",
+            )
+
+        # After all iterations — read final state
+        with open(bugs_file) as f:
+            combined_bugs = json.load(f)
 
         # Validate and persist to DB
         quarantine_dir = os.path.join(stage_dir, "quarantined")
