@@ -134,7 +134,6 @@ export default function EngagementDetail() {
           }}>Delete</button>
         </div>
       )}
-      </div>
 
       {/* Engagement details panel */}
       {showDetails && engagement.config && (() => {
