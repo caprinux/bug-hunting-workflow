@@ -9,6 +9,7 @@ import os
 from bug_hunter.core.cli_wrapper import run_claude
 from bug_hunter.core.database import create_chain, list_bugs
 from bug_hunter.core.events import event_manager
+from bug_hunter.utils.result_parser import parse_agent_result
 from bug_hunter.pipeline.stages.base import PipelineStage, StageContext, StageResult
 from bug_hunter.pipeline.stages.registry import register
 
@@ -148,7 +149,7 @@ Output a JSON object:
                 cost_usd=result.cost_usd, metadata={"chaining_failed": True},
             )
 
-        chainer_result = result.result if isinstance(result.result, dict) else {}
+        chainer_result = parse_agent_result(result.result, ['demonstrated_chains', 'proposed_chains', 'individual_bugs'], "bug_chainer")
         individual = chainer_result.get("individual_bugs", confirmed_data)
         demonstrated = chainer_result.get("demonstrated_chains", [])
         proposed = chainer_result.get("proposed_chains", [])

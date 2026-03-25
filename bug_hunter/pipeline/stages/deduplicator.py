@@ -9,6 +9,7 @@ import os
 from bug_hunter.core.cli_wrapper import run_claude
 from bug_hunter.core.database import list_bugs, update_bug
 from bug_hunter.core.events import event_manager
+from bug_hunter.utils.result_parser import parse_agent_result
 from bug_hunter.pipeline.stages.base import PipelineStage, StageContext, StageResult
 from bug_hunter.pipeline.stages.registry import register
 
@@ -94,7 +95,7 @@ Output a JSON object with:
                 metadata={"dedup_failed": True, "error": result.error},
             )
 
-        dedup_result = result.result if isinstance(result.result, dict) else {}
+        dedup_result = parse_agent_result(result.result, ['deduplicated', 'duplicate_groups'], "deduplicator")
         deduplicated = dedup_result.get("deduplicated", bug_data_list)
         groups = dedup_result.get("duplicate_groups", [])
 

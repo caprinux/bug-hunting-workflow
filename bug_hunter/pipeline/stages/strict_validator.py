@@ -16,6 +16,7 @@ import os
 from bug_hunter.core.cli_wrapper import run_claude
 from bug_hunter.core.database import list_bugs, update_bug
 from bug_hunter.core.events import event_manager
+from bug_hunter.utils.result_parser import parse_agent_result
 from bug_hunter.pipeline.stages.base import PipelineStage, StageContext, StageResult
 from bug_hunter.pipeline.stages.registry import register
 
@@ -181,7 +182,7 @@ Output JSON: {{"validated": true/false, "poc": {{...}}, "reason": "if not valida
             return {"validated": False, "reason": f"Validator failed: {result.error}",
                     "cost_usd": result.cost_usd}
 
-        validation = result.result if isinstance(result.result, dict) else {}
+        validation = parse_agent_result(result.result, ['validated', 'poc'], "strict_validator")
         return {
             "validated": validation.get("validated", False),
             "reason": validation.get("reason", ""),

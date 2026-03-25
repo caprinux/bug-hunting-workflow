@@ -9,6 +9,7 @@ from pathlib import Path
 
 from bug_hunter.core.cli_wrapper import run_claude
 from bug_hunter.core.events import event_manager
+from bug_hunter.utils.result_parser import parse_agent_result
 from bug_hunter.pipeline.stages.base import PipelineStage, StageContext, StageResult
 from bug_hunter.pipeline.stages.registry import register
 
@@ -74,7 +75,7 @@ class ScoperStage(PipelineStage):
         if not result.success:
             return StageResult(success=False, error=result.error, cost_usd=result.cost_usd)
 
-        scope_data = result.result if isinstance(result.result, dict) else {}
+        scope_data = parse_agent_result(result.result, ['attack_surfaces', 'architecture'], "scoper")
         self.write_output(context, "scope.json", scope_data)
 
         attack_surfaces = scope_data.get("attack_surfaces", [])

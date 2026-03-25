@@ -19,6 +19,7 @@ import os
 from bug_hunter.core.cli_wrapper import run_claude
 from bug_hunter.core.database import list_bugs, update_bug
 from bug_hunter.core.events import event_manager
+from bug_hunter.utils.result_parser import parse_agent_result
 from bug_hunter.pipeline.stages.base import PipelineStage, StageContext, StageResult
 from bug_hunter.pipeline.stages.registry import register
 
@@ -128,7 +129,7 @@ Output JSON:
                 metadata={"triage_failed": True},
             )
 
-        triage_result = result.result if isinstance(result.result, dict) else {}
+        triage_result = parse_agent_result(result.result, ['tagged'], "strict_triager")
         tagged_list = triage_result.get("tagged", [])
         tag_map = {t.get("id"): t for t in tagged_list}
 

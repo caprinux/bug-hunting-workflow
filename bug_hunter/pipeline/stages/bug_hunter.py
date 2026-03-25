@@ -104,31 +104,17 @@ class BugHunterStage(PipelineStage):
             agent_stats[agent_name]["running"] = 0
 
             if result.success and result.result:
-                data = result.result
-                if isinstance(data, str):
-                    # Agent returned text instead of JSON — try to extract
-                    import re
-                    try:
-                        # Look for JSON object in the text
-                        match = re.search(r'\{[\s\S]*"bugs"\s*:\s*\[', data)
-                        if match:
-                            json_str = data[match.start():]
-                            data = json.loads(json_str)
-                        else:
-                            data = {}
-                    except (json.JSONDecodeError, TypeError):
-                        data = {}
-                    if not isinstance(data, dict) or not data.get("bugs"):
-                        # Save raw text so findings aren't lost completely
-                        raw_file = os.path.join(stage_dir, f"raw_output_{agent_name}.md")
-                        with open(raw_file, "w") as f:
-                            f.write(result.result if isinstance(result.result, str) else str(result.result))
-                        await event_manager.emit_log(
-                            context.engagement_id, context.run_id, self.name,
-                            f"[{agent_name}] Returned text instead of JSON — saved to raw_output_{agent_name}.md",
-                        )
-                if not isinstance(data, dict):
-                    data = {}
+                from bug_hunter.utils.result_parser import parse_agent_result
+                raw_file = os.path.join(stage_dir, f"raw_output_{agent_name}.md")
+                data = parse_agent_result(
+                    result.result, ["bugs", "attack_surfaces"],
+                    f"bug_hunter/{agent_name}", save_raw_to=raw_file,
+                )
+                if not data.get("bugs") and isinstance(result.result, str):
+                    await event_manager.emit_log(
+                        context.engagement_id, context.run_id, self.name,
+                        f"[{agent_name}] Returned text instead of JSON — saved to raw_output_{agent_name}.md",
+                    )
                 new_bugs = data.get("bugs", [])
                 updated_surfaces = data.get("attack_surfaces", [])
 

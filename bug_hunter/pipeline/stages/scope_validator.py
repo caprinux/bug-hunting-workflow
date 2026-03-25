@@ -14,6 +14,7 @@ import os
 from bug_hunter.core.cli_wrapper import run_claude
 from bug_hunter.core.database import list_bugs, update_bug
 from bug_hunter.core.events import event_manager
+from bug_hunter.utils.result_parser import parse_agent_result
 from bug_hunter.pipeline.stages.base import PipelineStage, StageContext, StageResult
 from bug_hunter.pipeline.stages.registry import register
 
@@ -114,7 +115,7 @@ Output JSON:
                 metadata={"scope_check_failed": True},
             )
 
-        scope_result = result.result if isinstance(result.result, dict) else {}
+        scope_result = parse_agent_result(result.result, ['in_scope', 'out_of_scope'], "scope_validator")
         in_scope_ids = set(scope_result.get("in_scope", []))
         out_of_scope_list = scope_result.get("out_of_scope", [])
         out_of_scope_map = {}

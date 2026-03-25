@@ -10,6 +10,7 @@ import os
 from bug_hunter.core.cli_wrapper import run_claude
 from bug_hunter.core.database import list_bugs, update_bug
 from bug_hunter.core.events import event_manager
+from bug_hunter.utils.result_parser import parse_agent_result
 from bug_hunter.pipeline.stages.base import PipelineStage, StageContext, StageResult
 from bug_hunter.pipeline.stages.registry import register
 
@@ -171,7 +172,7 @@ Output a JSON object:
         if not result.success:
             return {"expanded": False, "cost_usd": result.cost_usd}
 
-        expansion = result.result if isinstance(result.result, dict) else {}
+        expansion = parse_agent_result(result.result, ['expanded', 'expanded_primitives'], "perfectionist")
         return {
             "expanded": expansion.get("expanded", False),
             "expanded_primitives": expansion.get("expanded_primitives", {"demonstrated": [], "theoretical": []}),
