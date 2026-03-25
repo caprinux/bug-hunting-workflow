@@ -1,4 +1,8 @@
-"""Validate agent outputs against JSON schemas."""
+"""Validate agent outputs against JSON schemas.
+
+Includes normalization to handle common field name variations from
+different LLMs (e.g., Codex using "title" instead of "vuln_type").
+"""
 
 from __future__ import annotations
 
@@ -13,6 +17,50 @@ logger = logging.getLogger(__name__)
 SCHEMAS_DIR = Path(__file__).parent.parent.parent / "schemas"
 
 _schema_cache: dict[str, dict] = {}
+
+# Map alternative field names to canonical schema field names.
+# LLMs (especially Codex) often use different names for the same concept.
+FIELD_ALIASES = {
+    "vuln_class": ["vulnerability_class", "cwe", "cwe_id", "vulnerability_category"],
+    "vuln_type": ["title", "vulnerability_type", "vulnerability", "name", "type"],
+    "description": ["summary", "details", "finding_description", "security_impact", "impact"],
+    "reasoning": ["root_cause", "analysis", "explanation", "rationale", "justification"],
+    "confidence": ["confidence_level"],
+    "source_file": ["file", "filepath", "file_path", "path", "location"],
+    "line_range": ["lines", "line_numbers", "line"],
+}
+
+
+def _normalize_finding(finding: dict) -> dict:
+    """Normalize a finding by mapping alternative field names to canonical ones.
+
+    Does not overwrite fields that already exist in the finding.
+    """
+    normalized = dict(finding)
+
+    for canonical, aliases in FIELD_ALIASES.items():
+        if canonical in normalized and normalized[canonical]:
+            continue  # Already has the canonical field with a value
+        for alias in aliases:
+            if alias in normalized and normalized[alias]:
+                normalized[canonical] = normalized[alias]
+                break
+
+    # Map severity to confidence if confidence is missing
+    if "confidence" not in normalized or not normalized.get("confidence"):
+        sev = normalized.get("severity", "")
+        if sev in ("critical", "high"):
+            normalized["confidence"] = "high"
+        elif sev == "medium":
+            normalized["confidence"] = "medium"
+        elif sev in ("low", "informational"):
+            normalized["confidence"] = "low"
+
+    # Ensure vuln_class has a value — use vuln_type as fallback
+    if not normalized.get("vuln_class") and normalized.get("vuln_type"):
+        normalized["vuln_class"] = normalized["vuln_type"]
+
+    return normalized
 
 
 def _load_schema(schema_name: str) -> Optional[dict]:
@@ -41,7 +89,7 @@ def validate_bug_finding(finding: dict) -> tuple[bool, list[str]]:
 
     required = schema.get("required", [])
     for field in required:
-        if field not in finding:
+        if field not in finding or not finding[field]:
             errors.append(f"Missing required field: {field}")
 
     props = schema.get("properties", {})
@@ -66,24 +114,22 @@ def validate_findings_list(findings: list[dict],
                            quarantine_dir: str = None) -> tuple[list[dict], list[dict]]:
     """Validate a list of findings, separating valid from invalid.
 
-    Args:
-        findings: List of bug finding dicts.
-        quarantine_dir: If provided, quarantined findings are written here.
-
-    Returns:
-        (valid_findings, quarantined_findings)
+    Normalizes field names before validation so findings from different
+    LLMs (Claude vs Codex) are accepted even if they use different names.
     """
     valid = []
     quarantined = []
 
     for finding in findings:
-        is_valid, errors = validate_bug_finding(finding)
+        # Normalize first, then validate
+        normalized = _normalize_finding(finding)
+        is_valid, errors = validate_bug_finding(normalized)
         if is_valid:
-            valid.append(finding)
+            valid.append(normalized)
         else:
-            finding["_validation_errors"] = errors
-            quarantined.append(finding)
-            logger.warning(f"Quarantined finding {finding.get('id', '?')}: {errors}")
+            normalized["_validation_errors"] = errors
+            quarantined.append(normalized)
+            logger.warning(f"Quarantined finding {normalized.get('id', '?')}: {errors}")
 
     if quarantine_dir and quarantined:
         os.makedirs(quarantine_dir, exist_ok=True)
