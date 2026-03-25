@@ -175,14 +175,32 @@ CRITICAL: Output ONLY the raw markdown text. Do NOT wrap it in JSON or code bloc
                 confirmed, cannot_validate, out_of_scope, informational, discarded, triage_failed, chains, scope_def,
             )
         else:
-            report = result.result if isinstance(result.result, str) else str(result.result)
-            # Clean up: remove any JSON wrapping or code block markers
-            if report.startswith('{') or report.startswith('```'):
+            # The summarizer expects markdown, not JSON. The CLI wrapper's
+            # _parse_result_payload may have eagerly parsed an embedded JSON
+            # snippet from the markdown (e.g., a PoC payload example).
+            # Recover the original text from raw_output if result is not markdown.
+            report = result.result if isinstance(result.result, str) else ""
+
+            # If result was parsed as JSON (dict/list), the CLI wrapper eagerly
+            # extracted an embedded JSON snippet from the markdown. Recover the
+            # full report from the stream.jsonl file.
+            if not report or not report.strip().startswith('#'):
+                recovered = self._recover_text_from_stream(record_dir)
+                if recovered and '# ' in recovered:
+                    import re
+                    md_match = re.search(r'# Engagement Summary Report[\s\S]*', recovered)
+                    report = md_match.group(0) if md_match else recovered
+                elif isinstance(result.result, dict):
+                    report = self._generate_fallback_report(
+                        confirmed, cannot_validate, out_of_scope, informational,
+                        discarded, triage_failed, chains, scope_def,
+                    )
+
+            # Clean up code block wrappers if present
+            if report.startswith('```'):
                 import re
-                # Try to extract markdown from JSON or code blocks
-                md_match = re.search(r'# Engagement Summary Report[\s\S]*', report)
-                if md_match:
-                    report = md_match.group(0)
+                report = re.sub(r'^```(?:markdown)?\n?', '', report)
+                report = re.sub(r'\n?```\s*$', '', report)
 
         # Save the report
         report_path = os.path.join(stage_dir, "report.md")
@@ -212,6 +230,31 @@ CRITICAL: Output ONLY the raw markdown text. Do NOT wrap it in JSON or code bloc
             cost_usd=result.cost_usd if result.success else 0,
             metadata={"report_length": len(report), "total_bugs": len(all_bugs)},
         )
+
+    def _recover_text_from_stream(self, record_dir: str) -> str:
+        """Extract all assistant text blocks from a stream.jsonl file."""
+        import json as _json
+        stream_path = os.path.join(record_dir, "stream.jsonl")
+        if not os.path.exists(stream_path):
+            return ""
+        texts = []
+        try:
+            with open(stream_path) as f:
+                for line in f:
+                    try:
+                        entry = _json.loads(line.strip())
+                        raw = _json.loads(entry.get("raw", "{}"))
+                        if raw.get("type") == "assistant":
+                            content = raw.get("message", {}).get("content", [])
+                            if isinstance(content, list):
+                                for block in content:
+                                    if block.get("type") == "text":
+                                        texts.append(block["text"])
+                    except (_json.JSONDecodeError, KeyError, TypeError):
+                        continue
+        except Exception:
+            return ""
+        return "".join(texts)
 
     def _generate_fallback_report(self, confirmed, cannot_validate, out_of_scope,
                                    informational, discarded, triage_failed, chains, scope_def):
