@@ -116,6 +116,11 @@ class PipelineOrchestrator:
         for stage_name, stage_order in stages:
             create_stage_result(run_id, stage_name, stage_order)
 
+        # For rehunts: copy setup/scoper output from the latest completed run
+        # so the Bug Hunter can read scope.json without re-running those stages
+        if run_type == "rehunt":
+            self._copy_prior_stage_outputs(run_id, run_dir, ["setup", "scoper"])
+
         await event_manager.emit_stage_update(
             self.engagement_id, run_id, "", "running",
             message="Pipeline started",
@@ -188,6 +193,11 @@ class PipelineOrchestrator:
         stages = self._get_stage_list()
 
         pipeline_state = {"completed_stages": [], "current_stage": None, "failed": False}
+
+        # For rehunts, pre-mark setup/scoper as completed (outputs already copied)
+        if run_type == "rehunt":
+            pipeline_state["completed_stages"] = [s for s in self.REHUNT_SKIP_STAGES
+                                                   if any(name == s for name, _ in stages)]
 
         if self.config.pipeline.resume:
             state_file = run_dir / "pipeline_state.json"
@@ -450,6 +460,52 @@ class PipelineOrchestrator:
     def _should_pause_for_error(self, message: str) -> bool:
         text = (message or "").lower()
         return any(pattern in text for pattern in LIMIT_ERROR_PATTERNS)
+
+    # Stages to skip on rehunt — setup and scoper already ran in a prior run
+    REHUNT_SKIP_STAGES = {"setup", "scoper"}
+
+    def _copy_prior_stage_outputs(self, run_id: str, run_dir: Path, stage_names: list[str]):
+        """Copy stage output dirs from the latest completed run into this run.
+
+        Also marks those stages as completed in the DB so the pipeline skips them.
+        """
+        import shutil
+        from bug_hunter.core.database import list_runs as db_list_runs, list_stage_results
+
+        # Find the latest completed run (not this one)
+        prior_runs = [
+            r for r in db_list_runs(self.engagement_id)
+            if r["id"] != run_id and r["status"] in ("completed", "failed", "paused")
+        ]
+        if not prior_runs:
+            logger.warning("No prior completed run found — rehunt will run full pipeline")
+            return
+
+        prior_run = prior_runs[-1]
+        prior_dir = self._get_run_dir(prior_run["id"])
+
+        for stage_name in stage_names:
+            # Find stage order
+            stage_order = None
+            for name, order in PIPELINE_STAGES:
+                if name == stage_name:
+                    stage_order = order
+                    break
+            if stage_order is None:
+                continue
+
+            src_dir = prior_dir / f"{stage_order:02d}_{stage_name}"
+            dst_dir = run_dir / f"{stage_order:02d}_{stage_name}"
+
+            if src_dir.exists() and not dst_dir.exists():
+                shutil.copytree(str(src_dir), str(dst_dir))
+                logger.info(f"Copied {stage_name} output from run {prior_run['id'][:8]}")
+
+            # Mark stage as completed in DB
+            stage_results = list_stage_results(run_id)
+            sr = next((s for s in stage_results if s["stage_name"] == stage_name), None)
+            if sr:
+                update_stage_result(sr["id"], status="completed")
 
     def _save_pipeline_state(self, run_dir: Path, state: dict):
         state_file = run_dir / "pipeline_state.json"
