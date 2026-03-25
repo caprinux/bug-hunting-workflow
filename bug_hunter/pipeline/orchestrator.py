@@ -510,45 +510,69 @@ class PipelineOrchestrator:
                 update_stage_result(sr["id"], status="completed")
 
     def _copy_bug_hunter_progress(self, run_id: str, run_dir: Path):
-        """Copy BUGS.json and attack_surfaces.json from the latest prior run.
+        """Copy BUGS.json and attack_surfaces.json from the best prior run.
 
-        Unlike _copy_prior_stage_outputs, this does NOT mark the stage as
-        completed — the Bug Hunter still needs to run, but it starts with
-        the previous run's progress so it knows what was already scanned.
+        Finds the latest prior run that actually has a non-empty BUGS.json,
+        not just the latest run (which may have been cancelled before finding
+        anything). Does NOT mark the stage as completed.
         """
         import shutil
         from bug_hunter.core.database import list_runs as db_list_runs
 
         prior_runs = [
             r for r in db_list_runs(self.engagement_id)
-            if r["id"] != run_id and r["status"] in ("completed", "failed", "paused", "cancelled")
+            if r["id"] != run_id
         ]
         if not prior_runs:
             return
 
-        prior_run = prior_runs[-1]
-        prior_dir = self._get_run_dir(prior_run["id"])
-
-        # Find the bug_hunter stage dir in the prior run
+        # Find the bug_hunter stage order
+        bh_order = None
         for name, order in PIPELINE_STAGES:
             if name == "bug_hunter":
-                src_dir = prior_dir / f"{order:02d}_bug_hunter"
-                dst_dir = run_dir / f"{order:02d}_bug_hunter"
+                bh_order = order
                 break
-        else:
+        if bh_order is None:
             return
 
-        if not src_dir.exists():
-            return
+        dst_dir = run_dir / f"{bh_order:02d}_bug_hunter"
+
+        # Search prior runs in reverse order for the best BUGS.json
+        best_bugs_src = None
+        best_surfaces_src = None
+        for prior_run in reversed(prior_runs):
+            prior_dir = self._get_run_dir(prior_run["id"])
+            src_dir = prior_dir / f"{bh_order:02d}_bug_hunter"
+
+            if not best_bugs_src:
+                bugs_file = src_dir / "BUGS.json"
+                if bugs_file.exists() and bugs_file.stat().st_size > 10:
+                    best_bugs_src = bugs_file
+
+            if not best_surfaces_src:
+                surfaces_file = src_dir / "attack_surfaces.json"
+                if surfaces_file.exists() and surfaces_file.stat().st_size > 10:
+                    best_surfaces_src = surfaces_file
+
+            if best_bugs_src and best_surfaces_src:
+                break
 
         dst_dir.mkdir(parents=True, exist_ok=True)
 
-        for filename in ["BUGS.json", "attack_surfaces.json"]:
-            src_file = src_dir / filename
-            dst_file = dst_dir / filename
-            if src_file.exists() and not dst_file.exists():
-                shutil.copy2(str(src_file), str(dst_file))
-                logger.info(f"Copied {filename} from run {prior_run['id'][:8]} for rehunt continuity")
+        if best_bugs_src:
+            dst_file = dst_dir / "BUGS.json"
+            if not dst_file.exists():
+                shutil.copy2(str(best_bugs_src), str(dst_file))
+                import json
+                with open(dst_file) as f:
+                    count = len(json.load(f))
+                logger.info(f"Copied BUGS.json ({count} bugs) from prior run for rehunt continuity")
+
+        if best_surfaces_src:
+            dst_file = dst_dir / "attack_surfaces.json"
+            if not dst_file.exists():
+                shutil.copy2(str(best_surfaces_src), str(dst_file))
+                logger.info(f"Copied attack_surfaces.json from prior run for rehunt continuity")
 
     def _save_pipeline_state(self, run_dir: Path, state: dict):
         state_file = run_dir / "pipeline_state.json"
