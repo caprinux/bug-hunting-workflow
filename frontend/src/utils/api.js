@@ -46,6 +46,7 @@ export const api = {
   // Platforms
   listPlatforms: () => request('/platforms'),
   scrapePlatform: (name, creds) => request(`/platforms/${name}/scrape`, { method: 'POST', body: JSON.stringify(creds) }),
+  scrapeStatus: (name) => request(`/platforms/${name}/scrape/status`),
   listPlatformPrograms: (name) => request(`/platforms/${name}/programs`),
   getPlatformProgram: (name, id) => request(`/platforms/${name}/programs/${id}`),
   importProgram: (name, id) => request(`/platforms/${name}/programs/${id}/import`, { method: 'POST' }),

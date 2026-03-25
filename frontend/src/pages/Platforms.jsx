@@ -38,23 +38,50 @@ export default function Platforms() {
     }
   }
 
+  const [scrapeMessage, setScrapeMessage] = useState('')
+
   async function handleScrape() {
     if (!selectedPlatform) return
     setScraping(true)
     setError(null)
+    setScrapeMessage('Starting...')
     try {
-      const result = await api.scrapePlatform(selectedPlatform.name, scrapeForm)
+      await api.scrapePlatform(selectedPlatform.name, scrapeForm)
       setShowScrapeModal(false)
       setScrapeForm({})
-      await loadPrograms(selectedPlatform.name)
-      // Refresh platform info
-      const updated = await api.listPlatforms()
-      setPlatforms(updated)
-      setSelectedPlatform(updated.find(p => p.name === selectedPlatform.name) || selectedPlatform)
+
+      // Poll for completion
+      const poll = async () => {
+        for (let i = 0; i < 300; i++) {  // max 5 min
+          await new Promise(r => setTimeout(r, 2000))
+          try {
+            const status = await api.scrapeStatus(selectedPlatform.name)
+            setScrapeMessage(status.message || status.status)
+            if (status.status === 'completed') {
+              await loadPrograms(selectedPlatform.name)
+              const updated = await api.listPlatforms()
+              setPlatforms(updated)
+              setSelectedPlatform(updated.find(p => p.name === selectedPlatform.name) || selectedPlatform)
+              setScraping(false)
+              setScrapeMessage('')
+              return
+            } else if (status.status === 'failed') {
+              setError(status.message)
+              setScraping(false)
+              setScrapeMessage('')
+              return
+            }
+          } catch { break }
+        }
+        setScraping(false)
+        setScrapeMessage('')
+      }
+      poll()
     } catch (e) {
       setError(e.message)
+      setScraping(false)
+      setScrapeMessage('')
     }
-    setScraping(false)
   }
 
   async function handleSelectProgram(program) {
@@ -101,9 +128,15 @@ export default function Platforms() {
                   Last scraped: {new Date(selectedPlatform.last_scraped).toLocaleString()}
                 </span>
               )}
-              <button className="btn btn-primary" onClick={() => setShowScrapeModal(true)}>
-                Scrape {selectedPlatform.display_name}
-              </button>
+              {scraping ? (
+                <span style={{ fontSize: '13px', color: 'var(--color-info)' }}>
+                  {scrapeMessage || 'Scraping...'}
+                </span>
+              ) : (
+                <button className="btn btn-primary" onClick={() => setShowScrapeModal(true)}>
+                  Scrape {selectedPlatform.display_name}
+                </button>
+              )}
             </>
           )}
         </div>

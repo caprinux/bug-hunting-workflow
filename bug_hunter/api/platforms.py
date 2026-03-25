@@ -30,21 +30,46 @@ async def api_list_platforms():
     ]
 
 
+_scrape_status: dict[str, dict] = {}
+
+
 @router.post("/{platform_name}/scrape")
 async def api_scrape_platform(platform_name: str, credentials: dict):
-    """Authenticate and scrape programs from a platform."""
+    """Start scraping programs from a platform (runs in background)."""
     platform = registry.get(platform_name)
     if not platform:
         raise HTTPException(status_code=404, detail=f"Platform '{platform_name}' not found")
 
-    result = await platform.scrape(credentials)
-    if not result.success:
-        raise HTTPException(status_code=400, detail=result.error)
+    if _scrape_status.get(platform_name, {}).get("status") == "running":
+        raise HTTPException(status_code=409, detail="Scrape already in progress")
 
-    return {
-        "status": "success",
-        "programs_count": result.programs_count,
-    }
+    _scrape_status[platform_name] = {"status": "running", "message": "Authenticating..."}
+
+    import asyncio
+
+    async def _run_scrape():
+        try:
+            _scrape_status[platform_name] = {"status": "running", "message": "Authenticating and fetching programs..."}
+            result = await platform.scrape(credentials)
+            if result.success:
+                _scrape_status[platform_name] = {
+                    "status": "completed",
+                    "message": f"Scraped {result.programs_count} programs",
+                    "programs_count": result.programs_count,
+                }
+            else:
+                _scrape_status[platform_name] = {"status": "failed", "message": result.error}
+        except Exception as e:
+            _scrape_status[platform_name] = {"status": "failed", "message": str(e)}
+
+    asyncio.create_task(_run_scrape())
+    return {"status": "started"}
+
+
+@router.get("/{platform_name}/scrape/status")
+async def api_scrape_status(platform_name: str):
+    """Check the status of an ongoing scrape."""
+    return _scrape_status.get(platform_name, {"status": "idle"})
 
 
 @router.get("/{platform_name}/programs")
