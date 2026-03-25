@@ -26,6 +26,7 @@ export default function NewEngagement() {
     assets_in_scope: '',
     assets_not_in_scope: '',
     scope_notes: '',
+    additional_context: '',
     credentials: '',
     infra_url: '',
   })
@@ -87,6 +88,8 @@ export default function NewEngagement() {
         scopeParts.push(`ASSETS NOT IN SCOPE:\n${form.assets_not_in_scope.trim()}`)
       if (form.scope_notes.trim())
         scopeParts.push(`ADDITIONAL NOTES:\n${form.scope_notes.trim()}`)
+      if (form.additional_context.trim())
+        scopeParts.push(`ADDITIONAL CONTEXT FOR BUG HUNTER:\n${form.additional_context.trim()}`)
 
       // Compose infra_config from structured fields
       const infraParts = []
@@ -208,6 +211,13 @@ export default function NewEngagement() {
           <textarea value={form.scope_notes} onChange={e => update('scope_notes', e.target.value)}
                     placeholder="Any other rules, special conditions, or context for the engagement..."
                     rows={2} />
+        </div>
+
+        <div className="form-group">
+          <label>Additional Context for Bug Hunter <span className="muted">(optional)</span></label>
+          <textarea value={form.additional_context} onChange={e => update('additional_context', e.target.value)}
+                    placeholder={"Any extra context, tips, or instructions for the bug hunter agents.\ne.g.:\n- Focus on the payment flow, there was a recent refactor\n- The admin panel uses a custom RBAC system in src/rbac/\n- Check the webhook handlers — they were written by a junior dev"}
+                    rows={4} />
         </div>
 
         <h2 style={{ fontSize: '16px', marginTop: '24px', marginBottom: '12px' }}>Infrastructure</h2>
