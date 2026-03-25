@@ -602,6 +602,13 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 0
   display: flex; gap: 16px; font-size: 13px; color: var(--text-secondary); flex-wrap: wrap;
 }
 
+.run-card-row {
+  display: flex; gap: 8px; align-items: stretch;
+}
+.run-delete-btn {
+  align-self: center; flex-shrink: 0;
+}
+
 .rehunt-info {
   padding: 14px 16px; background: var(--bg-secondary); border: 1px solid var(--border);
   border-radius: var(--radius); margin-bottom: 16px; font-size: 14px;

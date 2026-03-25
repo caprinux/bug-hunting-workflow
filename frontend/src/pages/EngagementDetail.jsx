@@ -329,21 +329,33 @@ export default function EngagementDetail() {
       ) : (
         <div className="runs-list">
           {runs.map(run => (
-            <Link key={run.id} to={`/engagements/${id}/runs/${run.id}`} className="run-card">
-              <div className="run-header">
-                <span className="run-number">Run #{run.run_number}</span>
-                <span className={`badge ${run.status}`}>{run.status}</span>
-                <span className="run-type">{run.run_type}</span>
-                {run.cost_usd > 0 && <span className="cost">${run.cost_usd.toFixed(3)}</span>}
-              </div>
-              {run.rehunt_target && (
-                <div className="run-rehunt">Target: {run.rehunt_target}</div>
+            <div key={run.id} className="run-card-row">
+              <Link to={`/engagements/${id}/runs/${run.id}`} className="run-card" style={{ flex: 1 }}>
+                <div className="run-header">
+                  <span className="run-number">Run #{run.run_number}</span>
+                  <span className={`badge ${run.status}`}>{run.status}</span>
+                  <span className="run-type">{run.run_type}</span>
+                  {run.cost_usd > 0 && <span className="cost">${run.cost_usd.toFixed(3)}</span>}
+                </div>
+                {run.rehunt_target && (
+                  <div className="run-rehunt">Target: {run.rehunt_target}</div>
+                )}
+                {run.current_stage && run.status === 'running' && (
+                  <div className="run-stage">Current: {run.current_stage}</div>
+                )}
+                <div className="run-date">{new Date(run.created_at).toLocaleString()}</div>
+              </Link>
+              {run.status !== 'running' && (
+                <button className="btn btn-sm btn-danger run-delete-btn" onClick={async (e) => {
+                  e.preventDefault()
+                  if (!confirm(`Delete Run #${run.run_number}?`)) return
+                  try {
+                    await api.deleteRun(id, run.id)
+                    await loadAll()
+                  } catch (err) { console.error(err) }
+                }}>Delete</button>
               )}
-              {run.current_stage && run.status === 'running' && (
-                <div className="run-stage">Current: {run.current_stage}</div>
-              )}
-              <div className="run-date">{new Date(run.created_at).toLocaleString()}</div>
-            </Link>
+            </div>
           ))}
         </div>
       )}
