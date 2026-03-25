@@ -66,7 +66,7 @@ export default function BugBrowser() {
           <h1>Bugs ({sortedBugs.length})</h1>
         </div>
         <div className="filters">
-          {['', 'confirmed', 'validated', 'cannot_validate', 'triage_failed', 'informational', 'discarded'].map(s => (
+          {['', 'confirmed', 'cannot_validate', 'out_of_scope', 'informational', 'triage_failed', 'discarded'].map(s => (
             <button key={s} className={`btn btn-sm ${filter === s ? 'active' : ''}`}
                     onClick={() => { setFilter(s); setRunFilter('') }}>
               {s || 'All'}
