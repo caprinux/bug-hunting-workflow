@@ -50,45 +50,33 @@ class StrictTriagerStage(PipelineStage):
             f"Tagging {len(bug_data_list)} findings as strong/weak/informational",
         )
 
-        prompt = f"""You are evaluating the quality and strength of security vulnerability findings.
-Tag each bug as "strong", "weak", or "informational".
+        prompt = f"""You are evaluating security vulnerability findings. Assign each bug TWO independent ratings:
+1. **Severity** (CVSS-aligned): how impactful is the vulnerability?
+2. **Confidence**: how confident are we that this bug is real and exploitable?
 
 FINDINGS ({len(bug_data_list)} total):
 {json.dumps(bug_data_list, indent=2)[:80000]}
 
-TAGGING CRITERIA:
+SEVERITY (based on security impact, follows CVSS):
+- **critical** (9.0-10.0): Full system compromise, RCE, unauthenticated database wipe, mass PII breach, complete auth bypass
+- **high** (7.0-8.9): Significant data exposure, privilege escalation, SSRF to internal services, stored XSS with session theft
+- **medium** (4.0-6.9): Limited data exposure, CSRF with meaningful impact, IDOR on non-critical data, information disclosure enabling further attacks
+- **low** (0.1-3.9): Minor information disclosure, missing security headers with no direct exploit, low-impact misconfigurations
 
-**strong** — High-confidence, impactful finding:
-- Clear root cause with specific code/endpoint reference
-- Working PoC with successful execution result
-- Meaningful security impact (data access, auth bypass, RCE, etc.)
-- Well-documented exploitation path
+CONFIDENCE (based on evidence quality):
+- **strong**: Clear root cause with specific code/endpoint reference, working PoC with successful execution, well-documented exploitation path
+- **weak**: Plausible vulnerability but PoC is missing/failed/incomplete, impact is unclear, root cause is vague or theoretical
+- **informational**: Not a vulnerability — internal IPs, version strings, stack traces, debug info. Useful intelligence only.
 
-**weak** — Real finding but needs work:
-- Plausible vulnerability but PoC failed, is missing, or is incomplete
-- Impact is unclear or requires unlikely preconditions
-- Root cause is vague or the exploitation path is theoretical
-- Valid finding that a program might accept but at lower confidence
-
-**informational** — Not a vulnerability, but useful intelligence:
-- Internal IPs, version strings, stack traces, debug info
-- No direct exploitable security impact
-- Useful context for other bugs (chain construction, infrastructure mapping)
-
-For each finding, output its id, tag, severity, and a brief note explaining why.
-
-SEVERITY LEVELS:
-- **critical**: Full system compromise, RCE, unauthenticated database access, mass data breach
-- **high**: Significant data exposure, auth bypass, SSRF to internal services, privilege escalation
-- **medium**: Limited data exposure, CSRF with impact, stored XSS, IDOR on non-critical data
-- **low**: Minor information disclosure, reflected XSS with limited impact, missing security controls
+For each finding, output its id, tag (confidence), severity, and a brief note.
 
 CRITICAL: Output ONLY a JSON object with this exact structure:
 {{
   "tagged": [
-    {{"id": "bug-001", "tag": "strong", "severity": "high", "note": "Working SQLi with database dump PoC"}},
-    {{"id": "bug-002", "tag": "weak", "severity": "medium", "note": "SSRF identified but PoC could not reach internal services"}},
-    {{"id": "bug-003", "tag": "informational", "severity": "informational", "note": "Server version disclosed in headers"}}
+    {{"id": "bug-001", "tag": "strong", "severity": "critical", "note": "Working RCE via deserialization with full PoC"}},
+    {{"id": "bug-002", "tag": "weak", "severity": "high", "note": "Auth bypass identified but PoC could not fully demonstrate"}},
+    {{"id": "bug-003", "tag": "strong", "severity": "medium", "note": "IDOR on assessment grades with working PoC"}},
+    {{"id": "bug-004", "tag": "informational", "severity": "informational", "note": "Server version disclosed in headers"}}
   ]
 }}"""
 
