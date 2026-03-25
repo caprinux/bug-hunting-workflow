@@ -34,6 +34,7 @@ export default function EngagementDetail() {
       setEngConfig({
         agents: cfg.bug_hunter?.agents || cfg.broad_bug_hunter?.agents || ['claude', 'codex'],
         codex_model: cfg.bug_hunter?.codex_model || cfg.broad_bug_hunter?.codex_model || 'gpt-5.4',
+        iterations: cfg.bug_hunter?.iterations || cfg.broad_bug_hunter?.iterations || 1,
         subagent_timeout: cfg.pipeline?.subagent_timeout || 3600,
       })
     } catch (e) {
@@ -182,6 +183,12 @@ export default function EngagementDetail() {
               </div>
             </div>
             <div className="form-group">
+              <label>Hunt Iterations</label>
+              <input type="number" min="1" value={engConfig.iterations || 1}
+                onChange={e => setEngConfig(c => ({ ...c, iterations: Math.max(1, parseInt(e.target.value) || 1) }))} />
+              <small className="muted" style={{ fontSize: '11px' }}>Bug Hunter runs N times before proceeding to validation</small>
+            </div>
+            <div className="form-group">
               <label>Subagent Timeout (s)</label>
               <input type="number" value={engConfig.subagent_timeout || 3600}
                 onChange={e => setEngConfig(c => ({ ...c, subagent_timeout: parseInt(e.target.value) || 3600 }))} />
@@ -192,7 +199,7 @@ export default function EngagementDetail() {
               setSavingConfig(true)
               try {
                 await api.updateEngagementConfig(id, {
-                  bug_hunter: { agents: engConfig.agents, codex_model: engConfig.codex_model },
+                  bug_hunter: { agents: engConfig.agents, codex_model: engConfig.codex_model, iterations: engConfig.iterations },
                   pipeline: { subagent_timeout: engConfig.subagent_timeout },
                 })
                 setShowSettings(false)
