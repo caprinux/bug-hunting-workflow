@@ -1121,6 +1121,33 @@ h2 {
 .empty-state p { font-size: 15px; }
 .empty-icon { color: var(--text-muted); opacity: 0.4; margin-bottom: 8px; }
 
+/* ── Report Page ────────────────────────────────────────────── */
+.report-content {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: 8px; padding: 32px 40px; max-width: 900px;
+  line-height: 1.7; color: var(--text-primary);
+}
+.report-content .md-h1 { font-size: 24px; font-weight: 700; margin: 0 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--border); }
+.report-content .md-h2 { font-size: 20px; font-weight: 600; margin: 32px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.report-content .md-h3 { font-size: 16px; font-weight: 600; margin: 24px 0 8px; }
+.report-content .md-h4 { font-size: 14px; font-weight: 600; margin: 16px 0 6px; color: var(--text-secondary); }
+.report-content .md-p { margin: 8px 0; font-size: 14px; }
+.report-content .md-list { margin: 8px 0; padding-left: 24px; font-size: 14px; }
+.report-content .md-list li { margin: 4px 0; }
+.report-content .md-hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+.report-content .md-code-block {
+  background: var(--bg-primary, #0d1117); padding: 16px; border-radius: 6px;
+  overflow-x: auto; font-size: 13px; line-height: 1.5; margin: 12px 0;
+  font-family: 'JetBrains Mono', monospace; border: 1px solid var(--border);
+}
+.report-content .md-code-block code { color: var(--text-secondary); }
+.report-content .md-inline-code {
+  background: var(--bg-tertiary); padding: 1px 6px; border-radius: 4px;
+  font-size: 13px; font-family: 'JetBrains Mono', monospace;
+}
+.report-content strong { color: var(--text-primary); }
+.report-content a { color: var(--color-accent); }
+
 /* ── Platforms Page ─────────────────────────────────────────── */
 .platforms-layout {
   display: grid; grid-template-columns: 350px 1fr; gap: 16px; min-height: 500px;

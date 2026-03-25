@@ -11,6 +11,7 @@ const STAGE_LABELS = {
   perfectionist: 'Perfectionist',
   strict_triager: 'Triager',
   bug_chainer: 'Bug Chainer',
+  summarizer: 'Summary Report',
 }
 
 const STATUS_COLORS = {

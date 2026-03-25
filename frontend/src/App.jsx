@@ -9,6 +9,7 @@ import RunDetail from './pages/RunDetail'
 import BugBrowser from './pages/BugBrowser'
 import ChainBrowser from './pages/ChainBrowser'
 import IntelBrowser from './pages/IntelBrowser'
+import Report from './pages/Report'
 import Settings from './pages/Settings'
 import Platforms from './pages/Platforms'
 
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="/engagements/:id/bugs" element={<BugBrowser />} />
         <Route path="/engagements/:id/chains" element={<ChainBrowser />} />
         <Route path="/engagements/:id/intel" element={<IntelBrowser />} />
+        <Route path="/engagements/:id/report" element={<Report />} />
         <Route path="/platforms" element={<Platforms />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" />} />

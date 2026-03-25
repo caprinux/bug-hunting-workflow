@@ -246,6 +246,20 @@ async def api_list_runs(engagement_id: str):
     return list_runs(engagement_id)
 
 
+@router.get("/engagements/{engagement_id}/report")
+async def api_get_report(engagement_id: str):
+    """Get the latest summary report markdown."""
+    eng = get_engagement(engagement_id)
+    if not eng:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    output_dir = _engagement_output_dir(eng)
+    report_path = os.path.join(output_dir, "engagements", engagement_id, "cumulative", "report.md")
+    if not os.path.exists(report_path):
+        raise HTTPException(status_code=404, detail="No report generated yet")
+    with open(report_path) as f:
+        return {"content": f.read()}
+
+
 def _verify_run_ownership(engagement_id: str, run_id: str) -> dict:
     """Verify a run belongs to the given engagement."""
     run = get_run(run_id)

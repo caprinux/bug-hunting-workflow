@@ -45,6 +45,7 @@ PIPELINE_STAGES = [
     ("perfectionist", 6),
     ("strict_triager", 7),
     ("bug_chainer", 8),
+    ("summarizer", 9),
 ]
 
 # Keep legacy constants for backward compatibility

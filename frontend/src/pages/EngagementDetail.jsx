@@ -105,6 +105,7 @@ export default function EngagementDetail() {
         </div>
         <div className="header-actions">
           <button className={`btn btn-secondary ${showDetails ? 'active' : ''}`} onClick={() => setShowDetails(!showDetails)}>Details</button>
+          <Link to={`/engagements/${id}/report`} className="btn btn-secondary">Report</Link>
           <Link to={`/engagements/${id}/bugs`} className="btn btn-secondary">Bugs</Link>
           <Link to={`/engagements/${id}/chains`} className="btn btn-secondary">Chains</Link>
           <Link to={`/engagements/${id}/intel`} className="btn btn-secondary">Intel</Link>
