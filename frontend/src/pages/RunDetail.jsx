@@ -166,7 +166,7 @@ export default function RunDetail() {
               </button>
             </>
           )}
-          {run.status === 'paused' && (
+          {(run.status === 'paused' || run.status === 'failed') && (
             <button className="btn btn-primary" onClick={handleResume} disabled={resuming}>
               {resuming ? 'Resuming...' : 'Resume Run'}
             </button>

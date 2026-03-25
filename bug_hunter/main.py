@@ -106,6 +106,9 @@ async def startup():
     init_db(db_path)
     logger.info(f"Database initialized at {db_path}")
 
+    # Recover runs stuck in 'running' status from a previous server crash/restart
+    _recover_interrupted_runs()
+
     global AUTH_PASSWORD
     AUTH_PASSWORD = _resolve_auth_password()
     if not AUTH_PASSWORD:
@@ -115,6 +118,26 @@ async def startup():
         print(f"  Authentication Password: {AUTH_PASSWORD}", flush=True)
         print(f"{'='*60}\n", flush=True)
     set_auth_password(AUTH_PASSWORD)
+
+
+def _recover_interrupted_runs():
+    """Mark runs stuck in 'running' as 'paused' so they can be resumed."""
+    from bug_hunter.core.database import get_db
+    try:
+        with get_db() as conn:
+            stuck = conn.execute(
+                "SELECT id, engagement_id FROM runs WHERE status = 'running'"
+            ).fetchall()
+            for row in stuck:
+                run_id, eng_id = row[0], row[1]
+                conn.execute(
+                    "UPDATE runs SET status = 'paused' WHERE id = ?", (run_id,)
+                )
+                logger.warning(f"Recovered interrupted run {run_id[:8]} (engagement {eng_id[:8]}) — marked as paused")
+            if stuck:
+                logger.info(f"Recovered {len(stuck)} interrupted run(s)")
+    except Exception as e:
+        logger.error(f"Failed to recover interrupted runs: {e}")
 
 
 @app.get("/health")
