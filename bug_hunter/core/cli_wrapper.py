@@ -327,7 +327,14 @@ async def _run_cli_process(
                                 parsed = json.loads(last_message)
                                 result_data = {"result": parsed, "is_error": False}
                             except (json.JSONDecodeError, TypeError):
-                                result_data = {"result": last_message, "is_error": False}
+                                # Codex sometimes produces malformed JSON (single quotes,
+                                # truncated output). Try to repair common issues.
+                                try:
+                                    repaired = last_message.replace("'", '"')
+                                    parsed = json.loads(repaired)
+                                    result_data = {"result": parsed, "is_error": False}
+                                except (json.JSONDecodeError, TypeError):
+                                    result_data = {"result": last_message, "is_error": False}
 
                     if on_event:
                         on_event(event)
