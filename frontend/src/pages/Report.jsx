@@ -4,7 +4,6 @@ import { api } from '../utils/api'
 
 /**
  * Simple markdown-to-HTML renderer.
- * Handles headers, bold, code blocks, inline code, lists, links, and horizontal rules.
  */
 function renderMarkdown(md) {
   if (!md) return ''
@@ -16,7 +15,6 @@ function renderMarkdown(md) {
   let inList = false
 
   for (const line of lines) {
-    // Code blocks
     if (line.startsWith('```')) {
       if (inCodeBlock) {
         html.push(`<pre class="md-code-block"><code>${escapeHtml(codeBuffer.join('\n'))}</code></pre>`)
@@ -28,54 +26,35 @@ function renderMarkdown(md) {
       }
       continue
     }
-    if (inCodeBlock) {
-      codeBuffer.push(line)
-      continue
-    }
+    if (inCodeBlock) { codeBuffer.push(line); continue }
 
     const trimmed = line.trim()
-
-    // Empty line
-    if (!trimmed) {
-      if (inList) { html.push('</ul>'); inList = false }
-      continue
-    }
-
-    // Horizontal rule
+    if (!trimmed) { if (inList) { html.push('</ul>'); inList = false }; continue }
     if (/^---+$/.test(trimmed) || /^===+$/.test(trimmed)) {
       if (inList) { html.push('</ul>'); inList = false }
-      html.push('<hr class="md-hr"/>')
-      continue
+      html.push('<hr class="md-hr"/>'); continue
     }
 
-    // Headers
     const headerMatch = trimmed.match(/^(#{1,6})\s+(.+)/)
     if (headerMatch) {
       if (inList) { html.push('</ul>'); inList = false }
       const level = headerMatch[1].length
-      const text = inlineFormat(headerMatch[2])
-      html.push(`<h${level} class="md-h${level}">${text}</h${level}>`)
-      continue
+      html.push(`<h${level} class="md-h${level}">${inlineFormat(headerMatch[2])}</h${level}>`); continue
     }
 
-    // List items
     if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || /^\d+\.\s/.test(trimmed)) {
       if (!inList) { html.push('<ul class="md-list">'); inList = true }
       const content = trimmed.replace(/^[-*]\s+/, '').replace(/^\d+\.\s+/, '')
-      html.push(`<li>${inlineFormat(content)}</li>`)
-      continue
+      html.push(`<li>${inlineFormat(content)}</li>`); continue
     }
 
-    // Regular paragraph
     if (inList) { html.push('</ul>'); inList = false }
     html.push(`<p class="md-p">${inlineFormat(trimmed)}</p>`)
   }
 
   if (inList) html.push('</ul>')
-  if (inCodeBlock && codeBuffer.length) {
+  if (inCodeBlock && codeBuffer.length)
     html.push(`<pre class="md-code-block"><code>${escapeHtml(codeBuffer.join('\n'))}</code></pre>`)
-  }
-
   return html.join('\n')
 }
 
@@ -87,10 +66,7 @@ function inlineFormat(text) {
 }
 
 function escapeHtml(text) {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 
@@ -98,22 +74,55 @@ export default function Report() {
   const { id } = useParams()
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [generating, setGenerating] = useState(false)
+  const [genMessage, setGenMessage] = useState('')
   const [error, setError] = useState(null)
 
-  useEffect(() => {
+  function loadReport() {
+    setLoading(true)
     api.getReport(id)
-      .then(data => setReport(data.content))
-      .catch(e => setError(e.message))
+      .then(data => { setReport(data.content); setError(null) })
+      .catch(e => { setReport(null); setError(e.message) })
       .finally(() => setLoading(false))
-  }, [id])
+  }
+
+  useEffect(() => { loadReport() }, [id])
+
+  async function handleGenerate() {
+    setGenerating(true)
+    setGenMessage('Generating report...')
+    setError(null)
+    try {
+      await api.generateReport(id)
+      // Poll for completion
+      for (let i = 0; i < 120; i++) {
+        await new Promise(r => setTimeout(r, 2000))
+        try {
+          const status = await api.reportStatus(id)
+          setGenMessage(status.message || status.status)
+          if (status.status === 'completed') {
+            loadReport()
+            setGenerating(false)
+            setGenMessage('')
+            return
+          } else if (status.status === 'failed') {
+            setError(status.message)
+            setGenerating(false)
+            setGenMessage('')
+            return
+          }
+        } catch { break }
+      }
+      setGenerating(false)
+      setGenMessage('')
+    } catch (e) {
+      setError(e.message)
+      setGenerating(false)
+      setGenMessage('')
+    }
+  }
 
   if (loading) return <div className="loading">Loading report...</div>
-  if (error) return (
-    <div className="page">
-      <Link to={`/engagements/${id}`} className="back-link">Back to Engagement</Link>
-      <div className="empty-state"><p>No report generated yet. Run the full pipeline to generate a summary report.</p></div>
-    </div>
-  )
 
   return (
     <div className="page report-page">
@@ -123,16 +132,34 @@ export default function Report() {
           <h1>Summary Report</h1>
         </div>
         <div className="header-actions">
-          <button className="btn btn-secondary" onClick={() => {
-            const blob = new Blob([report], { type: 'text/markdown' })
-            const url = URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url; a.download = 'engagement_report.md'; a.click()
-            URL.revokeObjectURL(url)
-          }}>Download .md</button>
+          {generating ? (
+            <span style={{ fontSize: '13px', color: 'var(--color-info)' }}>{genMessage}</span>
+          ) : (
+            <button className="btn btn-primary" onClick={handleGenerate}>
+              {report ? 'Regenerate Report' : 'Generate Report'}
+            </button>
+          )}
+          {report && (
+            <button className="btn btn-secondary" onClick={() => {
+              const blob = new Blob([report], { type: 'text/markdown' })
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = url; a.download = 'engagement_report.md'; a.click()
+              URL.revokeObjectURL(url)
+            }}>Download .md</button>
+          )}
         </div>
       </div>
-      <div className="report-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(report) }} />
+
+      {error && !report && (
+        <div className="empty-state">
+          <p>No report generated yet. Click "Generate Report" to create one.</p>
+        </div>
+      )}
+
+      {report && (
+        <div className="report-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(report) }} />
+      )}
     </div>
   )
 }

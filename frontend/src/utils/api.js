@@ -38,6 +38,8 @@ export const api = {
     request(`/engagements/${engId}/runs/${runId}/stages/${stage}/output?path=${encodeURIComponent(path)}`),
   getCumulative: (engId, filename) => request(`/engagements/${engId}/cumulative/${filename}`),
   getReport: (engId) => request(`/engagements/${engId}/report`),
+  generateReport: (engId) => request(`/engagements/${engId}/report/generate`, { method: 'POST' }),
+  reportStatus: (engId) => request(`/engagements/${engId}/report/status`),
 
   cancelRun: (engId, runId) => request(`/engagements/${engId}/runs/${runId}/cancel`, { method: 'POST' }),
   pauseRun: (engId, runId) => request(`/engagements/${engId}/runs/${runId}/pause`, { method: 'POST' }),

@@ -260,6 +260,71 @@ async def api_get_report(engagement_id: str):
         return {"content": f.read()}
 
 
+_report_status: dict[str, dict] = {}
+
+
+@router.post("/engagements/{engagement_id}/report/generate")
+async def api_generate_report(engagement_id: str):
+    """Generate/regenerate the summary report on demand."""
+    eng = get_engagement(engagement_id)
+    if not eng:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    if _report_status.get(engagement_id, {}).get("status") == "running":
+        raise HTTPException(status_code=409, detail="Report generation already in progress")
+
+    _report_status[engagement_id] = {"status": "running", "message": "Generating report..."}
+
+    import asyncio
+    from bug_hunter.core.config import _merge_dict_into_dataclass
+
+    async def _run():
+        try:
+            config = load_config()
+            _merge_dict_into_dataclass(config, eng["config"])
+
+            from bug_hunter.pipeline.stages.summarizer import SummarizerStage
+            from bug_hunter.pipeline.stages.base import StageContext
+
+            output_dir = _engagement_output_dir(eng)
+            cumulative_dir = os.path.join(output_dir, "engagements", engagement_id, "cumulative")
+            os.makedirs(cumulative_dir, exist_ok=True)
+
+            # Find latest run for context
+            runs = list_runs(engagement_id)
+            latest_run = runs[-1] if runs else None
+            run_id = latest_run["id"] if latest_run else "manual"
+            run_dir = os.path.join(output_dir, "engagements", engagement_id, "runs", run_id) if latest_run else cumulative_dir
+
+            context = StageContext(
+                config=config,
+                engagement_id=engagement_id,
+                engagement=eng,
+                run_id=run_id,
+                run_dir=run_dir,
+                cumulative_dir=cumulative_dir,
+            )
+
+            stage = SummarizerStage()
+            result = await stage.execute(context)
+
+            if result.success:
+                _report_status[engagement_id] = {"status": "completed", "message": "Report generated"}
+            else:
+                _report_status[engagement_id] = {"status": "failed", "message": result.error}
+        except Exception as e:
+            _report_status[engagement_id] = {"status": "failed", "message": str(e)}
+
+    asyncio.create_task(_run())
+    return {"status": "started"}
+
+
+@router.get("/engagements/{engagement_id}/report/status")
+async def api_report_status(engagement_id: str):
+    """Check the status of report generation."""
+    return _report_status.get(engagement_id, {"status": "idle"})
+
+
 def _verify_run_ownership(engagement_id: str, run_id: str) -> dict:
     """Verify a run belongs to the given engagement."""
     run = get_run(run_id)
