@@ -15,6 +15,7 @@ export default function EngagementDetail() {
   const [rehuntTarget, setRehuntTarget] = useState('')
   const [showRehunt, setShowRehunt] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showDetails, setShowDetails] = useState(false)
   const [engConfig, setEngConfig] = useState({})
   const [savingConfig, setSavingConfig] = useState(false)
   const { events, connected } = useWebSocket(id)
@@ -103,6 +104,7 @@ export default function EngagementDetail() {
           </div>
         </div>
         <div className="header-actions">
+          <button className={`btn btn-secondary ${showDetails ? 'active' : ''}`} onClick={() => setShowDetails(!showDetails)}>Details</button>
           <Link to={`/engagements/${id}/bugs`} className="btn btn-secondary">Bugs</Link>
           <Link to={`/engagements/${id}/chains`} className="btn btn-secondary">Chains</Link>
           <Link to={`/engagements/${id}/intel`} className="btn btn-secondary">Intel</Link>
@@ -128,6 +130,56 @@ export default function EngagementDetail() {
           )}
         </div>
       </div>
+
+      {/* Engagement details panel */}
+      {showDetails && engagement.config && (() => {
+        const cfg = engagement.config
+        const eng = cfg.engagement || {}
+        const scope = eng.scope_definition || ''
+        const infra = eng.infra_config || ''
+        const sections = scope.split('\n\n').filter(Boolean)
+
+        return (
+          <div className="engagement-details-panel">
+            {eng.source_repo && (
+              <DetailSection title="Source Repositories">
+                {eng.source_repo.split(',').map((r, i) => (
+                  <div key={i} className="detail-mono">{r.trim()}</div>
+                ))}
+              </DetailSection>
+            )}
+            {eng.source_path && (
+              <DetailSection title="Source Path">
+                <div className="detail-mono">{eng.source_path}</div>
+              </DetailSection>
+            )}
+            {sections.map((section, i) => {
+              const lines = section.split('\n')
+              const title = lines[0].replace(/:/g, '').trim()
+              const body = lines.slice(1).join('\n').trim()
+              return (
+                <DetailSection key={i} title={title}>
+                  <pre className="detail-pre">{body}</pre>
+                </DetailSection>
+              )
+            })}
+            {infra && (
+              <DetailSection title="Infrastructure">
+                <pre className="detail-pre">{infra}</pre>
+              </DetailSection>
+            )}
+            {cfg.bug_hunter && (
+              <DetailSection title="Bug Hunter Config">
+                <div className="detail-meta">
+                  <span>Agents: {(cfg.bug_hunter.agents || []).join(', ')}</span>
+                  <span>Iterations: {cfg.bug_hunter.iterations || 1}</span>
+                  {cfg.bug_hunter.codex_model && <span>Codex model: {cfg.bug_hunter.codex_model}</span>}
+                </div>
+              </DetailSection>
+            )}
+          </div>
+        )
+      })()}
 
       {showRehunt && (
         <div className="rehunt-form">
@@ -290,6 +342,15 @@ export default function EngagementDetail() {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+function DetailSection({ title, children }) {
+  return (
+    <div className="detail-section">
+      <h4 className="detail-section-title">{title}</h4>
+      {children}
     </div>
   )
 }
