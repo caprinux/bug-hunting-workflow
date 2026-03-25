@@ -1034,6 +1034,13 @@ h2 {
   font-family: 'JetBrains Mono', monospace; transition: color 0.15s;
 }
 
+/* Inline reason preview for discarded/cannot-validate bugs */
+.bug-reason-preview {
+  padding: 4px 16px 8px; font-size: 12px; color: var(--text-muted);
+  line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  border-top: 1px dashed var(--border);
+}
+
 .bug-details, .chain-details {
   padding: 18px; border-top: 1px solid var(--border); font-size: 14px;
   animation: card-enter 0.2s ease-out;

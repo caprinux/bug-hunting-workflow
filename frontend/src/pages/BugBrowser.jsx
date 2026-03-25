@@ -145,6 +145,12 @@ export default function BugBrowser() {
                   <span className="bug-run">R#{runMap[bug.run_id] || '?'}</span>
                   <span className="expand-indicator">{isExpanded ? '-' : '+'}</span>
                 </div>
+                {/* Inline reason preview for discarded/cannot-validate/out-of-scope */}
+                {!isExpanded && (bug.status === 'discarded' || bug.status === 'cannot_validate' || bug.status === 'out_of_scope') && (
+                  <div className="bug-reason-preview">
+                    {d.triager_notes || d.cannot_validate_reason || d.scope_reasoning || d.reasoning || ''}
+                  </div>
+                )}
                 {isExpanded && (
                   <div className="bug-details">
                     <p><strong>Description:</strong> {d.description}</p>
@@ -178,6 +184,12 @@ export default function BugBrowser() {
                     )}
                     {d.triager_notes && (
                       <p><strong>Triager Notes:</strong> {d.triager_notes}</p>
+                    )}
+                    {d.cannot_validate_reason && (
+                      <p><strong>Cannot Validate Reason:</strong> {d.cannot_validate_reason}</p>
+                    )}
+                    {d.scope_reasoning && (
+                      <p><strong>Scope Reasoning:</strong> {d.scope_reasoning}</p>
                     )}
                     <pre className="raw-json">{JSON.stringify(d, null, 2)}</pre>
                   </div>
