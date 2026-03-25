@@ -21,8 +21,13 @@ export default function NewEngagement() {
     source_path: '',
     source_repo: '',
     target_domains: '',
-    scope_definition: '',
-    infra_config: '',
+    qualifying_vulns: '',
+    non_qualifying_vulns: '',
+    assets_in_scope: '',
+    assets_not_in_scope: '',
+    scope_notes: '',
+    credentials: '',
+    infra_url: '',
   })
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [advanced, setAdvanced] = useState(DEFAULT_ADVANCED)
@@ -70,6 +75,26 @@ export default function NewEngagement() {
         },
       } : {}
 
+      // Compose scope_definition from structured fields
+      const scopeParts = []
+      if (form.qualifying_vulns.trim())
+        scopeParts.push(`QUALIFYING VULNERABILITIES:\n${form.qualifying_vulns.trim()}`)
+      if (form.non_qualifying_vulns.trim())
+        scopeParts.push(`NON-QUALIFYING VULNERABILITIES:\n${form.non_qualifying_vulns.trim()}`)
+      if (form.assets_in_scope.trim())
+        scopeParts.push(`ASSETS IN SCOPE:\n${form.assets_in_scope.trim()}`)
+      if (form.assets_not_in_scope.trim())
+        scopeParts.push(`ASSETS NOT IN SCOPE:\n${form.assets_not_in_scope.trim()}`)
+      if (form.scope_notes.trim())
+        scopeParts.push(`ADDITIONAL NOTES:\n${form.scope_notes.trim()}`)
+
+      // Compose infra_config from structured fields
+      const infraParts = []
+      if (form.infra_url.trim())
+        infraParts.push(`TARGET URL: ${form.infra_url.trim()}`)
+      if (form.credentials.trim())
+        infraParts.push(`CREDENTIALS:\n${form.credentials.trim()}`)
+
       const data = {
         name: form.name,
         type: form.type,
@@ -78,8 +103,8 @@ export default function NewEngagement() {
         target_domains: form.type === 'black_box'
           ? form.target_domains.split('\n').map(d => d.trim()).filter(Boolean)
           : [],
-        scope_definition: form.scope_definition,
-        infra_config: form.infra_config,
+        scope_definition: scopeParts.join('\n\n'),
+        infra_config: infraParts.join('\n\n'),
         config_overrides,
       }
 
@@ -148,17 +173,55 @@ export default function NewEngagement() {
           </div>
         )}
 
+        <h2 style={{ fontSize: '16px', marginTop: '24px', marginBottom: '12px' }}>Scope</h2>
+
         <div className="form-group">
-          <label>Scope Definition</label>
-          <textarea value={form.scope_definition} onChange={e => update('scope_definition', e.target.value)}
-                    placeholder="Describe what is in scope and out of scope. This can be free-form text."
+          <label>Assets In Scope</label>
+          <textarea value={form.assets_in_scope} onChange={e => update('assets_in_scope', e.target.value)}
+                    placeholder={"e.g.:\n- All code in api/src/\n- https://backend.staging.example.com\n- Mobile API endpoints (/api/v1/*)"}
+                    rows={3} />
+        </div>
+
+        <div className="form-group">
+          <label>Assets Not In Scope <span className="muted">(optional)</span></label>
+          <textarea value={form.assets_not_in_scope} onChange={e => update('assets_not_in_scope', e.target.value)}
+                    placeholder={"e.g.:\n- Third-party dependencies\n- Infrastructure/hosting\n- Marketing website"}
+                    rows={3} />
+        </div>
+
+        <div className="form-group">
+          <label>Qualifying Vulnerabilities</label>
+          <textarea value={form.qualifying_vulns} onChange={e => update('qualifying_vulns', e.target.value)}
+                    placeholder={"e.g.:\n- Remote Code Execution\n- SQL Injection\n- Authentication Bypass\n- IDOR / Broken Access Control\n- SSRF\n- Stored XSS"}
                     rows={4} />
         </div>
 
         <div className="form-group">
-          <label>Infrastructure Access / Credentials</label>
-          <textarea value={form.infra_config} onChange={e => update('infra_config', e.target.value)}
-                    placeholder={"Target URL, credentials, API tokens, SSH keys, network details...\nFree-form text — the agents will parse what they need."}
+          <label>Non-Qualifying Vulnerabilities</label>
+          <textarea value={form.non_qualifying_vulns} onChange={e => update('non_qualifying_vulns', e.target.value)}
+                    placeholder={"e.g.:\n- Self-XSS\n- Missing security headers without exploit\n- Rate limiting\n- Clickjacking on non-sensitive pages\n- Version disclosure"}
+                    rows={4} />
+        </div>
+
+        <div className="form-group">
+          <label>Additional Scope Notes <span className="muted">(optional)</span></label>
+          <textarea value={form.scope_notes} onChange={e => update('scope_notes', e.target.value)}
+                    placeholder="Any other rules, special conditions, or context for the engagement..."
+                    rows={2} />
+        </div>
+
+        <h2 style={{ fontSize: '16px', marginTop: '24px', marginBottom: '12px' }}>Infrastructure</h2>
+
+        <div className="form-group">
+          <label>Target URL <span className="muted">(optional)</span></label>
+          <input type="text" value={form.infra_url} onChange={e => update('infra_url', e.target.value)}
+                 placeholder="e.g., https://backend.staging.example.com" />
+        </div>
+
+        <div className="form-group">
+          <label>Credentials <span className="muted">(optional)</span></label>
+          <textarea value={form.credentials} onChange={e => update('credentials', e.target.value)}
+                    placeholder={"e.g.:\nuser: test@example.com / password123\nadmin: admin@example.com / admin456\nAPI key: Bearer sk-abc123..."}
                     rows={4} />
         </div>
 
