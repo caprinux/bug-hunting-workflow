@@ -514,7 +514,7 @@ class PipelineOrchestrator:
 
     def _update_cumulative_state(self):
         """Update cumulative engagement state across all runs."""
-        from bug_hunter.core.database import list_runs as db_list_runs
+        from bug_hunter.core.database import list_runs as db_list_runs, list_stage_results
 
         cumulative_dir = self._get_cumulative_dir()
 
@@ -531,9 +531,14 @@ class PipelineOrchestrator:
         with open(cumulative_dir / "intelligence.json", "w") as f:
             json.dump([b["bug_data"] for b in all_informational], f, indent=2)
 
-        total_cost = sum(
-            r.get("cost_usd", 0) for r in db_list_runs(self.engagement_id)
-        )
+        # Calculate costs from stage results (the source of truth)
+        total_cost = 0.0
+        for run in db_list_runs(self.engagement_id):
+            run_stages = list_stage_results(run["id"])
+            run_cost = sum(s.get("cost_usd", 0) or 0 for s in run_stages)
+            if run_cost > 0:
+                update_run(run["id"], cost_usd=run_cost)
+            total_cost += run_cost
         update_engagement(self.engagement_id, cost_total_usd=total_cost)
 
     def _build_completion_summary(self, run_id: str) -> dict:
