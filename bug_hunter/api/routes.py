@@ -222,8 +222,8 @@ async def api_resume_run(engagement_id: str, run_id: str):
             detail="Another run is already active for this engagement. Wait for it to complete.",
         )
 
-    if run["status"] not in ("paused", "failed"):
-        raise HTTPException(status_code=409, detail="Only paused or failed runs can be resumed")
+    if run["status"] not in ("paused", "failed", "cancelled"):
+        raise HTTPException(status_code=409, detail="Only paused, failed, or cancelled runs can be resumed")
 
     eng = get_engagement(engagement_id)
     if not eng:

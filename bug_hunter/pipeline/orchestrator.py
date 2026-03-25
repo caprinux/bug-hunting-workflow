@@ -133,11 +133,11 @@ class PipelineOrchestrator:
         return run_id
 
     async def resume_run(self, run_id: str) -> bool:
-        """Resume a paused or failed pipeline run from its saved state."""
+        """Resume a paused, failed, or cancelled pipeline run from its saved state."""
         run = get_run(run_id)
         if not run or run["engagement_id"] != self.engagement_id:
             return False
-        if run["status"] not in ("paused", "failed"):
+        if run["status"] not in ("paused", "failed", "cancelled"):
             return False
 
         self._current_run_id = run_id
