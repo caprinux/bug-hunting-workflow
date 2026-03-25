@@ -38,7 +38,9 @@ function formatCost(usd) {
   return `$${usd.toFixed(3)}`
 }
 
-export default function PipelineVisualization({ stages, events, onStageClick }) {
+export default function PipelineVisualization({ stages, events, onStageClick, runStatus }) {
+  // If run is not active, treat "running" stages as cancelled/stopped
+  const isRunActive = runStatus === 'running'
   const [expandedStage, setExpandedStage] = useState(null)
 
   const stageEvents = (stageName) =>
@@ -65,7 +67,9 @@ export default function PipelineVisualization({ stages, events, onStageClick }) 
       {stages.map((stage, i) => {
         const progress = latestProgress(stage.stage_name)
         const isExpanded = expandedStage === stage.stage_name
-        const error = stage.status === 'failed' ? latestError(stage.stage_name) : null
+        // If run is not active, override "running" stages to show as cancelled
+        const effectiveStatus = (stage.status === 'running' && !isRunActive) ? 'cancelled' : stage.status
+        const error = effectiveStatus === 'failed' ? latestError(stage.stage_name) : null
         const meta = stage.metadata ? (typeof stage.metadata === 'string' ? JSON.parse(stage.metadata) : stage.metadata) : {}
 
         return (
@@ -78,16 +82,16 @@ export default function PipelineVisualization({ stages, events, onStageClick }) 
               </div>
             )}
             <div
-              className={`pipeline-node ${stage.status}`}
-              style={{ borderColor: STATUS_COLORS[stage.status] }}
+              className={`pipeline-node ${effectiveStatus}`}
+              style={{ borderColor: STATUS_COLORS[effectiveStatus] }}
               onClick={() => {
-                if (stage.status === 'completed' || stage.status === 'failed') {
+                if (effectiveStatus === 'completed' || effectiveStatus === 'failed') {
                   onStageClick?.(stage.stage_name)
                 }
               }}
             >
               <div className="pipeline-node-header">
-                <span className={`status-dot ${stage.status}`} />
+                <span className={`status-dot ${effectiveStatus}`} />
                 <span className="stage-name">
                   {STAGE_LABELS[stage.stage_name] || stage.stage_name}
                 </span>
@@ -97,13 +101,13 @@ export default function PipelineVisualization({ stages, events, onStageClick }) 
               </div>
 
               {/* Live elapsed timer for running stages */}
-              {stage.status === 'running' && stage.started_at && (
+              {stage.status === 'running' && stage.started_at && isRunActive && (
                 <div className="stage-elapsed">
                   <ElapsedTimer startTime={stage.started_at} active={true} />
                 </div>
               )}
 
-              {progress && stage.status === 'running' && (
+              {progress && stage.status === 'running' && isRunActive && (
                 <div className="progress-bar-container">
                   <div
                     className="progress-bar"
@@ -146,7 +150,7 @@ export default function PipelineVisualization({ stages, events, onStageClick }) 
                 </span>
               )}
 
-              {(stage.status === 'completed' || stage.status === 'failed') && (
+              {(effectiveStatus === 'completed' || effectiveStatus === 'failed') && (
                 <button
                   className="expand-btn"
                   onClick={(e) => {

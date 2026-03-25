@@ -244,6 +244,7 @@ export default function RunDetail() {
         stages={stages}
         events={allEvents}
         onStageClick={setSelectedStage}
+        runStatus={run.status}
       />
 
       {selectedStage && (
