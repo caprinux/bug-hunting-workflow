@@ -121,6 +121,7 @@ class PipelineOrchestrator:
         # so the Bug Hunter can read scope.json without re-running those stages
         if run_type == "rehunt":
             self._copy_prior_stage_outputs(run_id, run_dir, ["setup", "scoper"])
+            self._copy_bug_hunter_progress(run_id, run_dir)
 
         await event_manager.emit_stage_update(
             self.engagement_id, run_id, "", "running",
@@ -507,6 +508,47 @@ class PipelineOrchestrator:
             sr = next((s for s in stage_results if s["stage_name"] == stage_name), None)
             if sr:
                 update_stage_result(sr["id"], status="completed")
+
+    def _copy_bug_hunter_progress(self, run_id: str, run_dir: Path):
+        """Copy BUGS.json and attack_surfaces.json from the latest prior run.
+
+        Unlike _copy_prior_stage_outputs, this does NOT mark the stage as
+        completed — the Bug Hunter still needs to run, but it starts with
+        the previous run's progress so it knows what was already scanned.
+        """
+        import shutil
+        from bug_hunter.core.database import list_runs as db_list_runs
+
+        prior_runs = [
+            r for r in db_list_runs(self.engagement_id)
+            if r["id"] != run_id and r["status"] in ("completed", "failed", "paused", "cancelled")
+        ]
+        if not prior_runs:
+            return
+
+        prior_run = prior_runs[-1]
+        prior_dir = self._get_run_dir(prior_run["id"])
+
+        # Find the bug_hunter stage dir in the prior run
+        for name, order in PIPELINE_STAGES:
+            if name == "bug_hunter":
+                src_dir = prior_dir / f"{order:02d}_bug_hunter"
+                dst_dir = run_dir / f"{order:02d}_bug_hunter"
+                break
+        else:
+            return
+
+        if not src_dir.exists():
+            return
+
+        dst_dir.mkdir(parents=True, exist_ok=True)
+
+        for filename in ["BUGS.json", "attack_surfaces.json"]:
+            src_file = src_dir / filename
+            dst_file = dst_dir / filename
+            if src_file.exists() and not dst_file.exists():
+                shutil.copy2(str(src_file), str(dst_file))
+                logger.info(f"Copied {filename} from run {prior_run['id'][:8]} for rehunt continuity")
 
     def _save_pipeline_state(self, run_dir: Path, state: dict):
         state_file = run_dir / "pipeline_state.json"
