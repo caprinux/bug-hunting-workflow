@@ -521,7 +521,7 @@ class PipelineOrchestrator:
 
         prior_runs = [
             r for r in db_list_runs(self.engagement_id)
-            if r["id"] != run_id
+            if r["id"] != run_id and r["status"] == "completed"
         ]
         if not prior_runs:
             return
