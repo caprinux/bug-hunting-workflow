@@ -74,14 +74,20 @@ TAGGING CRITERIA:
 - No direct exploitable security impact
 - Useful context for other bugs (chain construction, infrastructure mapping)
 
-For each finding, output its id, tag, and a brief note explaining why.
+For each finding, output its id, tag, severity, and a brief note explaining why.
+
+SEVERITY LEVELS:
+- **critical**: Full system compromise, RCE, unauthenticated database access, mass data breach
+- **high**: Significant data exposure, auth bypass, SSRF to internal services, privilege escalation
+- **medium**: Limited data exposure, CSRF with impact, stored XSS, IDOR on non-critical data
+- **low**: Minor information disclosure, reflected XSS with limited impact, missing security controls
 
 Output JSON:
 {{
   "tagged": [
-    {{"id": "bug-001", "tag": "strong", "note": "Working SQLi with database dump PoC"}},
-    {{"id": "bug-002", "tag": "weak", "note": "SSRF identified but PoC could not reach internal services"}},
-    {{"id": "bug-003", "tag": "informational", "note": "Server version disclosed in headers"}}
+    {{"id": "bug-001", "tag": "strong", "severity": "high", "note": "Working SQLi with database dump PoC"}},
+    {{"id": "bug-002", "tag": "weak", "severity": "medium", "note": "SSRF identified but PoC could not reach internal services"}},
+    {{"id": "bug-003", "tag": "informational", "severity": "informational", "note": "Server version disclosed in headers"}}
   ]
 }}"""
 
@@ -139,6 +145,7 @@ Output JSON:
             merged = dict(bug["bug_data"])
             merged["tag"] = tag
             merged["triager_notes"] = note
+            merged["severity"] = tag_info.get("severity", "medium" if tag != "informational" else "informational")
 
             if tag == "informational":
                 merged["severity"] = "informational"
