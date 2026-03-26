@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
@@ -14,7 +15,7 @@ from bug_hunter.core.cli_wrapper import run_claude_chat, StreamEvent
 from bug_hunter.core.database import (
     create_chat, get_chat, list_chats, update_chat, delete_chat,
     create_chat_message, list_chat_messages,
-    get_engagement, list_bugs, list_chains, list_runs, list_stage_results,
+    get_engagement, list_runs,
 )
 from bug_hunter.core.events import event_manager
 
@@ -43,74 +44,69 @@ class UpdateChatRequest(BaseModel):
 # --- Context builder ---
 
 def _build_chat_context(engagement_id: str) -> str:
-    """Build a system prompt summarising the engagement for Claude."""
+    """Build a system prompt pointing Claude at engagement files."""
     eng = get_engagement(engagement_id)
     if not eng:
         return ""
 
-    parts = []
     cfg = eng.get("config", {})
     eng_cfg = cfg.get("engagement", {})
+    output_dir = cfg.get("pipeline", {}).get("output_dir", "./audit_output")
 
+    parts = []
     parts.append(f"# Engagement: {eng['name']}")
     parts.append(f"Type: {eng['type']}")
     if eng_cfg.get("scope_definition"):
-        parts.append(f"\n## Scope\n{eng_cfg['scope_definition'][:3000]}")
+        parts.append(f"\n## Scope\n{eng_cfg['scope_definition']}")
     if eng_cfg.get("infra_config"):
-        parts.append(f"\n## Infrastructure\n{eng_cfg['infra_config'][:2000]}")
+        parts.append(f"\n## Infrastructure\n{eng_cfg['infra_config']}")
 
-    # Bug summary
-    all_bugs = list_bugs(engagement_id)
-    if all_bugs:
-        by_status: dict[str, list] = {}
-        for b in all_bugs:
-            by_status.setdefault(b["status"], []).append(b)
-        parts.append(f"\n## Bugs ({len(all_bugs)} total)")
-        for status, bugs in by_status.items():
-            parts.append(f"\n### {status} ({len(bugs)})")
-            for b in bugs[:20]:  # cap per status
-                bd = b["bug_data"]
-                desc = (bd.get("description") or "")[:200]
-                parts.append(f"- **{bd.get('id', '?')}** [{bd.get('vuln_type', '?')}] {desc}")
-            if len(bugs) > 20:
-                parts.append(f"  ... and {len(bugs) - 20} more")
+    # Point to files instead of inlining data
+    eng_dir = os.path.join(os.path.abspath(output_dir), "engagements", engagement_id)
+    cumulative_dir = os.path.join(eng_dir, "cumulative")
 
-    # Chain summary
-    chains = list_chains(engagement_id)
-    if chains:
-        parts.append(f"\n## Chains ({len(chains)})")
-        for c in chains[:10]:
-            cd = c["chain_data"]
-            parts.append(f"- {cd.get('title', '?')}: bugs {cd.get('bug_ids', [])}")
+    file_refs = []
+    for filename, label in [
+        ("all_confirmed_bugs.json", "Confirmed bugs"),
+        ("all_cannot_validate.json", "Cannot-validate bugs"),
+        ("intelligence.json", "Informational findings"),
+        ("report.md", "Summary report"),
+    ]:
+        path = os.path.join(cumulative_dir, filename)
+        if os.path.exists(path) and os.path.getsize(path) > 2:
+            file_refs.append(f"- {label}: {path}")
 
-    # Run summary
+    # Find latest run's scope and BUGS.json
     runs = list_runs(engagement_id)
     if runs:
-        parts.append(f"\n## Runs ({len(runs)})")
-        for r in runs:
-            stages = list_stage_results(r["id"])
-            stage_summary = ", ".join(
-                f"{s['stage_name']}:{s['status']}" for s in stages
-            )
-            parts.append(
-                f"- Run #{r['run_number']} ({r['run_type']}) — {r['status']}"
-                f" | ${r.get('cost_usd', 0):.2f}"
-                f" | {stage_summary[:200]}"
-            )
+        latest = runs[-1]
+        run_dir = os.path.join(eng_dir, "runs", latest["id"])
+        scope_path = os.path.join(run_dir, "01_scoper", "scope.json")
+        bugs_path = os.path.join(run_dir, "02_bug_hunter", "BUGS.json")
+        if os.path.exists(scope_path):
+            file_refs.append(f"- Scope/architecture: {scope_path}")
+        if os.path.exists(bugs_path):
+            file_refs.append(f"- All bugs (raw): {bugs_path}")
 
-    context = "\n".join(parts)
-    # Keep under ~8k tokens (~32k chars)
-    return context[:32000]
+    if file_refs:
+        parts.append("\n## Data Files\nRead these files for detailed engagement data:")
+        parts.extend(file_refs)
+
+    parts.append(f"\n## Runs ({len(runs)} total)")
+    for r in runs:
+        parts.append(f"- Run #{r['run_number']} ({r['run_type']}) — {r['status']}")
+
+    return "\n".join(parts)
 
 
 # --- Endpoints ---
 
-@router.get("/")
+@router.get("")
 async def api_list_chats(engagement_id: str):
     return list_chats(engagement_id)
 
 
-@router.post("/")
+@router.post("")
 async def api_create_chat(engagement_id: str, body: CreateChatRequest):
     eng = get_engagement(engagement_id)
     if not eng:

@@ -635,8 +635,9 @@ def create_chat_message(chat_id: str, role: str, content: str) -> dict:
                VALUES (?, ?, ?, ?, ?)""",
             (msg_id, chat_id, role, content, now),
         )
-    # Also bump the chat's updated_at
-    update_chat(chat_id)
+    # Bump the chat's updated_at so it sorts to the top of the list
+    with get_db() as conn:
+        conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (now, chat_id))
     return {"id": msg_id, "chat_id": chat_id, "role": role, "content": content, "created_at": now}
 
 
