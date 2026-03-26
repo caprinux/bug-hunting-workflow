@@ -42,9 +42,8 @@ class StrictValidatorStage(PipelineStage):
         eng_type = context.engagement["type"]
         infra_config = eng_config.get("engagement", {}).get("infra_config", "")
 
-        # Load scope/architecture context
-        scope_data = self.read_previous_output(context, "scoper", "scope.json")
-        scope_text = json.dumps(scope_data, indent=2)[:20000] if scope_data else "Not available"
+        # Point agent to scope file instead of inlining
+        scope_file = self._stage_output_path(context, "scoper", "scope.json")
 
         stage_dir = self.get_stage_dir(context)
         pocs_dir = os.path.join(stage_dir, "pocs")
@@ -137,7 +136,7 @@ class StrictValidatorStage(PipelineStage):
             metadata={"validated": len(validated), "cannot_validate": len(cannot_validate)},
         )
 
-    async def _validate_single_bug(self, context, bug_data, infra_config, scope_text,
+    async def _validate_single_bug(self, context, bug_data, infra_config, scope_file,
                                     eng_type, pocs_dir, record_dir, record_meta):
         bug_json = json.dumps(bug_data, indent=2)
         bug_id = bug_data.get("id", "unknown")
@@ -155,23 +154,16 @@ class StrictValidatorStage(PipelineStage):
             else:
                 agent_file = os.path.join(AGENTS_DIR, "black_box", "strict_validator.md")
 
-        prompt = f"""Validate this security vulnerability by confirming the PoC works or writing a new one.
-
-BUG:
+        prompt = f"""BUG:
 {bug_json}
 
 INFRASTRUCTURE ACCESS:
 {infra_config}
 
-APPLICATION CONTEXT:
-{scope_text[:10000]}
-
+APPLICATION CONTEXT: Read {scope_file}
 DESTRUCTIVE POC POLICY: {destructive_policy}
-- If destructive: route to cannot-validate with note "likely exploitable, PoC destructive"
 
-If the bug already has a PoC, verify it works. If not, write and execute one.
-
-CRITICAL: Output ONLY a JSON object with this exact structure:
+Output a JSON object with this exact structure:
 {{
   "validated": true,
   "poc": {{

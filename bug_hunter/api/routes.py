@@ -261,7 +261,12 @@ async def api_resume_run(engagement_id: str, run_id: str):
 
     orchestrator = PipelineOrchestrator(config, engagement_id)
     _orchestrators[engagement_id] = orchestrator
-    resumed = await orchestrator.resume_run(run_id)
+    try:
+        resumed = await orchestrator.resume_run(run_id)
+    except Exception as e:
+        if "UNIQUE" in str(e) or "IntegrityError" in type(e).__name__:
+            raise HTTPException(status_code=409, detail="Another run became active concurrently")
+        raise
     if not resumed:
         raise HTTPException(status_code=409, detail="Run could not be resumed")
     return {"status": "running", "run_id": run_id}
@@ -289,6 +294,44 @@ async def api_get_report(engagement_id: str):
 _report_status: dict[str, dict] = {}
 
 
+async def _generate_report_async(engagement_id: str, config=None):
+    """Reusable report generation — called by API endpoint and auto-trigger."""
+    eng = get_engagement(engagement_id)
+    if not eng:
+        raise ValueError("Engagement not found")
+
+    if config is None:
+        from bug_hunter.core.config import _merge_dict_into_dataclass
+        config = load_config()
+        _merge_dict_into_dataclass(config, eng["config"])
+
+    from bug_hunter.pipeline.stages.summarizer import SummarizerStage
+    from bug_hunter.pipeline.stages.base import StageContext
+
+    output_dir = _engagement_output_dir(eng)
+    cumulative_dir = os.path.join(output_dir, "engagements", engagement_id, "cumulative")
+    os.makedirs(cumulative_dir, exist_ok=True)
+
+    runs = list_runs(engagement_id)
+    latest_run = runs[-1] if runs else None
+    run_id = latest_run["id"] if latest_run else "manual"
+    run_dir = os.path.join(output_dir, "engagements", engagement_id, "runs", run_id) if latest_run else cumulative_dir
+
+    context = StageContext(
+        config=config,
+        engagement_id=engagement_id,
+        engagement=eng,
+        run_id=run_id,
+        run_dir=run_dir,
+        cumulative_dir=cumulative_dir,
+    )
+
+    stage = SummarizerStage()
+    result = await stage.execute(context)
+    if not result.success:
+        raise RuntimeError(result.error or "Report generation failed")
+
+
 @router.post("/engagements/{engagement_id}/report/generate")
 async def api_generate_report(engagement_id: str):
     """Generate/regenerate the summary report on demand."""
@@ -302,42 +345,11 @@ async def api_generate_report(engagement_id: str):
     _report_status[engagement_id] = {"status": "running", "message": "Generating report..."}
 
     import asyncio
-    from bug_hunter.core.config import _merge_dict_into_dataclass
 
     async def _run():
         try:
-            config = load_config()
-            _merge_dict_into_dataclass(config, eng["config"])
-
-            from bug_hunter.pipeline.stages.summarizer import SummarizerStage
-            from bug_hunter.pipeline.stages.base import StageContext
-
-            output_dir = _engagement_output_dir(eng)
-            cumulative_dir = os.path.join(output_dir, "engagements", engagement_id, "cumulative")
-            os.makedirs(cumulative_dir, exist_ok=True)
-
-            # Find latest run for context
-            runs = list_runs(engagement_id)
-            latest_run = runs[-1] if runs else None
-            run_id = latest_run["id"] if latest_run else "manual"
-            run_dir = os.path.join(output_dir, "engagements", engagement_id, "runs", run_id) if latest_run else cumulative_dir
-
-            context = StageContext(
-                config=config,
-                engagement_id=engagement_id,
-                engagement=eng,
-                run_id=run_id,
-                run_dir=run_dir,
-                cumulative_dir=cumulative_dir,
-            )
-
-            stage = SummarizerStage()
-            result = await stage.execute(context)
-
-            if result.success:
-                _report_status[engagement_id] = {"status": "completed", "message": "Report generated"}
-            else:
-                _report_status[engagement_id] = {"status": "failed", "message": result.error}
+            await _generate_report_async(engagement_id)
+            _report_status[engagement_id] = {"status": "completed", "message": "Report generated"}
         except Exception as e:
             _report_status[engagement_id] = {"status": "failed", "message": str(e)}
 
@@ -450,7 +462,74 @@ async def api_get_cumulative(engagement_id: str, filename: str):
         return {"content": []}
 
     with open(filepath) as f:
-        return {"content": json.loads(f.read())}
+        raw = f.read()
+    try:
+        return {"content": json.loads(raw)}
+    except (json.JSONDecodeError, ValueError):
+        return {"content": raw}
+
+
+@router.get("/usage")
+async def api_get_usage():
+    """Get usage stats for Claude Code and Codex CLI."""
+    import httpx
+
+    result = {}
+
+    # Claude Code usage
+    try:
+        creds_path = os.path.expanduser("~/.claude/.credentials.json")
+        if os.path.exists(creds_path):
+            with open(creds_path) as f:
+                creds = json.load(f)
+            token = creds.get("claudeAiOauth", {}).get("accessToken", "")
+            if token:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(
+                        "https://api.anthropic.com/api/oauth/usage",
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "anthropic-beta": "oauth-2025-04-20",
+                        },
+                        timeout=10,
+                    )
+                    if resp.status_code == 200:
+                        result["claude"] = resp.json()
+                    else:
+                        result["claude"] = {"error": f"HTTP {resp.status_code}"}
+            else:
+                result["claude"] = {"error": "No access token found"}
+        else:
+            result["claude"] = {"error": "Credentials file not found"}
+    except Exception as e:
+        result["claude"] = {"error": str(e)}
+
+    # Codex CLI usage
+    try:
+        auth_path = os.path.expanduser("~/.codex/auth.json")
+        if os.path.exists(auth_path):
+            with open(auth_path) as f:
+                auth = json.load(f)
+            token = auth.get("tokens", {}).get("access_token", "")
+            if token:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(
+                        "https://chatgpt.com/backend-api/wham/usage",
+                        headers={"Authorization": f"Bearer {token}"},
+                        timeout=10,
+                    )
+                    if resp.status_code == 200:
+                        result["codex"] = resp.json()
+                    else:
+                        result["codex"] = {"error": f"HTTP {resp.status_code}"}
+            else:
+                result["codex"] = {"error": "No access token found"}
+        else:
+            result["codex"] = {"error": "Credentials file not found"}
+    except Exception as e:
+        result["codex"] = {"error": str(e)}
+
+    return result
 
 
 @router.get("/settings")

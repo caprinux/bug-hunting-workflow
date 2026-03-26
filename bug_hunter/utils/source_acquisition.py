@@ -100,12 +100,22 @@ async def _clone_multiple_repos(
     errors = []
     for url in repo_urls:
         parsed_url, branch, commit = parse_git_url(url)
-        repo_name = parsed_url.rstrip("/").split("/")[-1].replace(".git", "")
+        # Use host_owner_repo to avoid collisions across hosts and orgs
+        from urllib.parse import urlparse
+        parsed = urlparse(parsed_url)
+        host = parsed.hostname or "local"
+        path_parts = parsed.path.strip("/").replace(".git", "").split("/")
+        repo_name = f"{host}_{'_'.join(path_parts)}" if path_parts else host
+        # Sanitize for filesystem
+        repo_name = re.sub(r'[^\w\-.]', '_', repo_name)
         clone_dir = parent_dir / repo_name
 
         if clone_dir.exists():
+            existing_remote = await _get_git_remote(str(clone_dir))
             existing_commit = await _get_git_commit(str(clone_dir))
-            if existing_commit and (not commit or existing_commit.startswith(commit)):
+            # Reuse only if the remote URL matches and commit is compatible
+            if (existing_remote and existing_remote.rstrip("/").rstrip(".git") == parsed_url.rstrip("/").rstrip(".git")
+                    and existing_commit and (not commit or existing_commit.startswith(commit))):
                 results.append(AcquisitionResult(
                     success=True, local_path=str(clone_dir),
                     repo_url=parsed_url, branch=branch, commit=existing_commit,
@@ -298,6 +308,23 @@ async def _clone_repo_immutable(repo_url: str, output_dir: str, run_id: str) -> 
         branch=branch,
         commit=actual_commit or commit,
     )
+
+
+async def _get_git_remote(path: str) -> str:
+    """Get the origin remote URL of a git repo, or empty string."""
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "git", "config", "--get", "remote.origin.url",
+            cwd=path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await process.communicate()
+        if process.returncode == 0:
+            return stdout.decode().strip()
+    except Exception:
+        pass
+    return ""
 
 
 async def _get_git_commit(path: str) -> str:

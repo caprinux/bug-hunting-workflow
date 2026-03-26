@@ -317,6 +317,15 @@ async def _run_cli_process(
 
         # Track Codex agent_message items to reconstruct the final result
         codex_messages: list[str] = []
+        stderr_chunks: list[bytes] = []
+
+        async def drain_stderr():
+            """Drain stderr concurrently to prevent pipe buffer deadlock."""
+            while True:
+                chunk = await process.stderr.read(65536)
+                if not chunk:
+                    break
+                stderr_chunks.append(chunk)
 
         async def read_stream():
             nonlocal result_data, cost_usd, session_id
@@ -381,6 +390,7 @@ async def _run_cli_process(
                     if on_event:
                         on_event(StreamEvent(type="log", data={"text": line_str}, raw=line_str))
 
+        stderr_task = asyncio.create_task(drain_stderr())
         try:
             await asyncio.wait_for(read_stream(), timeout=timeout)
             await asyncio.wait_for(process.wait(), timeout=10)
@@ -389,8 +399,13 @@ async def _run_cli_process(
             await process.wait()
             error_msg = f"Process timed out after {timeout}s"
 
-        stderr_data = await process.stderr.read()
-        stderr_str = stderr_data.decode("utf-8", errors="replace").strip()
+        # Ensure stderr drain completes
+        try:
+            await asyncio.wait_for(stderr_task, timeout=5)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            stderr_task.cancel()
+
+        stderr_str = b"".join(stderr_chunks).decode("utf-8", errors="replace").strip()
         if record_dir:
             _write_text(os.path.join(record_dir, "stderr.txt"), stderr_str)
             for line in stderr_str.splitlines():

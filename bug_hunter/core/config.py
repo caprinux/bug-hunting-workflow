@@ -40,6 +40,7 @@ class EngagementConfig:
 class BugHunterConfig:
     agents: list[str] = field(default_factory=lambda: ["claude", "codex"])
     iterations: int = 1
+    mode: str = "parallel"  # "parallel" or "sequential"
     exclude_paths: list[str] = field(default_factory=list)
     codex_model: str = "gpt-5.4"
 
@@ -59,6 +60,7 @@ class StrictValidatorConfig:
 
 @dataclass
 class PerfectionistConfig:
+    enabled: bool = False
     max_concurrent: int = 3
 
 
@@ -70,6 +72,7 @@ class StrictTriagerConfig:
 
 @dataclass
 class BugChainerConfig:
+    enabled: bool = False
     max_concurrent: int = 2
     rehunt_auto_approve: bool = False
 
@@ -120,6 +123,19 @@ def _merge_dict_into_dataclass(dc: object, data: dict) -> None:
             if isinstance(value, dict):
                 _merge_dict_into_dataclass(current, value)
         else:
+            # Reject None and type mismatches to prevent bad settings from bricking the app
+            if value is None:
+                continue
+            if current is not None and not isinstance(value, type(current)):
+                # Allow int/float interchange
+                if isinstance(current, (int, float)) and isinstance(value, (int, float)):
+                    value = type(current)(value)
+                else:
+                    continue
+            # For lists, validate all elements are strings (e.g. agents list)
+            if isinstance(value, list) and isinstance(current, list):
+                if current and not all(isinstance(v, type(current[0])) for v in value):
+                    continue
             setattr(dc, key, value)
 
 

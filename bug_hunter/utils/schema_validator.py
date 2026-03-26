@@ -46,15 +46,26 @@ def _normalize_finding(finding: dict) -> dict:
                 normalized[canonical] = normalized[alias]
                 break
 
-    # Map severity to confidence if confidence is missing
-    if "confidence" not in normalized or not normalized.get("confidence"):
-        sev = normalized.get("severity", "")
-        if sev in ("critical", "high"):
+    # Normalize confidence — fix invalid values like "critical" (severity/confidence confusion)
+    VALID_CONFIDENCE = {"high", "medium", "low"}
+    conf = normalized.get("confidence", "")
+    if conf not in VALID_CONFIDENCE:
+        # Map severity-style values to valid confidence levels
+        if conf in ("critical", "high"):
             normalized["confidence"] = "high"
-        elif sev == "medium":
+        elif conf == "medium":
             normalized["confidence"] = "medium"
-        elif sev in ("low", "informational"):
+        elif conf in ("low", "informational"):
             normalized["confidence"] = "low"
+        elif not conf:
+            # Fall back to severity field
+            sev = normalized.get("severity", "")
+            if sev in ("critical", "high"):
+                normalized["confidence"] = "high"
+            elif sev == "medium":
+                normalized["confidence"] = "medium"
+            elif sev in ("low", "informational"):
+                normalized["confidence"] = "low"
 
     # Ensure vuln_class has a value — use vuln_type as fallback
     if not normalized.get("vuln_class") and normalized.get("vuln_type"):

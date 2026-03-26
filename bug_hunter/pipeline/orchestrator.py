@@ -45,7 +45,6 @@ PIPELINE_STAGES = [
     ("perfectionist", 6),
     ("strict_triager", 7),
     ("bug_chainer", 8),
-    ("summarizer", 9),
 ]
 
 # Keep legacy constants for backward compatibility
@@ -76,6 +75,10 @@ class PipelineOrchestrator:
             if name == "deduplicator" and not self.config.deduplicator.enabled:
                 if len(self.config.bug_hunter.agents) <= 1:
                     continue
+            if name == "perfectionist" and not self.config.perfectionist.enabled:
+                continue
+            if name == "bug_chainer" and not self.config.bug_chainer.enabled:
+                continue
             filtered.append((name, order))
 
         return filtered
@@ -119,8 +122,9 @@ class PipelineOrchestrator:
 
         # For rehunts: copy setup/scoper output from the latest completed run
         # so the Bug Hunter can read scope.json without re-running those stages
+        rehunt_copied_stages: set[str] = set()
         if run_type == "rehunt":
-            self._copy_prior_stage_outputs(run_id, run_dir, ["setup", "scoper"])
+            rehunt_copied_stages = self._copy_prior_stage_outputs(run_id, run_dir, ["setup", "scoper"])
             self._copy_bug_hunter_progress(run_id, run_dir)
 
         await event_manager.emit_stage_update(
@@ -131,7 +135,9 @@ class PipelineOrchestrator:
         self._cancelled = False
         self._paused = False
         self._pause_reason = ""
-        self._current_task = asyncio.create_task(self._execute_pipeline(run_id, run_type, rehunt_target))
+        self._current_task = asyncio.create_task(
+            self._execute_pipeline(run_id, run_type, rehunt_target, rehunt_copied_stages)
+        )
         return run_id
 
     async def resume_run(self, run_id: str) -> bool:
@@ -188,7 +194,8 @@ class PipelineOrchestrator:
         return True
 
     async def _execute_pipeline(self, run_id: str, run_type: str,
-                                rehunt_target: str = None):
+                                rehunt_target: str = None,
+                                rehunt_copied_stages: set[str] = None):
         """Execute the full pipeline sequentially."""
         self._running = True
         run_dir = self._get_run_dir(run_id)
@@ -196,10 +203,9 @@ class PipelineOrchestrator:
 
         pipeline_state = {"completed_stages": [], "current_stage": None, "failed": False}
 
-        # For rehunts, pre-mark setup/scoper as completed (outputs already copied)
-        if run_type == "rehunt":
-            pipeline_state["completed_stages"] = [s for s in self.REHUNT_SKIP_STAGES
-                                                   if any(name == s for name, _ in stages)]
+        # For rehunts, only skip stages whose artifacts were actually copied
+        if run_type == "rehunt" and rehunt_copied_stages:
+            pipeline_state["completed_stages"] = list(rehunt_copied_stages)
 
         if self.config.pipeline.resume:
             state_file = run_dir / "pipeline_state.json"
@@ -296,6 +302,10 @@ class PipelineOrchestrator:
             if final_status != "paused":
                 summary = self._build_completion_summary(run_id)
                 await event_manager.emit_completion(self.engagement_id, run_id, summary)
+
+            # Auto-generate report in the background after successful completion
+            if final_status == "completed":
+                asyncio.create_task(self._auto_generate_report(run_id))
 
         except asyncio.CancelledError:
             logger.info(f"Pipeline task cancelled for run {run_id}")
@@ -466,10 +476,11 @@ class PipelineOrchestrator:
     # Stages to skip on rehunt — setup and scoper already ran in a prior run
     REHUNT_SKIP_STAGES = {"setup", "scoper"}
 
-    def _copy_prior_stage_outputs(self, run_id: str, run_dir: Path, stage_names: list[str]):
+    def _copy_prior_stage_outputs(self, run_id: str, run_dir: Path, stage_names: list[str]) -> set[str]:
         """Copy stage output dirs from the latest completed run into this run.
 
         Also marks those stages as completed in the DB so the pipeline skips them.
+        Returns the set of stage names that were actually copied successfully.
         """
         import shutil
         from bug_hunter.core.database import list_runs as db_list_runs, list_stage_results
@@ -481,10 +492,11 @@ class PipelineOrchestrator:
         ]
         if not prior_runs:
             logger.warning("No prior completed run found — rehunt will run full pipeline")
-            return
+            return set()
 
         prior_run = prior_runs[-1]
         prior_dir = self._get_run_dir(prior_run["id"])
+        copied_stages: set[str] = set()
 
         for stage_name in stage_names:
             # Find stage order
@@ -499,15 +511,35 @@ class PipelineOrchestrator:
             src_dir = prior_dir / f"{stage_order:02d}_{stage_name}"
             dst_dir = run_dir / f"{stage_order:02d}_{stage_name}"
 
+            # Required output files per stage — only skip if these exist
+            required_files = {
+                "setup": ["setup.json"],
+                "scoper": ["scope.json"],
+            }
+            required = required_files.get(stage_name, [])
+
             if src_dir.exists() and not dst_dir.exists():
+                # Verify required artifacts exist in source before copying
+                missing = [f for f in required if not (src_dir / f).exists()]
+                if missing:
+                    logger.warning(
+                        f"Rehunt: prior {stage_name} missing {missing} — stage will run normally"
+                    )
+                    continue
+
                 shutil.copytree(str(src_dir), str(dst_dir))
                 logger.info(f"Copied {stage_name} output from run {prior_run['id'][:8]}")
+                copied_stages.add(stage_name)
 
-            # Mark stage as completed in DB
-            stage_results = list_stage_results(run_id)
-            sr = next((s for s in stage_results if s["stage_name"] == stage_name), None)
-            if sr:
-                update_stage_result(sr["id"], status="completed")
+                # Mark stage as completed in DB only if artifacts were actually copied
+                stage_results = list_stage_results(run_id)
+                sr = next((s for s in stage_results if s["stage_name"] == stage_name), None)
+                if sr:
+                    update_stage_result(sr["id"], status="completed")
+            else:
+                logger.warning(f"Rehunt: prior {stage_name} output not found — stage will run normally")
+
+        return copied_stages
 
     def _copy_bug_hunter_progress(self, run_id: str, run_dir: Path):
         """Merge BUGS.json and attack_surfaces.json from ALL completed prior runs.
@@ -565,14 +597,29 @@ class PipelineOrchestrator:
                 logger.info(f"Merged BUGS.json from {len(prior_runs)} completed runs: {len(merged)} unique bugs")
 
         # Use the latest completed run's attack_surfaces.json (most up-to-date scan status)
+        # and NOTES.md (accumulated knowledge)
         for prior_run in reversed(prior_runs):
             prior_dir = self._get_run_dir(prior_run["id"])
-            surfaces_file = prior_dir / f"{bh_order:02d}_bug_hunter" / "attack_surfaces.json"
+            bh_dir = prior_dir / f"{bh_order:02d}_bug_hunter"
+
+            surfaces_file = bh_dir / "attack_surfaces.json"
             if surfaces_file.exists() and surfaces_file.stat().st_size > 10:
                 dst_file = dst_dir / "attack_surfaces.json"
                 if not dst_file.exists():
                     shutil.copy2(str(surfaces_file), str(dst_file))
                     logger.info(f"Copied attack_surfaces.json from run {prior_run['id'][:8]}")
+
+            # Copy all notes files (NOTES.md for sequential, NOTES_*.md for parallel)
+            import glob as _glob
+            for nf in _glob.glob(str(bh_dir / "NOTES*.md")):
+                nf_path = Path(nf)
+                if nf_path.stat().st_size > 0:
+                    dst_file = dst_dir / nf_path.name
+                    if not dst_file.exists():
+                        shutil.copy2(nf, str(dst_file))
+                        logger.info(f"Copied {nf_path.name} from run {prior_run['id'][:8]}")
+
+            if surfaces_file.exists():
                 break
 
     def _save_pipeline_state(self, run_dir: Path, state: dict):
@@ -608,6 +655,24 @@ class PipelineOrchestrator:
                 update_run(run["id"], cost_usd=run_cost)
             total_cost += run_cost
         update_engagement(self.engagement_id, cost_total_usd=total_cost)
+
+    async def _auto_generate_report(self, run_id: str):
+        """Auto-generate a summary report in the background after run completion."""
+        try:
+            from bug_hunter.api.routes import _report_status, _generate_report_async
+            _report_status[self.engagement_id] = {
+                "status": "running", "message": "Auto-generating report...",
+            }
+            await _generate_report_async(self.engagement_id, self.config)
+            _report_status[self.engagement_id] = {
+                "status": "completed", "message": "Report generated",
+            }
+        except Exception as e:
+            logger.warning(f"Auto-report generation failed: {e}")
+            from bug_hunter.api.routes import _report_status
+            _report_status[self.engagement_id] = {
+                "status": "failed", "message": str(e),
+            }
 
     def _build_completion_summary(self, run_id: str) -> dict:
         from bug_hunter.core.database import list_stage_results

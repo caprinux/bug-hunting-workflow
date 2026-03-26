@@ -32,6 +32,9 @@ AGENTS_DIR = Path(__file__).parent.parent.parent.parent / "agents"
 @register
 class BugHunterStage(PipelineStage):
 
+    def __init__(self):
+        self._surfaces_lock = asyncio.Lock()
+
     @property
     def name(self) -> str:
         return "bug_hunter"
@@ -48,13 +51,22 @@ class BugHunterStage(PipelineStage):
         if not scope_data:
             return StageResult(success=False, error="No scope data from Scoper stage")
 
-        # Get source path
+        # Get source path and available tools from setup
         setup_data = self.read_previous_output(context, "setup", "setup.json")
         source_path = ""
         if setup_data and "source" in setup_data:
             source_path = setup_data["source"]["local_path"]
         if not source_path:
             source_path = eng_config.get("engagement", {}).get("source_path", "")
+
+        available_tools = ""
+        if setup_data and "tools" in setup_data:
+            tool_list = [
+                f"{t['name']} ({t['path']})" for t in setup_data["tools"]
+                if t.get("available") and t["name"] not in ("claude", "codex", "git", "python3", "pip3", "curl")
+            ]
+            if tool_list:
+                available_tools = "AVAILABLE TOOLS: " + ", ".join(tool_list)
 
         # Initialize progress files if first iteration
         attack_surfaces_file = os.path.join(stage_dir, "attack_surfaces.json")
@@ -70,10 +82,21 @@ class BugHunterStage(PipelineStage):
 
         iterations = max(1, hunter_config.iterations)
         agents = hunter_config.agents
+        mode = hunter_config.mode  # "parallel" or "sequential"
         total_cost = 0.0
         total_usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
         all_new_bugs = []
         agent_stats = {agent: {"succeeded": 0, "failed": 0, "running": 0, "total": iterations} for agent in agents}
+
+        # Initialize notes files based on mode
+        if mode == "sequential":
+            notes_files = {agent: os.path.join(stage_dir, "NOTES.md") for agent in agents}
+        else:
+            notes_files = {agent: os.path.join(stage_dir, f"NOTES_{agent}.md") for agent in agents}
+        for nf in set(notes_files.values()):
+            if not os.path.exists(nf):
+                with open(nf, "w") as f:
+                    f.write("")
 
         for iteration in range(1, iterations + 1):
             # Reload progress files each iteration (previous iteration updated them)
@@ -84,7 +107,7 @@ class BugHunterStage(PipelineStage):
 
             await event_manager.emit_log(
                 context.engagement_id, context.run_id, self.name,
-                f"Iteration {iteration}/{iterations} — {len(attack_surfaces)} surfaces, {len(existing_bugs)} bugs found so far",
+                f"Iteration {iteration}/{iterations} ({mode}) — {len(attack_surfaces)} surfaces, {len(existing_bugs)} bugs found so far",
             )
 
             async def _run_agent_iteration(agent_name, _attack_surfaces, _existing_bugs):
@@ -100,6 +123,7 @@ class BugHunterStage(PipelineStage):
                 result = await self._run_hunter(
                     context, agent_name, scope_data, _attack_surfaces,
                     _existing_bugs, source_path, infra_config, eng_type, stage_dir,
+                    notes_files[agent_name], available_tools,
                 )
                 total_cost += result.cost_usd
                 if result.usage:
@@ -124,12 +148,11 @@ class BugHunterStage(PipelineStage):
 
                     run_prefix = context.run_id[:8]
                     for i, bug in enumerate(new_bugs):
-                        if "id" not in bug:
-                            bug["id"] = f"{run_prefix}/{agent_name}-i{iteration}-{len(_existing_bugs) + i:03d}"
+                        bug["id"] = f"{run_prefix}/{agent_name}-i{iteration}-{len(_existing_bugs) + i:03d}"
                         bug["found_by"] = [agent_name]
 
                     if updated_surfaces:
-                        self._merge_attack_surfaces(attack_surfaces_file, updated_surfaces)
+                        await self._merge_attack_surfaces(attack_surfaces_file, updated_surfaces)
 
                     agent_stats[agent_name]["succeeded"] += 1
                     await event_manager.emit("agent_progress", context.engagement_id, context.run_id, self.name, {
@@ -152,21 +175,39 @@ class BugHunterStage(PipelineStage):
                     logger.warning(f"Bug hunter ({agent_name}) iter {iteration} failed: {result.error}")
                     return []
 
-            # Run all agents concurrently for this iteration
             iteration_bugs = []
-            tasks = [_run_agent_iteration(agent, attack_surfaces, existing_bugs) for agent in agents]
-            for coro in asyncio.as_completed(tasks):
-                new_bugs = await coro
-                iteration_bugs.extend(new_bugs)
+            if mode == "sequential":
+                # Run agents one at a time in order; each sees the previous agent's notes and bugs
+                for agent in agents:
+                    # Reload bugs mid-iteration so later agents see earlier agent's findings
+                    with open(bugs_file) as f:
+                        current_bugs = json.load(f)
+                    with open(attack_surfaces_file) as f:
+                        current_surfaces = json.load(f)
+                    new_bugs = await _run_agent_iteration(agent, current_surfaces, current_bugs)
+                    iteration_bugs.extend(new_bugs)
+                    # Persist immediately so next agent sees them
+                    if new_bugs:
+                        current_bugs.extend(new_bugs)
+                        with open(bugs_file, "w") as f:
+                            json.dump(current_bugs, f, indent=2)
+            else:
+                # Parallel: run all agents concurrently
+                tasks = [_run_agent_iteration(agent, attack_surfaces, existing_bugs) for agent in agents]
+                for coro in asyncio.as_completed(tasks):
+                    new_bugs = await coro
+                    iteration_bugs.extend(new_bugs)
 
             all_new_bugs.extend(iteration_bugs)
 
             # Update BUGS.json so next iteration sees cumulative bugs
-            with open(bugs_file) as f:
-                current_bugs = json.load(f)
-            current_bugs.extend(iteration_bugs)
-            with open(bugs_file, "w") as f:
-                json.dump(current_bugs, f, indent=2)
+            # (sequential mode already persists mid-iteration, so skip to avoid duplicates)
+            if mode != "sequential" and iteration_bugs:
+                with open(bugs_file) as f:
+                    current_bugs = json.load(f)
+                current_bugs.extend(iteration_bugs)
+                with open(bugs_file, "w") as f:
+                    json.dump(current_bugs, f, indent=2)
 
             await event_manager.emit_progress(
                 context.engagement_id, context.run_id, self.name,
@@ -210,14 +251,12 @@ class BugHunterStage(PipelineStage):
     async def _run_hunter(self, context: StageContext, agent_name: str,
                           scope_data: dict, attack_surfaces: list,
                           existing_bugs: list, source_path: str,
-                          infra_config: str, eng_type: str, stage_dir: str) -> CLIResult:
+                          infra_config: str, eng_type: str, stage_dir: str,
+                          notes_file: str = "", available_tools: str = "") -> CLIResult:
         """Run a single bug hunter agent."""
-        scope_json = json.dumps(scope_data, indent=2)[:20000]
-        surfaces_json = json.dumps(attack_surfaces, indent=2)[:15000]
-        bugs_summary = json.dumps([{
-            "id": b.get("id"), "vuln_type": b.get("vuln_type"),
-            "source_file": b.get("source_file"), "validated": b.get("validated"),
-        } for b in existing_bugs], indent=2)[:10000] if existing_bugs else "[]"
+        scope_file = self._stage_output_path(context, "scoper", "scope.json")
+        surfaces_file = os.path.abspath(os.path.join(stage_dir, "attack_surfaces.json"))
+        bugs_file = os.path.abspath(os.path.join(stage_dir, "BUGS.json"))
 
         rehunt_instruction = ""
         if context.rehunt_target:
@@ -227,49 +266,24 @@ SPECIFIC INSTRUCTIONS FOR THIS RUN:
 
 The above instructions are your PRIMARY OBJECTIVE for this run. Prioritize them over general scanning."""
 
-        base_instructions = f"""You are a security researcher performing a thorough vulnerability assessment.
-{rehunt_instruction}
+        notes_section = ""
+        if notes_file:
+            notes_path = os.path.abspath(notes_file)
+            notes_section = f"""
+WORKING NOTES: {notes_path}
+Read this file for context from previous iterations. Update it with your own observations — areas explored, dead ends, leads to follow up, informational findings. Keep it concise. Future iterations will read it."""
+
+        prompt = f"""{rehunt_instruction}
 {"SOURCE CODE ROOT: " + source_path if eng_type == "source_code" else ""}
 {"INFRASTRUCTURE ACCESS:" + chr(10) + infra_config if infra_config else ""}
 
-APPLICATION CONTEXT:
-{scope_json}
+APPLICATION CONTEXT: Read {scope_file}
+ATTACK SURFACES: Read {surfaces_file}
+BUGS ALREADY FOUND (do not duplicate): Read {bugs_file}
+{available_tools}
+{notes_section}
 
-ATTACK SURFACES TO INVESTIGATE:
-{surfaces_json}
-
-BUGS ALREADY FOUND (do not duplicate):
-{bugs_summary}"""
-
-        if agent_name == "codex" or agent_name.startswith("codex"):
-            methodology = """
-METHODOLOGY — BE THOROUGH:
-1. For EACH attack surface marked "not_scanned", read the actual source files listed
-2. Do NOT skim — read every function, trace every data flow from user input to dangerous operation
-3. For each potential bug:
-   a. Identify the exact file and line where the vulnerability exists
-   b. Trace the full path from user-controlled input to the vulnerable sink
-   c. Check what sanitization or validation exists in the path
-   d. Write a concrete PoC (Python script with requests library) if infrastructure is available
-   e. Attempt to execute the PoC and record the result
-4. Look for logic bugs across files — check if auth decorators are missing, if validation is inconsistent
-5. After investigating each surface, mark it "scanned" with notes on what you found
-6. Discover NEW attack surfaces not in the original list
-7. Do NOT stop after finding a few bugs — continue scanning ALL surfaces"""
-        else:
-            methodology = """
-INSTRUCTIONS:
-1. Focus on surfaces marked "not_scanned" first, then re-examine "scanned" ones
-2. For source code: read the actual code, trace data flows, identify vulnerabilities
-3. For each bug found, provide root cause, security impact, PoC, and validation status
-4. If you discover NEW attack surfaces, include them in your output
-5. Mark each surface you reviewed with status "scanned"
-6. Be thorough — prioritize high-impact findings"""
-
-        prompt = f"""{base_instructions}
-{methodology}
-
-CRITICAL — OUTPUT FORMAT:
+OUTPUT FORMAT:
 You MUST output a JSON object at the end. Do NOT output a prose report.
 The JSON must have this exact structure:
 {{
@@ -301,7 +315,7 @@ The JSON must have this exact structure:
       "status": "scanned",
       "findings_notes": "What was found or why it's clean"
     }}
-  ]
+  ],
 }}"""
 
         if eng_type == "source_code":
@@ -340,14 +354,20 @@ The JSON must have this exact structure:
             {"model": context.config.models.bug_hunter_subagent, "engagement_type": eng_type},
         )
 
+        # Grant access to stage_dir so agents can read/write NOTES.md
+        extra_dirs = [os.path.abspath(stage_dir)]
+
+        cwd = source_path if eng_type == "source_code" else stage_dir
+
         if agent_name == "claude" or agent_name.startswith("claude"):
             return await run_claude(
                 prompt=prompt,
                 agent_file=agent_file,
                 model=context.config.models.bug_hunter_subagent,
-                cwd=source_path if eng_type == "source_code" else None,
+                cwd=cwd,
                 timeout=context.config.pipeline.subagent_timeout,
                 on_event=on_event,
+                additional_dirs=extra_dirs,
                 record_dir=record_dir,
                 record_metadata=record_meta,
             )
@@ -355,33 +375,35 @@ The JSON must have this exact structure:
             return await run_codex(
                 prompt=prompt,
                 model=context.config.bug_hunter.codex_model,
-                cwd=source_path if eng_type == "source_code" else None,
+                cwd=cwd,
                 timeout=context.config.pipeline.subagent_timeout,
                 on_event=on_event,
+                additional_dirs=extra_dirs,
                 record_dir=record_dir,
                 record_metadata=record_meta,
             )
         else:
             return CLIResult(success=False, error=f"Unknown agent: {agent_name}")
 
-    def _merge_attack_surfaces(self, surfaces_file: str, new_surfaces: list):
+    async def _merge_attack_surfaces(self, surfaces_file: str, new_surfaces: list):
         """Merge updated attack surfaces into the existing file."""
-        try:
-            with open(surfaces_file) as f:
-                existing = json.load(f)
+        async with self._surfaces_lock:
+            try:
+                with open(surfaces_file) as f:
+                    existing = json.load(f)
 
-            existing_ids = {s.get("id") for s in existing}
-            for surface in new_surfaces:
-                sid = surface.get("id")
-                if sid and sid in existing_ids:
-                    for i, ex in enumerate(existing):
-                        if ex.get("id") == sid:
-                            existing[i].update(surface)
-                            break
-                else:
-                    existing.append(surface)
+                existing_ids = {s.get("id") for s in existing}
+                for surface in new_surfaces:
+                    sid = surface.get("id")
+                    if sid and sid in existing_ids:
+                        for i, ex in enumerate(existing):
+                            if ex.get("id") == sid:
+                                existing[i].update(surface)
+                                break
+                    else:
+                        existing.append(surface)
 
-            with open(surfaces_file, "w") as f:
-                json.dump(existing, f, indent=2)
-        except Exception as e:
-            logger.warning(f"Failed to merge attack surfaces: {e}")
+                with open(surfaces_file, "w") as f:
+                    json.dump(existing, f, indent=2)
+            except Exception as e:
+                logger.warning(f"Failed to merge attack surfaces: {e}")

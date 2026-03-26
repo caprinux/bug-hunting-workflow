@@ -33,17 +33,21 @@ class DeduplicatorStage(PipelineStage):
 
         bug_data_list = [b["bug_data"] for b in bugs]
 
+        # Write findings to file so LLM reads on its own
+        stage_dir = self.get_stage_dir(context)
+        findings_file = os.path.join(stage_dir, "input_findings.json")
+        with open(findings_file, "w") as f:
+            json.dump(bug_data_list, f, indent=2)
+        findings_path = os.path.abspath(findings_file)
+
         await event_manager.emit_log(
             context.engagement_id, context.run_id, self.name,
             f"De-duplicating {len(bug_data_list)} findings",
         )
 
-        findings_json = json.dumps(bug_data_list, indent=2)
-
         prompt = f"""You are de-duplicating security vulnerability findings that may have been flagged by multiple agents.
 
-FINDINGS ({len(bug_data_list)} total):
-{findings_json[:80000]}
+FINDINGS ({len(bug_data_list)} total): Read {findings_path}
 
 RULES:
 1. Same file and line range (source code) OR same URL and parameter (black box) = obvious duplicate → merge
@@ -107,9 +111,14 @@ CRITICAL: Output ONLY a JSON object with this exact structure:
             for dup_id in group.get("duplicates", []):
                 merged_ids.add(dup_id)
 
+        # Update surviving bugs with merged data from the LLM (combined reasoning, found_by, etc.)
+        dedup_by_id = {d.get("id"): d for d in deduplicated if isinstance(d, dict) and d.get("id")}
         for bug in bugs:
-            if bug["bug_data"].get("id") in merged_ids:
+            bug_ext_id = bug["bug_data"].get("id")
+            if bug_ext_id in merged_ids:
                 update_bug(bug["id"], status="discarded")
+            elif bug_ext_id in dedup_by_id:
+                update_bug(bug["id"], bug_data=dedup_by_id[bug_ext_id])
 
         return StageResult(
             success=True,
