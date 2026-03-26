@@ -25,32 +25,51 @@ export default function Report() {
 
   useEffect(() => { loadReport() }, [id])
 
+  // Check if a report is already being generated (e.g. auto-triggered after run)
+  useEffect(() => {
+    let cancelled = false
+    api.reportStatus(id).then(status => {
+      if (cancelled) return
+      if (status.status === 'running') {
+        setGenerating(true)
+        setGenMessage(status.message || 'Report is being generated...')
+        pollStatus()
+      }
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [id])
+
+  function pollStatus() {
+    const interval = setInterval(async () => {
+      try {
+        const status = await api.reportStatus(id)
+        setGenMessage(status.message || status.status)
+        if (status.status === 'completed') {
+          clearInterval(interval)
+          setGenerating(false)
+          setGenMessage('')
+          loadReport()
+        } else if (status.status === 'failed') {
+          clearInterval(interval)
+          setGenerating(false)
+          setGenMessage('')
+          setError(status.message)
+        }
+      } catch {
+        clearInterval(interval)
+        setGenerating(false)
+      }
+    }, 2000)
+    return interval
+  }
+
   async function handleGenerate() {
     setGenerating(true)
     setGenMessage('Generating report...')
     setError(null)
     try {
       await api.generateReport(id)
-      for (let i = 0; i < 120; i++) {
-        await new Promise(r => setTimeout(r, 2000))
-        try {
-          const status = await api.reportStatus(id)
-          setGenMessage(status.message || status.status)
-          if (status.status === 'completed') {
-            loadReport()
-            setGenerating(false)
-            setGenMessage('')
-            return
-          } else if (status.status === 'failed') {
-            setError(status.message)
-            setGenerating(false)
-            setGenMessage('')
-            return
-          }
-        } catch { break }
-      }
-      setGenerating(false)
-      setGenMessage('')
+      pollStatus()
     } catch (e) {
       setError(e.message)
       setGenerating(false)

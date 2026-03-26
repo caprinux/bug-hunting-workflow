@@ -36,7 +36,10 @@ export default function EngagementDetail() {
         agents: cfg.bug_hunter?.agents || cfg.broad_bug_hunter?.agents || ['claude', 'codex'],
         codex_model: cfg.bug_hunter?.codex_model || cfg.broad_bug_hunter?.codex_model || 'gpt-5.4',
         iterations: cfg.bug_hunter?.iterations || cfg.broad_bug_hunter?.iterations || 1,
+        mode: cfg.bug_hunter?.mode || 'parallel',
         subagent_timeout: cfg.pipeline?.subagent_timeout || 3600,
+        perfectionist_enabled: cfg.perfectionist?.enabled === true,
+        bug_chainer_enabled: cfg.bug_chainer?.enabled === true,
       })
     } catch (e) {
       console.error(e)
@@ -210,15 +213,23 @@ export default function EngagementDetail() {
       {showSettings && !hasActiveRun && (
         <div className="engagement-settings-panel">
           <h3>Run Settings</h3>
-          <p className="muted" style={{ fontSize: '13px', marginBottom: '12px' }}>
-            These settings apply to the next run. Changes are saved to the engagement config.
-          </p>
-          <div className="config-grid">
+          {runs.length > 0 && (
+            <p style={{ fontSize: '12px', color: 'var(--color-warning)', marginBottom: '12px' }}>
+              Settings are locked after the first run.
+            </p>
+          )}
+          {runs.length === 0 && (
+            <p className="muted" style={{ fontSize: '13px', marginBottom: '12px' }}>
+              These settings apply to all runs. They cannot be changed after the first run.
+            </p>
+          )}
+          {(() => { const locked = runs.length > 0; return (<>
+          <div className="config-grid" style={locked ? { opacity: 0.6, pointerEvents: 'none' } : {}}>
             <div className="form-group">
               <label>Bug Hunter Agents</label>
               <div className="agent-checkboxes">
                 <label className="toggle-label">
-                  <input type="checkbox" checked={engConfig.agents?.includes('claude')}
+                  <input type="checkbox" disabled={locked} checked={engConfig.agents?.includes('claude')}
                     onChange={e => {
                       const next = e.target.checked
                         ? [...new Set([...(engConfig.agents || []), 'claude'])]
@@ -228,7 +239,7 @@ export default function EngagementDetail() {
                   <span>Claude</span>
                 </label>
                 <label className="toggle-label">
-                  <input type="checkbox" checked={engConfig.agents?.includes('codex')}
+                  <input type="checkbox" disabled={locked} checked={engConfig.agents?.includes('codex')}
                     onChange={e => {
                       const next = e.target.checked
                         ? [...new Set([...(engConfig.agents || []), 'codex'])]
@@ -241,33 +252,66 @@ export default function EngagementDetail() {
             </div>
             <div className="form-group">
               <label>Hunt Iterations</label>
-              <input type="number" min="1" value={engConfig.iterations || 1}
+              <input type="number" min="1" disabled={locked} value={engConfig.iterations || 1}
                 onChange={e => setEngConfig(c => ({ ...c, iterations: Math.max(1, parseInt(e.target.value) || 1) }))} />
               <small className="muted" style={{ fontSize: '11px' }}>Bug Hunter runs N times before proceeding to validation</small>
             </div>
             <div className="form-group">
+              <label>Agent Mode</label>
+              <select disabled={locked} value={engConfig.mode} onChange={e => setEngConfig(c => ({ ...c, mode: e.target.value }))}>
+                <option value="parallel">Parallel</option>
+                <option value="sequential">Sequential</option>
+              </select>
+              <small className="muted" style={{ fontSize: '11px' }}>
+                {engConfig.mode === 'sequential'
+                  ? `Agents run one at a time (${(engConfig.agents || []).join(' → ')}), sharing notes`
+                  : 'Agents run concurrently, each with their own notes'}
+              </small>
+            </div>
+            <div className="form-group">
               <label>Subagent Timeout (s)</label>
-              <input type="number" value={engConfig.subagent_timeout || 3600}
+              <input type="number" disabled={locked} value={engConfig.subagent_timeout || 3600}
                 onChange={e => setEngConfig(c => ({ ...c, subagent_timeout: parseInt(e.target.value) || 3600 }))} />
+            </div>
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: locked ? 'default' : 'pointer' }}>
+                <input type="checkbox" disabled={locked} checked={engConfig.perfectionist_enabled}
+                  onChange={e => setEngConfig(c => ({ ...c, perfectionist_enabled: e.target.checked }))} />
+                Perfectionist
+              </label>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Expand validated bugs to maximum impact with additional PoCs</span>
+            </div>
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: locked ? 'default' : 'pointer' }}>
+                <input type="checkbox" disabled={locked} checked={engConfig.bug_chainer_enabled}
+                  onChange={e => setEngConfig(c => ({ ...c, bug_chainer_enabled: e.target.checked }))} />
+                Bug Chainer
+              </label>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Chain bugs together into attack paths</span>
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-            <button className="btn btn-primary" disabled={savingConfig} onClick={async () => {
-              setSavingConfig(true)
-              try {
-                await api.updateEngagementConfig(id, {
-                  bug_hunter: { agents: engConfig.agents, codex_model: engConfig.codex_model, iterations: engConfig.iterations },
-                  pipeline: { subagent_timeout: engConfig.subagent_timeout },
-                })
-                setShowSettings(false)
-                await loadAll()
-              } catch (e) { console.error(e) }
-              setSavingConfig(false)
-            }}>
-              {savingConfig ? 'Saving...' : 'Save Settings'}
-            </button>
-            <button className="btn btn-secondary" onClick={() => setShowSettings(false)}>Cancel</button>
+            {!locked && (
+              <button className="btn btn-primary" disabled={savingConfig} onClick={async () => {
+                setSavingConfig(true)
+                try {
+                  await api.updateEngagementConfig(id, {
+                    bug_hunter: { agents: engConfig.agents, codex_model: engConfig.codex_model, iterations: engConfig.iterations, mode: engConfig.mode },
+                    pipeline: { subagent_timeout: engConfig.subagent_timeout },
+                    perfectionist: { enabled: engConfig.perfectionist_enabled },
+                    bug_chainer: { enabled: engConfig.bug_chainer_enabled },
+                  })
+                  setShowSettings(false)
+                  await loadAll()
+                } catch (e) { console.error(e) }
+                setSavingConfig(false)
+              }}>
+                {savingConfig ? 'Saving...' : 'Save Settings'}
+              </button>
+            )}
+            <button className="btn btn-secondary" onClick={() => setShowSettings(false)}>Close</button>
           </div>
+          </>)})()}
         </div>
       )}
 
