@@ -1143,8 +1143,9 @@ h2 {
 /* ── Report Page ────────────────────────────────────────────── */
 .report-content {
   background: var(--bg-secondary); border: 1px solid var(--border);
-  border-radius: 8px; padding: 32px 40px; max-width: 900px;
+  border-radius: 8px; padding: 32px 40px;
   line-height: 1.7; color: var(--text-primary);
+  width: 100%;
 }
 .report-content .md-h1 { font-size: 24px; font-weight: 700; margin: 0 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--border); }
 .report-content .md-h2 { font-size: 20px; font-weight: 600; margin: 32px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
@@ -1166,6 +1167,43 @@ h2 {
 }
 .report-content strong { color: var(--text-primary); }
 .report-content a { color: var(--color-accent); }
+
+/* Markdown tables */
+.report-content .md-table {
+  width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px;
+}
+.report-content .md-table th {
+  background: var(--bg-tertiary); padding: 8px 12px; text-align: left;
+  border: 1px solid var(--border); font-weight: 600; color: var(--text-primary);
+}
+.report-content .md-table td {
+  padding: 8px 12px; border: 1px solid var(--border); color: var(--text-secondary);
+}
+.report-content .md-table tbody tr:hover { background: var(--bg-tertiary); }
+
+/* Code block language label */
+.report-content .md-code-block[data-lang]:not([data-lang=""])::before {
+  content: attr(data-lang); display: block;
+  font-size: 11px; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: 0.5px; margin-bottom: 8px; font-family: inherit;
+}
+
+/* Syntax highlighting */
+.hl-kw { color: #ff7b72; }
+.hl-str { color: #a5d6ff; }
+.hl-num { color: #79c0ff; }
+.hl-comment { color: #8b949e; font-style: italic; }
+.hl-var { color: #ffa657; }
+.hl-key { color: #7ee787; }
+.hl-sym { color: #d2a8ff; }
+
+[data-theme="light"] .hl-kw { color: #cf222e; }
+[data-theme="light"] .hl-str { color: #0a3069; }
+[data-theme="light"] .hl-num { color: #0550ae; }
+[data-theme="light"] .hl-comment { color: #6e7781; }
+[data-theme="light"] .hl-var { color: #953800; }
+[data-theme="light"] .hl-key { color: #116329; }
+[data-theme="light"] .hl-sym { color: #8250df; }
 
 /* ── Platforms Page ─────────────────────────────────────────── */
 .platforms-layout {
