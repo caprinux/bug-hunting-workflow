@@ -112,8 +112,18 @@ async def startup():
     global AUTH_PASSWORD
     AUTH_PASSWORD = _resolve_auth_password()
     if not AUTH_PASSWORD:
-        AUTH_PASSWORD = secrets.token_urlsafe(24)
-        logger.info("Generated new authentication password (see console output)")
+        # Check for persisted credentials file
+        creds_file = os.path.join(os.path.dirname(__file__), "..", ".credentials")
+        if os.path.exists(creds_file):
+            with open(creds_file) as f:
+                AUTH_PASSWORD = f.read().strip()
+            logger.info("Loaded password from .credentials file")
+        else:
+            AUTH_PASSWORD = secrets.token_urlsafe(24)
+            with open(creds_file, "w") as f:
+                f.write(AUTH_PASSWORD)
+            os.chmod(creds_file, 0o600)
+            logger.info("Generated and saved password to .credentials file")
         print(f"\n{'='*60}", flush=True)
         print(f"  Authentication Password: {AUTH_PASSWORD}", flush=True)
         print(f"{'='*60}\n", flush=True)

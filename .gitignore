@@ -10,3 +10,4 @@ frontend/dist/
 venv/
 *.egg-info/
 .DS_Store
+.credentials
