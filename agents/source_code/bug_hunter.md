@@ -21,6 +21,10 @@ All vulnerability classes — injection, auth bypass, IDOR, SSRF, XSS, deseriali
 
 Don't limit yourself to a checklist. Follow the code and think like an attacker.
 
+## CAPTCHA Handling
+
+If you encounter CAPTCHAs when testing against staging infrastructure, use the captcha-solver MCP tools to bypass them. Available solvers: reCAPTCHA v2/v3, hCaptcha, Cloudflare Turnstile/Challenge, AWS WAF, DataDome, Imperva, FunCaptcha, GeeTest, and image CAPTCHAs.
+
 ## Bug Reporting
 
 For each bug, provide:

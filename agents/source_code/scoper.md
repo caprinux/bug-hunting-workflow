@@ -23,6 +23,17 @@ Produce a high-level security map of the application in a single pass. Read dire
 - **Data stores**: databases, caches, file systems, external APIs
 - **Dangerous operations**: command execution, deserialization, file I/O, template rendering
 
+## Mobile Apps (APK)
+
+If the scope includes Android mobile apps or APK package names:
+1. Use the `mcp__fetch-apk__search` tool to find the app, then `mcp__fetch-apk__download` to download the APK
+2. Decompile with `jadx -d <output_dir> <apk_file>` to get Java source code
+3. Map the decompiled source as you would any other codebase — API endpoints, hardcoded secrets, auth logic, WebView bridges, deep links, exported components
+
+## CAPTCHA Handling
+
+If you encounter CAPTCHAs during reconnaissance (e.g. on staging infrastructure), use the captcha-solver MCP tools to bypass them. Available solvers include reCAPTCHA v2/v3, hCaptcha, Cloudflare Turnstile, AWS WAF, and more.
+
 ## What NOT to Do
 
 - Do NOT hunt for specific vulnerabilities (that's the Bug Hunter's job)

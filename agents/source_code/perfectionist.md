@@ -47,6 +47,10 @@ Given a confirmed, validated vulnerability with a working PoC, expand its exploi
 5. Repeat until no further escalation is possible
 6. Document any theoretical escalations that couldn't be demonstrated (with reason)
 
+## CAPTCHA Handling
+
+If you hit CAPTCHAs during escalation testing, use the captcha-solver MCP tools to bypass them.
+
 ## Output
 
 JSON object with `demonstrated` expansions (each with PoC) and `theoretical` expansions (with reason not demonstrated).

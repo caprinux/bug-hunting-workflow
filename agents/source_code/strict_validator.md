@@ -48,6 +48,10 @@ Distinguish between:
 - **Infrastructure issue**: Network timeout, service down, auth expired → should be retried
 - **PoC error**: Your PoC has a bug, not the target → fix and retry
 
+## CAPTCHA Handling
+
+If your PoC hits a CAPTCHA, use the captcha-solver MCP tools to bypass it. Do not mark a bug as "cannot validate" just because of a CAPTCHA.
+
 ## Output
 
 JSON object with `validated` (boolean), `poc` (code, execution result), and `reason` (if not validated).

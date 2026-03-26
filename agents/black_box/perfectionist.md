@@ -45,6 +45,10 @@ Given a confirmed, validated vulnerability with a working PoC, push the exploita
 4. If successful, continue from the new primitive
 5. Document theoretical expansions that couldn't be tested
 
+## CAPTCHA Handling
+
+If you hit CAPTCHAs during escalation testing, use the captcha-solver MCP tools to bypass them.
+
 ## Output
 
 JSON object with `demonstrated` and `theoretical` expansions. Each demonstrated expansion includes the PoC code and execution result.

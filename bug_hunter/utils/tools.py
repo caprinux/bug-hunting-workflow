@@ -17,43 +17,119 @@ COMMON_TOOLS = {
     "curl": {"required": True, "install": "apt-get install -y curl", "description": "HTTP client"},
 }
 
-SOURCE_CODE_TOOLS: dict[str, dict] = {}
+SOURCE_CODE_TOOLS: dict[str, dict] = {
+    "jadx": {
+        "required": True,
+        "install": "bash -c 'JADX_VER=$(curl -sL https://api.github.com/repos/skylot/jadx/releases/latest | python3 -c \"import sys,json;print(json.load(sys.stdin)[\\\"tag_name\\\"].lstrip(\\\"v\\\"))\") && curl -sL https://github.com/skylot/jadx/releases/download/v${JADX_VER}/jadx-${JADX_VER}.zip -o /tmp/jadx.zip && unzip -qo /tmp/jadx.zip -d /opt/jadx-${JADX_VER} && ln -sf /opt/jadx-${JADX_VER}/bin/jadx /usr/local/bin/jadx && rm /tmp/jadx.zip'",
+        "description": "Android APK/DEX decompiler",
+    },
+}
 
 BLACK_BOX_TOOLS = {
+    # Recon & Discovery
     "subfinder": {
-        "required": False,
+        "required": True,
         "install": "go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
         "description": "Subdomain discovery",
     },
     "httpx": {
-        "required": False,
+        "required": True,
         "install": "go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest",
-        "description": "HTTP probing",
+        "description": "HTTP probing and tech fingerprinting",
     },
     "nmap": {
-        "required": False,
+        "required": True,
         "install": "apt-get install -y nmap",
-        "description": "Port scanner",
+        "description": "Port scanning and service detection",
     },
+    "masscan": {
+        "required": True,
+        "install": "apt-get install -y masscan",
+        "description": "Fast port scanning",
+    },
+    "katana": {
+        "required": True,
+        "install": "go install github.com/projectdiscovery/katana/cmd/katana@latest",
+        "description": "Web crawling and endpoint discovery",
+    },
+    "gau": {
+        "required": True,
+        "install": "go install github.com/lc/gau/v2/cmd/gau@latest",
+        "description": "Fetch known URLs from Wayback Machine and commoncrawl",
+    },
+    "nuclei": {
+        "required": True,
+        "install": "go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+        "description": "Template-based vulnerability scanner",
+    },
+    # Web Fuzzing & Directory Brute
     "ffuf": {
-        "required": False,
+        "required": True,
         "install": "go install github.com/ffuf/ffuf/v2@latest",
-        "description": "Web fuzzer",
+        "description": "Web fuzzer for directories, parameters, and vhosts",
     },
+    "gobuster": {
+        "required": True,
+        "install": "apt-get install -y gobuster",
+        "description": "Directory and DNS brute-forcing",
+    },
+    "feroxbuster": {
+        "required": True,
+        "install": "apt-get install -y feroxbuster",
+        "description": "Recursive content discovery",
+    },
+    "dirb": {
+        "required": True,
+        "install": "apt-get install -y dirb",
+        "description": "Directory brute-forcing with wordlists",
+    },
+    # Vulnerability Scanning
     "sqlmap": {
-        "required": False,
-        "install": "pip3 install sqlmap",
-        "description": "SQL injection testing",
+        "required": True,
+        "install": "apt-get install -y sqlmap",
+        "description": "SQL injection detection and exploitation",
+    },
+    "nikto": {
+        "required": True,
+        "install": "apt-get install -y nikto",
+        "description": "Web server vulnerability scanner",
+    },
+    "whatweb": {
+        "required": True,
+        "install": "apt-get install -y whatweb",
+        "description": "Web technology fingerprinting",
+    },
+    "wapiti": {
+        "required": True,
+        "install": "apt-get install -y wapiti",
+        "description": "Web application vulnerability scanner",
+    },
+    "sslscan": {
+        "required": True,
+        "install": "apt-get install -y sslscan",
+        "description": "SSL/TLS configuration analysis",
+    },
+    "dalfox": {
+        "required": True,
+        "install": "go install github.com/hahwul/dalfox/v2@latest",
+        "description": "XSS vulnerability scanner",
+    },
+    # Auth & Brute Force
+    "hydra": {
+        "required": True,
+        "install": "apt-get install -y hydra",
+        "description": "Network login brute-forcer",
+    },
+    # Mobile
+    "jadx": {
+        "required": True,
+        "install": "bash -c 'JADX_VER=$(curl -sL https://api.github.com/repos/skylot/jadx/releases/latest | python3 -c \"import sys,json;print(json.load(sys.stdin)[\\\"tag_name\\\"].lstrip(\\\"v\\\"))\") && curl -sL https://github.com/skylot/jadx/releases/download/v${JADX_VER}/jadx-${JADX_VER}.zip -o /tmp/jadx.zip && unzip -qo /tmp/jadx.zip -d /opt/jadx-${JADX_VER} && ln -sf /opt/jadx-${JADX_VER}/bin/jadx /usr/local/bin/jadx && rm /tmp/jadx.zip'",
+        "description": "Android APK/DEX decompiler",
     },
 }
 
 OPTIONAL_TOOLS = {
     "codex": {"required": False, "install": None, "description": "Codex CLI"},
-    "amass": {
-        "required": False,
-        "install": "go install -v github.com/owasp-amass/amass/v4/...@master",
-        "description": "Subdomain enumeration",
-    },
 }
 
 
