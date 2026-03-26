@@ -56,8 +56,18 @@ def parse_git_url(url: str) -> tuple[str, str, str]:
 
     if "#" in url:
         url, commit = url.rsplit("#", 1)
+    # Only treat @ as branch separator if it appears after the URL path,
+    # not in the authority (e.g. https://user:pass@host/repo@branch)
     if "@" in url and not url.startswith("git@"):
-        url, branch = url.rsplit("@", 1)
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        if "@" in parsed.path:
+            # The @ is in the path portion, safe to split
+            base_path, branch = parsed.path.rsplit("@", 1)
+            url = url[:url.rfind("@")]
+        elif not parsed.hostname:
+            # Not a proper URL, fall back to rsplit
+            url, branch = url.rsplit("@", 1)
 
     return url, branch, commit
 

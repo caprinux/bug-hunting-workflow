@@ -73,8 +73,7 @@ class PipelineOrchestrator:
         filtered = []
         for name, order in stages:
             if name == "deduplicator" and not self.config.deduplicator.enabled:
-                if len(self.config.bug_hunter.agents) <= 1:
-                    continue
+                continue
             if name == "perfectionist" and not self.config.perfectionist.enabled:
                 continue
             if name == "bug_chainer" and not self.config.bug_chainer.enabled:
@@ -135,6 +134,7 @@ class PipelineOrchestrator:
         self._cancelled = False
         self._paused = False
         self._pause_reason = ""
+        self._running = True
         self._current_task = asyncio.create_task(
             self._execute_pipeline(run_id, run_type, rehunt_target, rehunt_copied_stages)
         )
@@ -154,11 +154,16 @@ class PipelineOrchestrator:
         self._pause_reason = ""
 
         pipeline_state = run.get("pipeline_state") or {}
+        # Clear stale terminal flags so the resumed run doesn't re-enter paused/failed
+        pipeline_state.pop("paused", None)
+        pipeline_state.pop("paused_stage", None)
+        pipeline_state.pop("failed", None)
+        pipeline_state.pop("failed_stage", None)
         current_stage = pipeline_state.get("current_stage")
         if current_stage and current_stage not in pipeline_state.get("completed_stages", []):
             self._reset_stage_result(run_id, current_stage)
 
-        update_run(run_id, status="running", completed_at=None)
+        update_run(run_id, status="running", completed_at=None, pipeline_state=pipeline_state)
         await event_manager.emit_stage_update(
             self.engagement_id, run_id, "", "running",
             message=f"Pipeline resumed from {current_stage or 'start'}",

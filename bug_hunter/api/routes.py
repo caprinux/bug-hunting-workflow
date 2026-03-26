@@ -81,12 +81,13 @@ async def api_create_engagement(req: CreateEngagementRequest):
         "infra_config": req.infra_config,
     }
 
-    if req.config_overrides:
+    if req.config_overrides and isinstance(req.config_overrides, dict):
         # Strip dangerous overrides that could allow path injection
         overrides = dict(req.config_overrides)
-        overrides.pop("pipeline", None) if "output_dir" in overrides.get("pipeline", {}) else None
-        if "pipeline" in overrides:
+        if isinstance(overrides.get("pipeline"), dict):
             overrides["pipeline"].pop("output_dir", None)
+        else:
+            overrides.pop("pipeline", None)
         overrides.pop("auth", None)
         _deep_merge(eng_config, overrides)
 
@@ -140,8 +141,10 @@ async def api_update_engagement_config(engagement_id: str, config_updates: dict)
     current_config = eng["config"]
     # Strip dangerous overrides
     config_updates.pop("auth", None)
-    if "pipeline" in config_updates:
+    if isinstance(config_updates.get("pipeline"), dict):
         config_updates["pipeline"].pop("output_dir", None)
+    elif "pipeline" in config_updates:
+        config_updates.pop("pipeline")
     # Deep merge updates into existing config
     def _deep_merge(base, override):
         for k, v in override.items():

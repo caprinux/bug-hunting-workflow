@@ -85,6 +85,7 @@ class PipelineStage(ABC):
                              filename: str) -> Any:
         """Read output from a previous stage."""
         import json
+        import os
         filepath = self._stage_output_path(context, stage_name, filename)
         if os.path.exists(filepath):
             with open(filepath) as f:
