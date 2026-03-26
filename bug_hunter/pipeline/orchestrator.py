@@ -72,8 +72,11 @@ class PipelineOrchestrator:
 
         filtered = []
         for name, order in stages:
-            if name == "deduplicator" and not self.config.deduplicator.enabled:
-                continue
+            if name == "deduplicator":
+                # Auto-enable for multi-agent, otherwise respect config
+                multi_agent = len(self.config.bug_hunter.agents) > 1
+                if not self.config.deduplicator.enabled and not multi_agent:
+                    continue
             if name == "perfectionist" and not self.config.perfectionist.enabled:
                 continue
             if name == "bug_chainer" and not self.config.bug_chainer.enabled:
