@@ -39,8 +39,9 @@ If you encounter CAPTCHAs during reconnaissance (e.g. on staging infrastructure)
 - Do NOT hunt for specific vulnerabilities (that's the Bug Hunter's job)
 - Do NOT read every file line by line
 - Do NOT write PoCs
+- Do NOT write output to files — return everything in your JSON output
 - Keep it fast — this should take minutes, not hours
 
 ## Output
 
-Structured JSON with architecture overview, prioritized attack surface list, and scope notes.
+Return a structured JSON object as your final output with architecture overview, prioritized attack surface list, and scope notes. Do NOT write it to a file.

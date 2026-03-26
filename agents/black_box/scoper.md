@@ -44,8 +44,9 @@ If you encounter CAPTCHAs during reconnaissance (e.g. Cloudflare challenge pages
 
 - Do NOT exploit anything (that's the Bug Hunter's job)
 - Do NOT send attack payloads
+- Do NOT write output to files — return everything in your JSON output
 - Keep reconnaissance focused on mapping, not testing
 
 ## Output
 
-Structured JSON with architecture overview, prioritized attack surface list, and scope notes.
+Return a structured JSON object as your final output with architecture overview, prioritized attack surface list, and scope notes. Do NOT write it to a file.

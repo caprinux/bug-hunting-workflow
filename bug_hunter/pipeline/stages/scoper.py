@@ -88,6 +88,23 @@ class ScoperStage(PipelineStage):
             return StageResult(success=False, error=result.error, cost_usd=result.cost_usd)
 
         scope_data = parse_agent_result(result.result, ['attack_surfaces', 'architecture'], "scoper")
+
+        # Fallback: if agent wrote output to a file instead of returning JSON
+        if not scope_data.get("attack_surfaces"):
+            import glob
+            stage_dir = self.get_stage_dir(context)
+            for fallback in glob.glob(os.path.join(stage_dir, "**", "*.json"), recursive=True):
+                if "scope" in os.path.basename(fallback).lower() and fallback != os.path.join(stage_dir, "scope.json"):
+                    try:
+                        with open(fallback) as fb:
+                            candidate = json.load(fb)
+                        if isinstance(candidate, dict) and candidate.get("attack_surfaces"):
+                            logger.info(f"Recovered scope data from agent-written file: {fallback}")
+                            scope_data = candidate
+                            break
+                    except (json.JSONDecodeError, IOError):
+                        continue
+
         self.write_output(context, "scope.json", scope_data)
 
         attack_surfaces = scope_data.get("attack_surfaces", [])
