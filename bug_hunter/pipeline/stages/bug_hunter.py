@@ -312,7 +312,8 @@ The JSON must have this exact structure:
         def on_event(event: StreamEvent):
             text = ""
             if event.type == "assistant":
-                content = event.data.get("content", "")
+                # Claude stream: data is {"type": "assistant", "message": {"content": [...]}}
+                content = event.data.get("message", {}).get("content", event.data.get("content", ""))
                 if isinstance(content, list):
                     text = " ".join(
                         block.get("text", "") for block in content
