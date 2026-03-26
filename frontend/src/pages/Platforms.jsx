@@ -18,13 +18,22 @@ export default function Platforms() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    api.listPlatforms().then(data => {
+    api.listPlatforms().then(async (data) => {
       setPlatforms(data)
       if (data.length > 0) {
         setSelectedPlatform(data[0])
         if (data[0].programs_count > 0) {
           loadPrograms(data[0].name)
         }
+        // Check if a scrape is already running (e.g., page was reloaded)
+        try {
+          const status = await api.scrapeStatus(data[0].name)
+          if (status.status === 'running') {
+            setScraping(true)
+            setScrapeMessage(status.message || 'Scraping...')
+            pollScrapeStatus(data[0].name)
+          }
+        } catch {}
       }
     }).catch(e => setError(e.message)).finally(() => setLoading(false))
   }, [])
@@ -40,6 +49,32 @@ export default function Platforms() {
 
   const [scrapeMessage, setScrapeMessage] = useState('')
 
+  async function pollScrapeStatus(platformName) {
+    for (let i = 0; i < 600; i++) {  // max 20 min (117 programs × 0.5s + overhead)
+      await new Promise(r => setTimeout(r, 2000))
+      try {
+        const status = await api.scrapeStatus(platformName)
+        setScrapeMessage(status.message || status.status)
+        if (status.status === 'completed') {
+          await loadPrograms(platformName)
+          const updated = await api.listPlatforms()
+          setPlatforms(updated)
+          setSelectedPlatform(updated.find(p => p.name === platformName) || selectedPlatform)
+          setScraping(false)
+          setScrapeMessage('')
+          return
+        } else if (status.status === 'failed') {
+          setError(status.message)
+          setScraping(false)
+          setScrapeMessage('')
+          return
+        }
+      } catch { break }
+    }
+    setScraping(false)
+    setScrapeMessage('')
+  }
+
   async function handleScrape() {
     if (!selectedPlatform) return
     setScraping(true)
@@ -49,34 +84,7 @@ export default function Platforms() {
       await api.scrapePlatform(selectedPlatform.name, scrapeForm)
       setShowScrapeModal(false)
       setScrapeForm({})
-
-      // Poll for completion
-      const poll = async () => {
-        for (let i = 0; i < 300; i++) {  // max 5 min
-          await new Promise(r => setTimeout(r, 2000))
-          try {
-            const status = await api.scrapeStatus(selectedPlatform.name)
-            setScrapeMessage(status.message || status.status)
-            if (status.status === 'completed') {
-              await loadPrograms(selectedPlatform.name)
-              const updated = await api.listPlatforms()
-              setPlatforms(updated)
-              setSelectedPlatform(updated.find(p => p.name === selectedPlatform.name) || selectedPlatform)
-              setScraping(false)
-              setScrapeMessage('')
-              return
-            } else if (status.status === 'failed') {
-              setError(status.message)
-              setScraping(false)
-              setScrapeMessage('')
-              return
-            }
-          } catch { break }
-        }
-        setScraping(false)
-        setScrapeMessage('')
-      }
-      poll()
+      pollScrapeStatus(selectedPlatform.name)
     } catch (e) {
       setError(e.message)
       setScraping(false)

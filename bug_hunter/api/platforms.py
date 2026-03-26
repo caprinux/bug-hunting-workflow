@@ -49,8 +49,18 @@ async def api_scrape_platform(platform_name: str, credentials: dict):
 
     async def _run_scrape():
         try:
-            _scrape_status[platform_name] = {"status": "running", "message": "Authenticating and fetching programs..."}
-            result = await platform.scrape(credentials)
+            _scrape_status[platform_name] = {"status": "running", "message": "Authenticating and fetching programs...", "progress": 0, "total": 0}
+
+            # Pass a progress callback to the scraper
+            def on_progress(current, total, slug=""):
+                _scrape_status[platform_name] = {
+                    "status": "running",
+                    "message": f"Fetching {current}/{total}: {slug}",
+                    "progress": current,
+                    "total": total,
+                }
+
+            result = await platform.scrape(credentials, on_progress=on_progress)
             if result.success:
                 _scrape_status[platform_name] = {
                     "status": "completed",

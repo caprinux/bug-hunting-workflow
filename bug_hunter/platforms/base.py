@@ -63,11 +63,12 @@ class BugBountyPlatform(ABC):
         ...
 
     @abstractmethod
-    async def scrape(self, credentials: dict) -> ScrapeResult:
+    async def scrape(self, credentials: dict, on_progress=None) -> ScrapeResult:
         """Authenticate and scrape programs from the platform.
 
         Args:
             credentials: Platform-specific auth (email, password, totp, etc.)
+            on_progress: Optional callback(current, total, slug) for progress updates
         """
         ...
 

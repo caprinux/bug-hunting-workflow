@@ -74,7 +74,7 @@ class YesWeHackPlatform(BugBountyPlatform):
         except Exception:
             return None
 
-    async def scrape(self, credentials: dict) -> ScrapeResult:
+    async def scrape(self, credentials: dict, on_progress=None) -> ScrapeResult:
         """Authenticate to YWH and fetch all accessible programs."""
         email = credentials.get("email", "")
         password = credentials.get("password", "")
@@ -130,8 +130,11 @@ class YesWeHackPlatform(BugBountyPlatform):
 
             # Fetch details for each program
             detailed = []
+            total = len(programs)
             for i, summary in enumerate(programs):
                 slug = summary["slug"]
+                if on_progress:
+                    on_progress(i + 1, total, slug)
                 try:
                     resp = await loop.run_in_executor(
                         None, lambda s=slug: ywh.call("GET", f"/programs/{s}")
