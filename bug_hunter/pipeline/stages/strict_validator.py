@@ -60,9 +60,11 @@ class StrictValidatorStage(PipelineStage):
                 bug_id = bug_data.get("id", "unknown")
 
                 # Check if bug hunter already validated this bug
+                poc = bug_data.get("poc")
+                poc_result = poc.get("execution_result") if isinstance(poc, dict) else None
                 already_validated = (
                     bug_data.get("validated") is True
-                    and bug_data.get("poc", {}).get("execution_result") == "success"
+                    and poc_result == "success"
                 )
 
                 if already_validated:
@@ -184,6 +186,7 @@ CRITICAL: Output ONLY a JSON object with this exact structure:
         result = await run_claude(
             prompt=prompt, agent_file=agent_file,
             model=context.config.models.strict_validator,
+            cwd=pocs_dir,
             timeout=context.config.pipeline.subagent_timeout,
             record_dir=record_dir, record_metadata=record_meta,
         )

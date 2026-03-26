@@ -111,6 +111,7 @@ export default function EngagementDetail() {
           <Link to={`/engagements/${id}/bugs`} className="btn btn-secondary">Bugs</Link>
           <Link to={`/engagements/${id}/chains`} className="btn btn-secondary">Chains</Link>
           <Link to={`/engagements/${id}/intel`} className="btn btn-secondary">Intel</Link>
+          <Link to={`/engagements/${id}/chat`} className="btn btn-secondary">Chat</Link>
         </div>
       </div>
 

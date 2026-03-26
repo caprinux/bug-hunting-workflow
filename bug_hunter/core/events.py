@@ -57,8 +57,8 @@ class EventManager:
         }
         msg_json = json.dumps(message)
 
-        # Persist to database (skip agent_stream to avoid flooding the DB)
-        if run_id and event_type != "agent_stream":
+        # Persist to database (skip high-frequency stream events to avoid flooding the DB)
+        if run_id and event_type not in ("agent_stream", "chat_stream"):
             try:
                 from bug_hunter.core.database import create_event
                 create_event(engagement_id, run_id, event_type, stage, data, timestamp)
@@ -108,6 +108,22 @@ class EventManager:
                                 agent_id: str, text: str):
         await self.emit("agent_stream", engagement_id, run_id, stage,
                         {"agent_id": agent_id, "text": text})
+
+    async def emit_chat_stream(self, engagement_id: str, chat_id: str, text: str):
+        await self.emit("chat_stream", engagement_id, data={
+            "chat_id": chat_id, "text": text,
+        })
+
+    async def emit_chat_complete(self, engagement_id: str, chat_id: str,
+                                  message_id: str):
+        await self.emit("chat_complete", engagement_id, data={
+            "chat_id": chat_id, "message_id": message_id,
+        })
+
+    async def emit_chat_error(self, engagement_id: str, chat_id: str, error: str):
+        await self.emit("chat_error", engagement_id, data={
+            "chat_id": chat_id, "error": error,
+        })
 
 
 event_manager = EventManager()

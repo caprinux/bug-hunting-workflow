@@ -56,6 +56,14 @@ export const api = {
   importProgram: (name, id) => request(`/platforms/${name}/programs/${id}/import`, { method: 'POST' }),
   importStatus: (name, id) => request(`/platforms/${name}/programs/${id}/import/status`),
 
+  // Chat
+  listChats: (engId) => request(`/engagements/${engId}/chats`),
+  createChat: (engId, title) => request(`/engagements/${engId}/chats`, { method: 'POST', body: JSON.stringify({ title }) }),
+  getChat: (engId, chatId) => request(`/engagements/${engId}/chats/${chatId}`),
+  deleteChat: (engId, chatId) => request(`/engagements/${engId}/chats/${chatId}`, { method: 'DELETE' }),
+  updateChat: (engId, chatId, title) => request(`/engagements/${engId}/chats/${chatId}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
+  sendChatMessage: (engId, chatId, content) => request(`/engagements/${engId}/chats/${chatId}/messages`, { method: 'POST', body: JSON.stringify({ content }) }),
+
   getSettings: () => request('/settings'),
   updateSettings: (data) => request('/settings', { method: 'PUT', body: JSON.stringify(data) }),
 

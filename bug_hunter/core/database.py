@@ -136,6 +136,28 @@ def init_db(db_path: Optional[str] = None) -> None:
             CREATE INDEX IF NOT EXISTS idx_bugs_status ON bugs(status);
             CREATE INDEX IF NOT EXISTS idx_chains_engagement ON chains(engagement_id);
             CREATE INDEX IF NOT EXISTS idx_events_run ON events(run_id);
+
+            CREATE TABLE IF NOT EXISTS chats (
+                id TEXT PRIMARY KEY,
+                engagement_id TEXT NOT NULL REFERENCES engagements(id),
+                title TEXT NOT NULL DEFAULT 'New Chat',
+                claude_session_id TEXT,
+                status TEXT NOT NULL DEFAULT 'active'
+                    CHECK(status IN ('active', 'archived')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id TEXT PRIMARY KEY,
+                chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+                role TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'system')),
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_chats_engagement ON chats(engagement_id);
+            CREATE INDEX IF NOT EXISTS idx_chat_messages_chat ON chat_messages(chat_id);
         """)
 
         # Migrations for existing databases
@@ -260,6 +282,13 @@ def delete_engagement(eng_id: str) -> bool:
         conn.execute("DELETE FROM events WHERE engagement_id = ?", (eng_id,))
         conn.execute("DELETE FROM chains WHERE engagement_id = ?", (eng_id,))
         conn.execute("DELETE FROM bugs WHERE engagement_id = ?", (eng_id,))
+        # Delete chats and their messages (cascade)
+        chat_ids = [r[0] for r in conn.execute(
+            "SELECT id FROM chats WHERE engagement_id = ?", (eng_id,)
+        ).fetchall()]
+        for cid in chat_ids:
+            conn.execute("DELETE FROM chat_messages WHERE chat_id = ?", (cid,))
+        conn.execute("DELETE FROM chats WHERE engagement_id = ?", (eng_id,))
         # Delete stage_results via runs
         run_ids = [r[0] for r in conn.execute(
             "SELECT id FROM runs WHERE engagement_id = ?", (eng_id,)
@@ -544,3 +573,77 @@ def list_events(run_id: str, limit: int = 500) -> list[dict]:
         results.append(r)
     results.reverse()  # Return chronological order
     return results
+
+
+# --- Chat CRUD ---
+
+def create_chat(engagement_id: str, title: str = "New Chat") -> dict:
+    chat_id = str(uuid4())
+    now = _now()
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO chats (id, engagement_id, title, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (chat_id, engagement_id, title, now, now),
+        )
+    return get_chat(chat_id)
+
+
+def get_chat(chat_id: str) -> Optional[dict]:
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM chats WHERE id = ?", (chat_id,)).fetchone()
+    if not row:
+        return None
+    return dict(row)
+
+
+def list_chats(engagement_id: str) -> list[dict]:
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM chats WHERE engagement_id = ? ORDER BY updated_at DESC",
+            (engagement_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def update_chat(chat_id: str, **kwargs) -> Optional[dict]:
+    allowed = {"title", "status", "claude_session_id"}
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        return get_chat(chat_id)
+    updates["updated_at"] = _now()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [chat_id]
+    with get_db() as conn:
+        conn.execute(f"UPDATE chats SET {set_clause} WHERE id = ?", values)
+    return get_chat(chat_id)
+
+
+def delete_chat(chat_id: str) -> bool:
+    with get_db() as conn:
+        conn.execute("DELETE FROM chat_messages WHERE chat_id = ?", (chat_id,))
+        conn.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
+    return True
+
+
+def create_chat_message(chat_id: str, role: str, content: str) -> dict:
+    msg_id = str(uuid4())
+    now = _now()
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO chat_messages (id, chat_id, role, content, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (msg_id, chat_id, role, content, now),
+        )
+    # Also bump the chat's updated_at
+    update_chat(chat_id)
+    return {"id": msg_id, "chat_id": chat_id, "role": role, "content": content, "created_at": now}
+
+
+def list_chat_messages(chat_id: str) -> list[dict]:
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM chat_messages WHERE chat_id = ? ORDER BY created_at",
+            (chat_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]

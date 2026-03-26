@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from bug_hunter.api.routes import router
 from bug_hunter.api.platforms import router as platforms_router
+from bug_hunter.api.chat import router as chat_router
 from bug_hunter.api.websocket import ws_router
 from bug_hunter.core.auth import get_auth_password, set_auth_password, verify_password, verify_session_token
 from bug_hunter.core.config import load_config
@@ -92,6 +93,7 @@ def verify_credentials(request: Request):
 
 app.include_router(router, dependencies=[Depends(verify_credentials)])
 app.include_router(platforms_router, dependencies=[Depends(verify_credentials)])
+app.include_router(chat_router, dependencies=[Depends(verify_credentials)])
 app.include_router(ws_router)
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")

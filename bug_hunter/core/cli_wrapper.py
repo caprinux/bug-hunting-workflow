@@ -170,6 +170,44 @@ async def run_claude(
     )
 
 
+async def run_claude_chat(
+    prompt: str,
+    session_id: str,
+    is_resume: bool = False,
+    system_prompt: str = "",
+    model: str = "sonnet",
+    timeout: int = 120,
+    on_event: Optional[Callable[[StreamEvent], None]] = None,
+) -> CLIResult:
+    """Run Claude Code CLI for chat — with session persistence for multi-turn.
+
+    Uses --session-id on the first message and --resume on subsequent messages
+    so Claude maintains conversation context across turns.
+    """
+    cmd = ["claude", "--print", "--output-format", "stream-json", "--verbose",
+           "--dangerously-skip-permissions", "--model", model]
+
+    if is_resume:
+        cmd.extend(["--resume", session_id])
+    else:
+        cmd.extend(["--session-id", session_id])
+
+    if system_prompt and not is_resume:
+        cmd.extend(["--system-prompt", system_prompt])
+
+    cmd.append(prompt)
+
+    env = os.environ.copy()
+    env["IS_SANDBOX"] = "1"
+
+    return await _run_cli_process(
+        cmd, env, None, timeout, on_event,
+        prompt=prompt,
+        record_dir=None,
+        record_request=None,
+    )
+
+
 async def run_codex(
     prompt: str,
     model: str = "gpt-5.4",

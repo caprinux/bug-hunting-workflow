@@ -164,6 +164,7 @@ CRITICAL: Output ONLY a JSON object with this exact structure:
             prompt=prompt,
             agent_file=agent_file,
             model=context.config.models.perfectionist,
+            cwd=expanded_pocs_dir,
             timeout=context.config.pipeline.subagent_timeout,
             record_dir=record_dir,
             record_metadata=record_metadata,
