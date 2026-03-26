@@ -331,18 +331,17 @@ a:hover { color: var(--accent-hover); }
 
 /* Quality tag badges */
 .tag-badge {
-  display: inline-block; padding: 1px 8px; border-radius: 4px;
-  font-size: 10px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.5px;
+  display: inline-block; padding: 1px 6px; border-radius: 4px;
+  font-size: 11px; font-weight: 700;
 }
 .tag-badge.tag-strong { background: var(--color-success); color: #fff; }
-.tag-badge.tag-weak { background: var(--color-warning); color: #fff; }
+.tag-badge.tag-weak { background: var(--color-error); color: #fff; }
 .tag-badge.tag-informational { background: var(--severity-info); color: #fff; }
 .tag-badge.tag-untagged { background: var(--color-muted); color: #fff; }
 
 /* Tag filter buttons */
 .tag-filter-btn.tag-strong.active { background: var(--color-success); color: #fff; border-color: var(--color-success); }
-.tag-filter-btn.tag-weak.active { background: var(--color-warning); color: #fff; border-color: var(--color-warning); }
+.tag-filter-btn.tag-weak.active { background: var(--color-error); color: #fff; border-color: var(--color-error); }
 .tag-filter-btn.tag-informational.active { background: var(--severity-info); color: #fff; border-color: var(--severity-info); }
 
 /* Bug run indicator */
@@ -1057,6 +1056,24 @@ h2 {
   color: var(--text-secondary); font-weight: 600;
 }
 
+.bug-field {
+  margin-bottom: 14px;
+}
+.bug-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.bug-field-value {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
 .poc-section, .expansion-section { margin: 14px 0; }
 .poc-section pre, .raw-json {
   background: var(--bg-inset); padding: 14px; border-radius: 6px;
@@ -1553,4 +1570,73 @@ h2 {
 @media (max-width: 768px) {
   .chat-sidebar { width: 200px; }
   .chat-msg-bubble { max-width: 85%; }
+}
+
+
+/* ── Usage ─────────────────────────────────────────────────── */
+
+.usage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 20px;
+}
+
+.usage-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.usage-card-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.usage-card-header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.usage-card-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.usage-meter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.usage-percent {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-bar-track {
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.usage-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.usage-reset {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
 }

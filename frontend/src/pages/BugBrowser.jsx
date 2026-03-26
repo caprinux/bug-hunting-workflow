@@ -32,7 +32,6 @@ export default function BugBrowser() {
   useAutoRefresh(loadData, [id, filter])
 
   // Find the latest run to mark "new" bugs
-  const latestRunId = runs.length > 0 ? runs[runs.length - 1].id : null
 
   let filteredBugs = bugs
   if (runFilter) {
@@ -110,7 +109,7 @@ export default function BugBrowser() {
           <span style={{ fontSize: '13px', color: 'var(--text-muted)', marginRight: '8px' }}>Confidence:</span>
           <button className={`btn btn-sm ${!tagFilter ? 'active' : ''}`}
                   onClick={() => setTagFilter('')}>All</button>
-          {[['strong', 'high confidence'], ['weak', 'low confidence'], ['informational', 'informational']].map(([t, label]) => {
+          {[['strong', 'Strong'], ['weak', 'Weak'], ['informational', 'Info']].map(([t, label]) => {
             const count = bugs.filter(b => b.bug_data?.tag === t).length
             if (!count) return null
             return (
@@ -128,7 +127,6 @@ export default function BugBrowser() {
           {sortedBugs.map(bug => {
             const d = bug.bug_data || {}
             const isExpanded = expanded === bug.id
-            const isNew = latestRunId && bug.run_id === latestRunId && runs.length > 1
             return (
               <div key={bug.id} className={`bug-card ${d.severity || bug.status}`}>
                 <div className="bug-header" onClick={() => setExpanded(isExpanded ? null : bug.id)}>
@@ -136,12 +134,10 @@ export default function BugBrowser() {
                     {d.severity || bug.status}
                   </span>
                   {d.tag && d.tag !== 'untagged' && (
-                    <span className={`tag-badge tag-${d.tag}`} title="Confidence level">
-                      {d.tag === 'strong' ? 'high confidence' : d.tag === 'weak' ? 'low confidence' : d.tag}
+                    <span className={`tag-badge tag-${d.tag}`} title={d.tag === 'strong' ? 'Strong confidence' : d.tag === 'weak' ? 'Weak confidence' : 'Informational'}>
+                      %
                     </span>
                   )}
-                  {isNew && <span className="new-badge">NEW</span>}
-                  <span className="bug-id">{d.id}</span>
                   <span className="bug-type">{d.vuln_type}</span>
                   <span className="bug-location">
                     {d.source_file ? `${d.source_file}:${d.line_range}` : d.url || ''}
@@ -157,45 +153,82 @@ export default function BugBrowser() {
                 )}
                 {isExpanded && (
                   <div className="bug-details">
-                    <p><strong>Description:</strong> {d.description}</p>
-                    <p><strong>Reasoning:</strong> {d.reasoning}</p>
-                    <p><strong>Confidence:</strong> {d.confidence}</p>
-                    <p><strong>Found by:</strong> {(d.found_by || []).join(', ')}</p>
-                    <p><strong>Run:</strong> #{runMap[bug.run_id] || '?'}</p>
+                    {d.vuln_class && (
+                      <div className="bug-field">
+                        <div className="bug-field-label">Vuln Class</div>
+                        <div className="bug-field-value">{d.vuln_class}</div>
+                      </div>
+                    )}
+                    <div className="bug-field">
+                      <div className="bug-field-label">Description</div>
+                      <div className="bug-field-value">{d.description}</div>
+                    </div>
+                    {d.security_impact && (
+                      <div className="bug-field">
+                        <div className="bug-field-label">Security Impact</div>
+                        <div className="bug-field-value">{d.security_impact}</div>
+                      </div>
+                    )}
+                    <div className="bug-field">
+                      <div className="bug-field-label">Reasoning</div>
+                      <div className="bug-field-value">{d.reasoning}</div>
+                    </div>
+                    {d.root_cause && (
+                      <div className="bug-field">
+                        <div className="bug-field-label">Root Cause</div>
+                        <div className="bug-field-value">{d.root_cause}</div>
+                      </div>
+                    )}
+                    <div className="bug-field">
+                      <div className="bug-field-label">Found by</div>
+                      <div className="bug-field-value">{(d.found_by || []).join(', ')} &middot; Run #{runMap[bug.run_id] || '?'}</div>
+                    </div>
                     {d.poc && (
-                      <div className="poc-section">
-                        <strong>PoC ({d.poc.language}):</strong>
-                        <pre>{d.poc.code}</pre>
-                        <p>Result: {d.poc.execution_result}</p>
-                        {d.poc.output && <pre className="poc-output">{d.poc.output}</pre>}
+                      <div className="bug-field">
+                        <div className="bug-field-label">PoC ({d.poc.language})</div>
+                        <div className="bug-field-value">
+                          <pre>{d.poc.code}</pre>
+                          <p style={{ margin: '8px 0 0' }}>Result: {d.poc.execution_result}</p>
+                          {d.poc.output && <pre className="poc-output">{d.poc.output}</pre>}
+                        </div>
                       </div>
                     )}
                     {d.expanded_primitives && (
-                      <div className="expansion-section">
-                        <strong>Expanded Primitives:</strong>
-                        {d.expanded_primitives.demonstrated?.map((exp, i) => (
-                          <div key={i} className="expansion demonstrated">
-                            <span className="badge success">Demonstrated</span> {exp.primitive}
-                          </div>
-                        ))}
-                        {d.expanded_primitives.theoretical?.map((exp, i) => (
-                          <div key={i} className="expansion theoretical">
-                            <span className="badge warning">Theoretical</span> {exp.primitive}
-                            <span className="muted"> ({exp.reason_not_demonstrated})</span>
-                          </div>
-                        ))}
+                      <div className="bug-field">
+                        <div className="bug-field-label">Expanded Primitives</div>
+                        <div className="bug-field-value">
+                          {d.expanded_primitives.demonstrated?.map((exp, i) => (
+                            <div key={i} className="expansion demonstrated">
+                              <span className="badge success">Demonstrated</span> {exp.primitive}
+                            </div>
+                          ))}
+                          {d.expanded_primitives.theoretical?.map((exp, i) => (
+                            <div key={i} className="expansion theoretical">
+                              <span className="badge warning">Theoretical</span> {exp.primitive}
+                              <span className="muted"> ({exp.reason_not_demonstrated})</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                     {d.triager_notes && (
-                      <p><strong>Triager Notes:</strong> {d.triager_notes}</p>
+                      <div className="bug-field">
+                        <div className="bug-field-label">Triager Notes</div>
+                        <div className="bug-field-value">{d.triager_notes}</div>
+                      </div>
                     )}
                     {d.cannot_validate_reason && (
-                      <p><strong>Cannot Validate Reason:</strong> {d.cannot_validate_reason}</p>
+                      <div className="bug-field">
+                        <div className="bug-field-label">Cannot Validate Reason</div>
+                        <div className="bug-field-value">{d.cannot_validate_reason}</div>
+                      </div>
                     )}
                     {d.scope_reasoning && (
-                      <p><strong>Scope Reasoning:</strong> {d.scope_reasoning}</p>
+                      <div className="bug-field">
+                        <div className="bug-field-label">Scope Reasoning</div>
+                        <div className="bug-field-value">{d.scope_reasoning}</div>
+                      </div>
                     )}
-                    <pre className="raw-json">{JSON.stringify(d, null, 2)}</pre>
                   </div>
                 )}
               </div>

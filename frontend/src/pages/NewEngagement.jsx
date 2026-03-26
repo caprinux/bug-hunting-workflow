@@ -111,14 +111,17 @@ export default function NewEngagement() {
       if (form.credentials.trim())
         infraParts.push(`CREDENTIALS:\n${form.credentials.trim()}`)
 
+      // Derive target_domains from infra_url for black box engagements
+      const targetDomains = form.type === 'black_box'
+        ? form.infra_url.split('\n').map(d => d.trim()).filter(Boolean)
+        : []
+
       const data = {
         name: form.name,
         type: form.type,
         source_path: form.type === 'source_code' ? form.source_path : '',
         source_repo: form.type === 'source_code' ? form.source_repo : '',
-        target_domains: form.type === 'black_box'
-          ? form.target_domains.split('\n').map(d => d.trim()).filter(Boolean)
-          : [],
+        target_domains: targetDomains,
         scope_definition: scopeParts.join('\n\n'),
         infra_config: infraParts.join('\n\n'),
         config_overrides,
@@ -181,14 +184,6 @@ export default function NewEngagement() {
           </>
         )}
 
-        {form.type === 'black_box' && (
-          <div className="form-group">
-            <label>Target Domains (one per line)</label>
-            <textarea value={form.target_domains} onChange={e => update('target_domains', e.target.value)}
-                      placeholder={"*.example.com\napi.example.com\nadmin.example.com"} rows={4} />
-          </div>
-        )}
-
         <h2 style={{ fontSize: '16px', marginTop: '24px', marginBottom: '12px' }}>Scope</h2>
 
         <div className="form-group">
@@ -236,10 +231,12 @@ export default function NewEngagement() {
         <h2 style={{ fontSize: '16px', marginTop: '24px', marginBottom: '12px' }}>Infrastructure</h2>
 
         <div className="form-group">
-          <label>Target URLs <span className="muted">(optional)</span></label>
+          <label>Target URLs{form.type === 'black_box' ? '' : ' '}<span className="muted">{form.type === 'black_box' ? '' : '(optional)'}</span></label>
           <textarea value={form.infra_url} onChange={e => update('infra_url', e.target.value)}
-                    placeholder={"e.g.:\nhttps://backend.staging.example.com\nhttps://api.staging.example.com\nhttps://admin.staging.example.com"}
-                    rows={3} />
+                    placeholder={form.type === 'black_box'
+                      ? "Target URLs (one per line):\nhttps://backend.staging.example.com\nhttps://api.staging.example.com\nhttps://admin.staging.example.com"
+                      : "e.g.:\nhttps://backend.staging.example.com\nhttps://api.staging.example.com"}
+                    rows={form.type === 'black_box' ? 4 : 3} />
         </div>
 
         <div className="form-group">
