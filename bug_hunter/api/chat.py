@@ -92,6 +92,11 @@ def _build_chat_context(engagement_id: str) -> str:
         if os.path.exists(bugs_path):
             file_refs.append(f"- All bugs (raw): {bugs_path}")
 
+    # Shared resources directory
+    chat_resources = os.path.join(os.path.abspath(output_dir), "chat_resources")
+    if os.path.isdir(chat_resources) and os.listdir(chat_resources):
+        file_refs.append(f"- Shared reference files: {chat_resources}")
+
     if file_refs:
         parts.append("\n## Data Files\nRead these files for detailed engagement data:")
         parts.extend(file_refs)
