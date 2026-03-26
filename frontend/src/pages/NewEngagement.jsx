@@ -13,6 +13,17 @@ const DEFAULT_ADVANCED = {
   severity_floor: 'low',
 }
 
+/**
+ * Normalize repo URLs: ensure multiple URLs are comma-separated.
+ * Handles newline-separated, space-separated, or missing delimiters.
+ */
+function normalizeRepoUrls(raw) {
+  if (!raw) return ''
+  // Split on commas, newlines, or spaces followed by http
+  const urls = raw.split(/[,\n]|\s+(?=https?:\/\/)/).map(u => u.trim()).filter(Boolean)
+  return urls.join(', ')
+}
+
 export default function NewEngagement() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -21,7 +32,7 @@ export default function NewEngagement() {
     name: prefill?.name || '',
     type: prefill?.source_repo ? 'source_code' : 'source_code',
     source_path: '',
-    source_repo: prefill?.source_repo || '',
+    source_repo: normalizeRepoUrls(prefill?.source_repo || ''),
     target_domains: '',
     qualifying_vulns: prefill?.qualifying_vulns || '',
     non_qualifying_vulns: prefill?.non_qualifying_vulns || '',
