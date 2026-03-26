@@ -79,7 +79,7 @@ BLACK_BOX_TOOLS = {
     },
     "feroxbuster": {
         "required": True,
-        "install": "apt-get install -y feroxbuster",
+        "install": "bash -c 'curl -sL https://github.com/epi052/feroxbuster/releases/latest/download/x86_64-linux-feroxbuster.tar.gz | tar xz -C /usr/local/bin && chmod +x /usr/local/bin/feroxbuster'",
         "description": "Recursive content discovery",
     },
     "dirb": {
