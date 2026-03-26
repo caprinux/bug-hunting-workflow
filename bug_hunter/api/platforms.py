@@ -142,7 +142,7 @@ Extract and output a JSON object with these exact fields:
   "additional_context": "any extra context worth noting for the bug hunter — VPN requirements, account access info, reward tiers, program-specific guidance",
   "source_repo": "any GitHub/source code URLs found in scopes, comma-separated if multiple (e.g., 'https://github.com/org/repo1, https://github.com/org/repo2'). Empty string if none.",
   "infra_url": "primary target URL if identifiable (empty string if none)",
-  "credentials": "account access details if mentioned (empty string if none)"
+  "credentials": "extract ALL credentials from hunter_credentials field. Format each as 'role: username / password'. Include all accounts, API keys, tokens, and access details. Empty string if none."
 }}
 
 Be thorough — include all qualifying and non-qualifying vulnerability types.

@@ -136,7 +136,7 @@ class YesWeHackPlatform(BugBountyPlatform):
                     resp = await loop.run_in_executor(
                         None, lambda s=slug: ywh.call("GET", f"/programs/{s}")
                     )
-                    detailed.append({
+                    program_data = {
                         "slug": resp.get("slug"),
                         "title": resp.get("title"),
                         "public": resp.get("public"),
@@ -156,7 +156,19 @@ class YesWeHackPlatform(BugBountyPlatform):
                         "reward_grid_default": resp.get("reward_grid_default"),
                         "reward_grid_high": resp.get("reward_grid_high"),
                         "business_unit": resp.get("business_unit", {}),
-                    })
+                    }
+
+                    # Fetch hunter credentials if available
+                    try:
+                        creds_resp = await loop.run_in_executor(
+                            None, lambda s=slug: ywh.call("GET", f"/programs/{s}/hunter/credentials")
+                        )
+                        if creds_resp:
+                            program_data["hunter_credentials"] = creds_resp
+                    except Exception:
+                        pass  # No credentials available for this program
+
+                    detailed.append(program_data)
                 except Exception as e:
                     logger.warning(f"Failed to fetch {slug}: {e}")
 
@@ -248,6 +260,7 @@ class YesWeHackPlatform(BugBountyPlatform):
                     rules_text=p.get("rules_text", ""),
                     account_access=p.get("account_access", ""),
                     vpn_required=p.get("vpn_active", False),
+                    hunter_credentials=p.get("hunter_credentials", []),
                     raw_data=p,
                 )
 

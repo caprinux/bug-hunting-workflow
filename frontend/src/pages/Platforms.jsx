@@ -305,6 +305,26 @@ export default function Platforms() {
                   {programDetails.reward_max > 0 && <span>Rewards: €{programDetails.reward_min} — €{programDetails.reward_max}</span>}
                 </div>
               </div>
+
+              {programDetails.hunter_credentials?.length > 0 && (
+                <div className="program-detail-section">
+                  <h3>Credentials ({programDetails.hunter_credentials.length})</h3>
+                  <div className="program-scopes">
+                    {programDetails.hunter_credentials.map((cred, i) => (
+                      <div key={i} className="scope-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                        {cred.access_type && <strong>{cred.access_type}</strong>}
+                        {cred.login && <span className="scope-target">{cred.login}</span>}
+                        {cred.password && <span className="muted">{cred.password}</span>}
+                        {cred.url && <span className="scope-target">{cred.url}</span>}
+                        {cred.description && <span className="muted">{cred.description}</span>}
+                        {/* Fallback: show raw fields if structure is different */}
+                        {!cred.login && !cred.access_type && (
+                          <pre style={{ margin: 0, fontSize: '12px' }}>{JSON.stringify(cred, null, 2)}</pre>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+              </div>
             </>
           )}
         </div>

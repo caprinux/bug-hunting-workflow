@@ -31,6 +31,7 @@ class ProgramDetails(ProgramSummary):
     rules_text: str = ""
     account_access: str = ""
     vpn_required: bool = False
+    hunter_credentials: list = field(default_factory=list)
     raw_data: dict = field(default_factory=dict)
 
 
