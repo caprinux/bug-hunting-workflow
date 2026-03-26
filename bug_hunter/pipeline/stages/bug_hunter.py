@@ -122,11 +122,23 @@ class BugHunterStage(PipelineStage):
                     "running": agent_stats[agent_name]["running"],
                 })
 
-                result = await self._run_hunter(
-                    context, agent_name, scope_data, _attack_surfaces,
-                    _existing_bugs, source_path, infra_config, eng_type, stage_dir,
-                    notes_files[agent_name], available_tools,
-                )
+                # Make pipeline-managed files read-only so agents can't overwrite them
+                import stat
+                for protected in [bugs_file, attack_surfaces_file]:
+                    if os.path.exists(protected):
+                        os.chmod(protected, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+
+                try:
+                    result = await self._run_hunter(
+                        context, agent_name, scope_data, _attack_surfaces,
+                        _existing_bugs, source_path, infra_config, eng_type, stage_dir,
+                        notes_files[agent_name], available_tools,
+                    )
+                finally:
+                    # Restore write permissions
+                    for protected in [bugs_file, attack_surfaces_file]:
+                        if os.path.exists(protected):
+                            os.chmod(protected, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
                 total_cost += result.cost_usd
                 if result.usage:
                     for k in total_usage:
