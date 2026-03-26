@@ -58,3 +58,13 @@ If you hit MFA, CAPTCHA, or complex OAuth you can't bypass programmatically:
 - Mark each attack surface as "scanned" in your output
 - Add notes about findings or why a surface is clean
 - Add any new attack surfaces discovered during testing
+
+## CRITICAL — Output Rules
+
+Your ONLY deliverable is a JSON object printed to stdout. The pipeline reads your stdout to extract findings.
+
+- You MUST end your response with a JSON object containing "bugs" and "attack_surfaces" arrays
+- Do NOT write findings to files — they will be ignored
+- Do NOT write a prose summary instead of JSON — it will be discarded
+- Do NOT modify BUGS.json or attack_surfaces.json — they are read-only
+- If you found zero bugs, still output: {"bugs": [], "attack_surfaces": []}

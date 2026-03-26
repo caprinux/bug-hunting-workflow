@@ -297,15 +297,15 @@ BUGS ALREADY FOUND (do not duplicate): Read {bugs_file}
 {available_tools}
 {notes_section}
 
-IMPORTANT: Do NOT modify BUGS.json or attack_surfaces.json directly. Only report your findings in the JSON output below. The pipeline manages these files.
+IMPORTANT:
+- BUGS.json and attack_surfaces.json are READ-ONLY. Do NOT write to them.
+- Do NOT write your findings to any file. The ONLY way to report findings is via stdout JSON below.
+- If you write findings to a file instead of stdout, they WILL BE LOST.
 
-OUTPUT FORMAT:
-You MUST output a JSON object at the end. Do NOT output a prose report.
-The JSON must have this exact structure:
+You MUST end your response with EXACTLY this JSON structure. No prose before or after. No markdown wrapping. Just the raw JSON object:
 {{
   "bugs": [
     {{
-      "id": "unique-id",
       "source_file": "path/to/file",
       "line_range": "10-25",
       "vuln_class": "CWE-89",
@@ -331,8 +331,10 @@ The JSON must have this exact structure:
       "status": "scanned",
       "findings_notes": "What was found or why it's clean"
     }}
-  ],
-}}"""
+  ]
+}}
+
+If you found no bugs, output: {{"bugs": [], "attack_surfaces": []}}"""
 
         if eng_type == "source_code":
             agent_file = str(AGENTS_DIR / "source_code" / "bug_hunter.md")
