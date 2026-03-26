@@ -150,7 +150,7 @@ Extract and output a JSON object with these exact fields:
   "assets_not_in_scope": "one asset per line from out_of_scope list",
   "scope_notes": "any important rules, special conditions, or restrictions from rules_text",
   "additional_context": "any extra context worth noting for the bug hunter — VPN requirements, account access info, reward tiers, program-specific guidance",
-  "source_repo": "any GitHub/source code URLs found in scopes, comma-separated if multiple (e.g., 'https://github.com/org/repo1, https://github.com/org/repo2'). Empty string if none.",
+  "source_repo": "any GitHub/GitLab/source code repository URLs found in scopes OR rules_text, comma-separated if multiple (e.g., 'https://gitlab.com/org/repo1, https://github.com/org/repo2'). Look for markdown links like [name](url) in rules_text. Empty string if none.",
   "infra_url": "primary target URL if identifiable (empty string if none)",
   "credentials": "extract ALL credentials from hunter_credentials field. Format each as 'role: username / password'. Include all accounts, API keys, tokens, and access details. Empty string if none."
 }}

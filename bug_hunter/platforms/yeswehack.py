@@ -27,13 +27,27 @@ _ALT_PROGRAMS_FILE = Path.home() / "yeswehack" / "data" / "programs_raw.json"
 class _HTMLTextExtractor(HTMLParser):
     def __init__(self):
         super().__init__()
-        self._parts = []
+        self._parts: list[str] = []
+        self._urls: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            for name, value in attrs:
+                if name == "href" and value:
+                    self._urls.append(value)
 
     def handle_data(self, data):
         self._parts.append(data)
 
     def get_text(self):
         return " ".join(self._parts).strip()
+
+    def get_text_with_urls(self):
+        """Return text with any URLs from <a> tags appended."""
+        text = self.get_text()
+        if self._urls:
+            text += "\n\nURLs: " + " , ".join(self._urls)
+        return text
 
 
 def _strip_html(html_str: str) -> str:
@@ -42,6 +56,15 @@ def _strip_html(html_str: str) -> str:
     extractor = _HTMLTextExtractor()
     extractor.feed(html_str)
     return extractor.get_text()
+
+
+def _strip_html_keep_urls(html_str: str) -> str:
+    """Strip HTML but preserve URLs from <a href> tags."""
+    if not html_str:
+        return ""
+    extractor = _HTMLTextExtractor()
+    extractor.feed(html_str)
+    return extractor.get_text_with_urls()
 
 
 class YesWeHackPlatform(BugBountyPlatform):
@@ -150,7 +173,7 @@ class YesWeHackPlatform(BugBountyPlatform):
                         "bounty_reward_max": resp.get("bounty_reward_max"),
                         "vpn_active": resp.get("vpn_active"),
                         "account_access": resp.get("account_access"),
-                        "rules_text": _strip_html(resp.get("rules_html", "")),
+                        "rules_text": resp.get("rules", ""),
                         "scopes": resp.get("scopes", []),
                         "out_of_scope": resp.get("out_of_scope", []),
                         "qualifying_vulnerability": resp.get("qualifying_vulnerability", []),
