@@ -104,6 +104,8 @@ class BugHunterStage(PipelineStage):
                 attack_surfaces = json.load(f)
             with open(bugs_file) as f:
                 existing_bugs = json.load(f)
+            # Filter out malformed entries (e.g. if agent wrote directly to BUGS.json)
+            existing_bugs = [b for b in existing_bugs if isinstance(b, dict) and b.get("found_by")]
 
             await event_manager.emit_log(
                 context.engagement_id, context.run_id, self.name,
@@ -282,6 +284,8 @@ ATTACK SURFACES: Read {surfaces_file}
 BUGS ALREADY FOUND (do not duplicate): Read {bugs_file}
 {available_tools}
 {notes_section}
+
+IMPORTANT: Do NOT modify BUGS.json or attack_surfaces.json directly. Only report your findings in the JSON output below. The pipeline manages these files.
 
 OUTPUT FORMAT:
 You MUST output a JSON object at the end. Do NOT output a prose report.
