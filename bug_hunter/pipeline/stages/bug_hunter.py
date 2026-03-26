@@ -219,8 +219,16 @@ class BugHunterStage(PipelineStage):
             "source_file": b.get("source_file"), "validated": b.get("validated"),
         } for b in existing_bugs], indent=2)[:10000] if existing_bugs else "[]"
 
-        base_instructions = f"""You are a security researcher performing a thorough vulnerability assessment.
+        rehunt_instruction = ""
+        if context.rehunt_target:
+            rehunt_instruction = f"""
+SPECIFIC INSTRUCTIONS FOR THIS RUN:
+{context.rehunt_target}
 
+The above instructions are your PRIMARY OBJECTIVE for this run. Prioritize them over general scanning."""
+
+        base_instructions = f"""You are a security researcher performing a thorough vulnerability assessment.
+{rehunt_instruction}
 {"SOURCE CODE ROOT: " + source_path if eng_type == "source_code" else ""}
 {"INFRASTRUCTURE ACCESS:" + chr(10) + infra_config if infra_config else ""}
 
