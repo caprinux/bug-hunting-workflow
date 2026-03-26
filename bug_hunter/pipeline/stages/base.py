@@ -65,10 +65,9 @@ class PipelineStage(ABC):
                 return order
         return 99
 
-    def read_previous_output(self, context: StageContext, stage_name: str,
-                             filename: str) -> Any:
-        """Read output from a previous stage."""
-        import json
+    def _stage_output_path(self, context: StageContext, stage_name: str,
+                            filename: str) -> str:
+        """Get the absolute file path for a previous stage's output."""
         import os
         from bug_hunter.pipeline.orchestrator import SOURCE_CODE_STAGES, BLACK_BOX_STAGES
         stages = SOURCE_CODE_STAGES if context.engagement["type"] == "source_code" else BLACK_BOX_STAGES
@@ -80,7 +79,13 @@ class PipelineStage(ABC):
                 break
 
         dir_name = f"{order:02d}_{stage_name}"
-        filepath = os.path.join(context.run_dir, dir_name, filename)
+        return os.path.abspath(os.path.join(context.run_dir, dir_name, filename))
+
+    def read_previous_output(self, context: StageContext, stage_name: str,
+                             filename: str) -> Any:
+        """Read output from a previous stage."""
+        import json
+        filepath = self._stage_output_path(context, stage_name, filename)
         if os.path.exists(filepath):
             with open(filepath) as f:
                 return json.load(f)
