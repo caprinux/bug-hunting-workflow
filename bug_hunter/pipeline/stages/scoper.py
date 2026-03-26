@@ -46,16 +46,28 @@ class ScoperStage(PipelineStage):
             "Mapping target architecture and attack surfaces...",
         )
 
+        # Build available tools list from setup stage
+        setup_data = self.read_previous_output(context, "setup", "setup.json")
+        available_tools = ""
+        if setup_data and "tools" in setup_data:
+            tool_list = [
+                f"{t['name']} ({t['path']})" for t in setup_data["tools"]
+                if t.get("available") and t["name"] not in ("claude", "codex", "git", "python3", "pip3", "curl")
+            ]
+            if tool_list:
+                available_tools = "AVAILABLE TOOLS: " + ", ".join(tool_list)
+
         if eng_type == "source_code":
             prompt = self._build_source_code_prompt(source_path, scope_def)
             agent_file = str(AGENTS_DIR / "source_code" / "scoper.md")
             cwd = source_path
         else:
+            stage_dir = self.get_stage_dir(context)
             domains = eng_config.get("engagement", {}).get("target_domains", [])
             infra_config = eng_config.get("engagement", {}).get("infra_config", "")
-            prompt = self._build_black_box_prompt(domains, scope_def, infra_config)
+            prompt = self._build_black_box_prompt(domains, scope_def, infra_config, available_tools)
             agent_file = str(AGENTS_DIR / "black_box" / "scoper.md")
-            cwd = None
+            cwd = stage_dir
 
         record_dir, record_meta = self.prepare_agent_run(
             context, "claude", "scoper",
@@ -87,34 +99,10 @@ class ScoperStage(PipelineStage):
         )
 
     def _build_source_code_prompt(self, source_path: str, scope_def: str) -> str:
-        return f"""You are analyzing a codebase to understand its architecture and map all attack surfaces.
-
-SOURCE CODE ROOT: {source_path}
+        return f"""SOURCE CODE ROOT: {source_path}
 
 SCOPE DEFINITION:
 {scope_def or "All code is in scope. Focus on security-relevant functionality."}
-
-INSTRUCTIONS:
-1. Read the directory structure, entry points, configuration files, route definitions, and middleware
-2. Understand the application architecture — what it does, how it's structured, what frameworks it uses
-3. Identify ALL attack surfaces:
-   - HTTP endpoints and their parameters
-   - Authentication and authorization mechanisms
-   - File upload/download handlers
-   - Database queries and ORM usage
-   - External API integrations
-   - Deserialization points
-   - Command execution paths
-   - Cryptographic operations
-   - Session management
-   - Input validation boundaries
-4. For each attack surface, note:
-   - Location (file paths, line ranges)
-   - What it does
-   - What user input it accepts
-   - Why it might be vulnerable
-   - Priority (high/medium/low based on attack potential)
-5. Note qualifying and non-qualifying vulnerability types from the scope
 
 Output a JSON object:
 {{
@@ -143,10 +131,9 @@ Output a JSON object:
   }}
 }}"""
 
-    def _build_black_box_prompt(self, domains: list, scope_def: str, infra_config: str) -> str:
-        return f"""You are performing reconnaissance on target domains to map the complete attack surface.
-
-TARGET DOMAINS: {json.dumps(domains)}
+    def _build_black_box_prompt(self, domains: list, scope_def: str, infra_config: str,
+                                available_tools: str = "") -> str:
+        return f"""TARGET DOMAINS: {json.dumps(domains)}
 
 SCOPE DEFINITION:
 {scope_def or "All domains listed are in scope."}
@@ -154,19 +141,9 @@ SCOPE DEFINITION:
 INFRASTRUCTURE ACCESS:
 {infra_config}
 
-INSTRUCTIONS:
-1. Use reconnaissance tools to enumerate the target:
-   - Passive: certificate transparency (crt.sh), DNS records, WHOIS
-   - Active: subdomain brute-forcing (subfinder), port scanning (nmap), HTTP probing (httpx)
-2. For each discovered target, identify:
-   - Live endpoints and their technology stack
-   - Authentication mechanisms
-   - API endpoints and parameters
-   - File upload features
-   - Admin panels or debug endpoints
-3. Produce a structured attack surface map
+{available_tools}
 
-CRITICAL: Output ONLY a JSON object with this exact structure:
+Output a JSON object with this exact structure:
 {{
   "architecture": {{
     "description": "What this application does",

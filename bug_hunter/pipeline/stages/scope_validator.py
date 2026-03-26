@@ -47,26 +47,28 @@ class ScopeValidatorStage(PipelineStage):
 
         bug_data_list = [b["bug_data"] for b in bugs]
 
+        # Write findings to file so LLM reads on its own
+        stage_dir = self.get_stage_dir(context)
+        findings_file = os.path.join(stage_dir, "input_findings.json")
+        with open(findings_file, "w") as f:
+            json.dump(bug_data_list, f, indent=2)
+        findings_path = os.path.abspath(findings_file)
+
+        scope_file = self._stage_output_path(context, "scoper", "scope.json")
+
         await event_manager.emit_log(
             context.engagement_id, context.run_id, self.name,
             f"Quick scope check on {len(bug_data_list)} findings",
         )
-
-        qualifying = json.dumps(scope_notes.get("qualifying", []))
-        non_qualifying = json.dumps(scope_notes.get("non_qualifying", []))
-        excluded = json.dumps(scope_notes.get("excluded_paths", []))
 
         prompt = f"""You are performing a FAST scope validation pass on security findings.
 
 SCOPE DEFINITION:
 {scope_def}
 
-QUALIFYING VULNERABILITIES: {qualifying}
-NON-QUALIFYING VULNERABILITIES: {non_qualifying}
-EXCLUDED PATHS/COMPONENTS: {excluded}
+SCOPE DETAILS: Read {scope_file} for qualifying/non-qualifying vulns and excluded paths.
 
-FINDINGS ({len(bug_data_list)} total):
-{json.dumps(bug_data_list, indent=2)[:80000]}
+FINDINGS ({len(bug_data_list)} total): Read {findings_path}
 
 RULES:
 - REMOVE only findings that STRICTLY do not follow the scope and rules

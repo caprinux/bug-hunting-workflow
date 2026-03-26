@@ -54,15 +54,30 @@ class SummarizerStage(PipelineStage):
                     break
         scope_data = scope_data or {}
 
-        # Build the prompt with all data
+        # Write all data to files so LLM reads on its own
         scope_def = eng_config.get("engagement", {}).get("scope_definition", "")
         infra_config = eng_config.get("engagement", {}).get("infra_config", "")
 
-        def _bugs_json(bugs, limit=30):
-            return json.dumps([b["bug_data"] for b in bugs[:limit]], indent=2, default=str)[:25000]
+        stage_dir = self.get_stage_dir(context)
+        scope_file = self._stage_output_path(context, "scoper", "scope.json")
 
-        def _chains_json(chains, limit=20):
-            return json.dumps([c["chain_data"] for c in chains[:limit]], indent=2, default=str)[:10000]
+        def _write_bugs(filename, bugs):
+            path = os.path.join(stage_dir, filename)
+            with open(path, "w") as f:
+                json.dump([b["bug_data"] for b in bugs], f, indent=2, default=str)
+            return os.path.abspath(path)
+
+        confirmed_file = _write_bugs("input_confirmed.json", confirmed)
+        cannot_validate_file = _write_bugs("input_cannot_validate.json", cannot_validate)
+        out_of_scope_file = _write_bugs("input_out_of_scope.json", out_of_scope)
+        informational_file = _write_bugs("input_informational.json", informational)
+        discarded_file = _write_bugs("input_discarded.json", discarded)
+        triage_failed_file = _write_bugs("input_triage_failed.json", triage_failed)
+
+        chains_path = os.path.join(stage_dir, "input_chains.json")
+        with open(chains_path, "w") as f:
+            json.dump([c["chain_data"] for c in chains], f, indent=2, default=str)
+        chains_file = os.path.abspath(chains_path)
 
         await event_manager.emit_log(
             context.engagement_id, context.run_id, self.name,
@@ -78,38 +93,16 @@ PROGRAM / SCOPE OVERVIEW:
 INFRASTRUCTURE:
 {infra_config[:2000]}
 
-APPLICATION ARCHITECTURE:
-{json.dumps(scope_data.get("architecture", {}), indent=2, default=str)[:3000]}
+APPLICATION ARCHITECTURE: Read {scope_file} for architecture details.
 
-═══════════════════════════════════════════════════
-CONFIRMED BUGS ({len(confirmed)} total):
-{_bugs_json(confirmed)}
-
-═══════════════════════════════════════════════════
-CANNOT VALIDATE ({len(cannot_validate)} total):
-{_bugs_json(cannot_validate)}
-
-═══════════════════════════════════════════════════
-OUT OF SCOPE ({len(out_of_scope)} total):
-{_bugs_json(out_of_scope, limit=15)}
-
-═══════════════════════════════════════════════════
-INFORMATIONAL / INTELLIGENCE ({len(informational)} total):
-{_bugs_json(informational, limit=15)}
-
-═══════════════════════════════════════════════════
-DISCARDED ({len(discarded)} total):
-{_bugs_json(discarded, limit=10)}
-
-═══════════════════════════════════════════════════
-TRIAGE FAILED — needs human review ({len(triage_failed)} total):
-{_bugs_json(triage_failed, limit=10)}
-
-═══════════════════════════════════════════════════
-BUG CHAINS ({len(chains)} total):
-{_chains_json(chains)}
-
-═══════════════════════════════════════════════════
+Read these files for the full bug data:
+- CONFIRMED BUGS ({len(confirmed)} total): {confirmed_file}
+- CANNOT VALIDATE ({len(cannot_validate)} total): {cannot_validate_file}
+- OUT OF SCOPE ({len(out_of_scope)} total): {out_of_scope_file}
+- INFORMATIONAL ({len(informational)} total): {informational_file}
+- DISCARDED ({len(discarded)} total): {discarded_file}
+- TRIAGE FAILED ({len(triage_failed)} total): {triage_failed_file}
+- BUG CHAINS ({len(chains)} total): {chains_file}
 
 Write a comprehensive markdown report with these sections:
 

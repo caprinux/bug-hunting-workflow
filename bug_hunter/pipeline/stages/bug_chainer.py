@@ -38,8 +38,7 @@ class BugChainerStage(PipelineStage):
         eng_config = context.engagement["config"]
         infra_config = eng_config.get("engagement", {}).get("infra_config", "")
 
-        summaries = self.read_previous_output(context, "bug_hunter", "all_summaries.json")
-        summaries_text = json.dumps(summaries, indent=2)[:20000] if summaries else "Not available"
+        summaries_file = self._stage_output_path(context, "bug_hunter", "all_summaries.json")
 
         confirmed_data = [b["bug_data"] for b in confirmed_bugs]
         intel_data = [b["bug_data"] for b in informational]
@@ -47,6 +46,14 @@ class BugChainerStage(PipelineStage):
         stage_dir = self.get_stage_dir(context)
         chain_pocs_dir = os.path.join(stage_dir, "chain_pocs")
         os.makedirs(chain_pocs_dir, exist_ok=True)
+
+        # Write data to files so LLM reads on its own
+        confirmed_file = os.path.join(stage_dir, "input_confirmed.json")
+        with open(confirmed_file, "w") as f:
+            json.dump(confirmed_data, f, indent=2)
+        intel_file = os.path.join(stage_dir, "input_intel.json")
+        with open(intel_file, "w") as f:
+            json.dump(intel_data, f, indent=2)
 
         await event_manager.emit_log(
             context.engagement_id, context.run_id, self.name,
@@ -56,14 +63,11 @@ class BugChainerStage(PipelineStage):
         prompt = f"""You are performing cross-bug analysis to chain confirmed vulnerabilities together
 for maximum combined security impact.
 
-CONFIRMED BUGS ({len(confirmed_data)} total):
-{json.dumps(confirmed_data, indent=2)[:50000]}
+CONFIRMED BUGS ({len(confirmed_data)} total): Read {os.path.abspath(confirmed_file)}
 
-INTELLIGENCE FILE ({len(intel_data)} informational findings):
-{json.dumps(intel_data, indent=2)[:20000]}
+INTELLIGENCE FILE ({len(intel_data)} informational findings): Read {os.path.abspath(intel_file)}
 
-APPLICATION CONTEXT:
-{summaries_text}
+APPLICATION CONTEXT: Read {summaries_file}
 
 INFRASTRUCTURE ACCESS:
 {infra_config}

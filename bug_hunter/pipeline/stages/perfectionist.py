@@ -34,8 +34,7 @@ class PerfectionistStage(PipelineStage):
         eng_type = context.engagement["type"]
         infra_config = eng_config.get("engagement", {}).get("infra_config", "")
 
-        summaries = self.read_previous_output(context, "bug_hunter", "all_summaries.json")
-        summaries_text = json.dumps(summaries, indent=2)[:30000] if summaries else "Not available"
+        summaries_file = self._stage_output_path(context, "bug_hunter", "all_summaries.json")
 
         stage_dir = self.get_stage_dir(context)
         expanded_pocs_dir = os.path.join(stage_dir, "expanded_pocs")
@@ -66,7 +65,7 @@ class PerfectionistStage(PipelineStage):
                     },
                 )
                 result = await self._expand_single_bug(
-                    context, bug_data, infra_config, summaries_text,
+                    context, bug_data, infra_config, summaries_file,
                     eng_type, expanded_pocs_dir, record_dir, record_metadata,
                 )
                 total_cost += result.get("cost_usd", 0)
@@ -102,7 +101,7 @@ class PerfectionistStage(PipelineStage):
         )
 
     async def _expand_single_bug(self, context: StageContext, bug_data: dict,
-                                  infra_config: str, summaries_text: str,
+                                  infra_config: str, summaries_file: str,
                                   eng_type: str, expanded_pocs_dir: str,
                                   record_dir: str, record_metadata: dict) -> dict:
         """Expand a single bug's primitives."""
@@ -114,32 +113,16 @@ class PerfectionistStage(PipelineStage):
         else:
             agent_file = os.path.join(AGENTS_DIR, "black_box", "perfectionist.md")
 
-        prompt = f"""You are expanding the primitives of a confirmed, validated security vulnerability
-to its absolute maximum impact. Your job is to answer: "What is the maximum an attacker
-can achieve with THIS ONE BUG ALONE?"
-
-VALIDATED BUG WITH POC:
+        prompt = f"""VALIDATED BUG WITH POC:
 {bug_json}
 
 INFRASTRUCTURE ACCESS:
 {infra_config}
 
-APPLICATION CONTEXT:
-{summaries_text[:15000]}
+APPLICATION CONTEXT: Read {summaries_file} for architecture and code summaries.
+Save expanded PoCs to: {expanded_pocs_dir}/bug_{bug_id}_<expansion>.py
 
-INSTRUCTIONS:
-1. This is SINGLE-BUG expansion only. Do NOT look at other bugs or suggest cross-bug chains.
-2. Starting from the confirmed primitive, escalate step by step:
-   - Can a read become a write? (e.g., SQLi SELECT → INSERT/UPDATE)
-   - Can a write become code execution? (e.g., file write → webshell)
-   - Can local access become remote access?
-   - Can user-level access become admin/root?
-3. For each expansion step, write and execute a PoC against the live infrastructure.
-4. Save expanded PoCs to: {expanded_pocs_dir}/bug_{bug_id}_<expansion>.py
-5. If an expansion cannot be demonstrated (environment limitation, would be destructive),
-   document it as theoretical with the reason.
-
-CRITICAL: Output ONLY a JSON object with this exact structure:
+Output a JSON object with this exact structure:
 {{
   "expanded": true,
   "expanded_primitives": {{

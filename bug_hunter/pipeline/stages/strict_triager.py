@@ -45,6 +45,13 @@ class StrictTriagerStage(PipelineStage):
 
         bug_data_list = [b["bug_data"] for b in bugs]
 
+        # Write findings to file so LLM reads on its own
+        stage_dir = self.get_stage_dir(context)
+        findings_file = os.path.join(stage_dir, "input_findings.json")
+        with open(findings_file, "w") as f:
+            json.dump(bug_data_list, f, indent=2)
+        findings_path = os.path.abspath(findings_file)
+
         await event_manager.emit_log(
             context.engagement_id, context.run_id, self.name,
             f"Tagging {len(bug_data_list)} findings as strong/weak/informational",
@@ -54,8 +61,7 @@ class StrictTriagerStage(PipelineStage):
 1. **Severity** (CVSS-aligned): how impactful is the vulnerability?
 2. **Confidence**: how confident are we that this bug is real and exploitable?
 
-FINDINGS ({len(bug_data_list)} total):
-{json.dumps(bug_data_list, indent=2)[:80000]}
+FINDINGS ({len(bug_data_list)} total): Read {findings_path}
 
 SEVERITY (based on security impact, follows CVSS):
 - **critical** (9.0-10.0): Full system compromise, RCE, unauthenticated database wipe, mass PII breach, complete auth bypass
