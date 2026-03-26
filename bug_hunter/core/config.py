@@ -126,6 +126,9 @@ def _merge_dict_into_dataclass(dc: object, data: dict) -> None:
             # Reject None and type mismatches to prevent bad settings from bricking the app
             if value is None:
                 continue
+            # Reject bool for int/float fields (bool is subclass of int in Python)
+            if isinstance(current, (int, float)) and not isinstance(current, bool) and isinstance(value, bool):
+                continue
             if current is not None and not isinstance(value, type(current)):
                 # Allow int/float interchange
                 if isinstance(current, (int, float)) and isinstance(value, (int, float)):

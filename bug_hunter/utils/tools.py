@@ -15,11 +15,14 @@ COMMON_TOOLS = {
     "python3": {"required": True, "install": "apt-get install -y python3", "description": "Python 3"},
     "pip3": {"required": True, "install": "apt-get install -y python3-pip", "description": "Python pip"},
     "curl": {"required": True, "install": "apt-get install -y curl", "description": "HTTP client"},
+    "go": {"required": True, "install": "apt-get install -y golang-go", "description": "Go runtime (for installing security tools)"},
+    "unzip": {"required": True, "install": "apt-get install -y unzip", "description": "Archive extraction"},
+    "jq": {"required": True, "install": "apt-get install -y jq", "description": "JSON processor"},
 }
 
 SOURCE_CODE_TOOLS: dict[str, dict] = {
     "jadx": {
-        "required": True,
+        "required": False,
         "install": "bash -c 'JADX_VER=$(curl -sL https://api.github.com/repos/skylot/jadx/releases/latest | python3 -c \"import sys,json;print(json.load(sys.stdin)[\\\"tag_name\\\"].lstrip(\\\"v\\\"))\") && curl -sL https://github.com/skylot/jadx/releases/download/v${JADX_VER}/jadx-${JADX_VER}.zip -o /tmp/jadx.zip && unzip -qo /tmp/jadx.zip -d /opt/jadx-${JADX_VER} && ln -sf /opt/jadx-${JADX_VER}/bin/jadx /usr/local/bin/jadx && rm /tmp/jadx.zip'",
         "description": "Android APK/DEX decompiler",
     },

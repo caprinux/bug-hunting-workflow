@@ -85,7 +85,7 @@ class StrictValidatorStage(PipelineStage):
                 )
 
                 result = await self._validate_single_bug(
-                    context, bug_data, infra_config, scope_text, eng_type,
+                    context, bug_data, infra_config, scope_file, eng_type,
                     pocs_dir, record_dir, record_meta,
                 )
                 total_cost += result.get("cost_usd", 0)

@@ -56,13 +56,17 @@ def _build_chat_context(engagement_id: str) -> str:
     parts = []
     parts.append(f"# Engagement: {eng['name']}")
     parts.append(f"Type: {eng['type']}")
-    if eng_cfg.get("scope_definition"):
-        parts.append(f"\n## Scope\n{eng_cfg['scope_definition']}")
-    if eng_cfg.get("infra_config"):
-        parts.append(f"\n## Infrastructure\n{eng_cfg['infra_config']}")
 
-    # Point to files instead of inlining data
+    # Write scope/infra to a file so it doesn't blow up the system prompt
     eng_dir = os.path.join(os.path.abspath(output_dir), "engagements", engagement_id)
+    os.makedirs(eng_dir, exist_ok=True)
+    context_file = os.path.join(eng_dir, "chat_context.md")
+    with open(context_file, "w") as f:
+        if eng_cfg.get("scope_definition"):
+            f.write(f"## Scope\n{eng_cfg['scope_definition']}\n\n")
+        if eng_cfg.get("infra_config"):
+            f.write(f"## Infrastructure\n{eng_cfg['infra_config']}\n")
+    parts.append(f"\nEngagement details: Read {context_file}")
     cumulative_dir = os.path.join(eng_dir, "cumulative")
 
     file_refs = []

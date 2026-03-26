@@ -213,23 +213,17 @@ export default function EngagementDetail() {
       {showSettings && !hasActiveRun && (
         <div className="engagement-settings-panel">
           <h3>Run Settings</h3>
-          {runs.length > 0 && (
-            <p style={{ fontSize: '12px', color: 'var(--color-warning)', marginBottom: '12px' }}>
-              Settings are locked after the first run.
-            </p>
-          )}
-          {runs.length === 0 && (
-            <p className="muted" style={{ fontSize: '13px', marginBottom: '12px' }}>
-              These settings apply to all runs. They cannot be changed after the first run.
-            </p>
-          )}
-          {(() => { const locked = runs.length > 0; return (<>
-          <div className="config-grid" style={locked ? { opacity: 0.6, pointerEvents: 'none' } : {}}>
-            <div className="form-group">
-              <label>Bug Hunter Agents</label>
+          {(() => {
+            const hasRuns = runs.length > 0
+            const modeLocked = hasRuns
+            const agentsLocked = hasRuns && engConfig.mode === 'sequential'
+            return (<>
+          <div className="config-grid">
+            <div className="form-group" style={agentsLocked ? { opacity: 0.6 } : {}}>
+              <label>Bug Hunter Agents {agentsLocked && <span style={{ fontSize: '10px', color: 'var(--color-warning)' }}>(locked — sequential mode)</span>}</label>
               <div className="agent-checkboxes">
                 <label className="toggle-label">
-                  <input type="checkbox" disabled={locked} checked={engConfig.agents?.includes('claude')}
+                  <input type="checkbox" disabled={agentsLocked} checked={engConfig.agents?.includes('claude')}
                     onChange={e => {
                       const next = e.target.checked
                         ? [...new Set([...(engConfig.agents || []), 'claude'])]
@@ -239,7 +233,7 @@ export default function EngagementDetail() {
                   <span>Claude</span>
                 </label>
                 <label className="toggle-label">
-                  <input type="checkbox" disabled={locked} checked={engConfig.agents?.includes('codex')}
+                  <input type="checkbox" disabled={agentsLocked} checked={engConfig.agents?.includes('codex')}
                     onChange={e => {
                       const next = e.target.checked
                         ? [...new Set([...(engConfig.agents || []), 'codex'])]
@@ -252,13 +246,13 @@ export default function EngagementDetail() {
             </div>
             <div className="form-group">
               <label>Hunt Iterations</label>
-              <input type="number" min="1" disabled={locked} value={engConfig.iterations || 1}
+              <input type="number" min="1" value={engConfig.iterations || 1}
                 onChange={e => setEngConfig(c => ({ ...c, iterations: Math.max(1, parseInt(e.target.value) || 1) }))} />
               <small className="muted" style={{ fontSize: '11px' }}>Bug Hunter runs N times before proceeding to validation</small>
             </div>
-            <div className="form-group">
-              <label>Agent Mode</label>
-              <select disabled={locked} value={engConfig.mode} onChange={e => setEngConfig(c => ({ ...c, mode: e.target.value }))}>
+            <div className="form-group" style={modeLocked ? { opacity: 0.6 } : {}}>
+              <label>Agent Mode {modeLocked && <span style={{ fontSize: '10px', color: 'var(--color-warning)' }}>(locked)</span>}</label>
+              <select disabled={modeLocked} value={engConfig.mode} onChange={e => setEngConfig(c => ({ ...c, mode: e.target.value }))}>
                 <option value="parallel">Parallel</option>
                 <option value="sequential">Sequential</option>
               </select>
@@ -270,20 +264,20 @@ export default function EngagementDetail() {
             </div>
             <div className="form-group">
               <label>Subagent Timeout (s)</label>
-              <input type="number" disabled={locked} value={engConfig.subagent_timeout || 3600}
+              <input type="number" value={engConfig.subagent_timeout || 3600}
                 onChange={e => setEngConfig(c => ({ ...c, subagent_timeout: parseInt(e.target.value) || 3600 }))} />
             </div>
             <div className="form-group">
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: locked ? 'default' : 'pointer' }}>
-                <input type="checkbox" disabled={locked} checked={engConfig.perfectionist_enabled}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={engConfig.perfectionist_enabled}
                   onChange={e => setEngConfig(c => ({ ...c, perfectionist_enabled: e.target.checked }))} />
                 Perfectionist
               </label>
               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Expand validated bugs to maximum impact with additional PoCs</span>
             </div>
             <div className="form-group">
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: locked ? 'default' : 'pointer' }}>
-                <input type="checkbox" disabled={locked} checked={engConfig.bug_chainer_enabled}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={engConfig.bug_chainer_enabled}
                   onChange={e => setEngConfig(c => ({ ...c, bug_chainer_enabled: e.target.checked }))} />
                 Bug Chainer
               </label>
@@ -291,8 +285,7 @@ export default function EngagementDetail() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-            {!locked && (
-              <button className="btn btn-primary" disabled={savingConfig} onClick={async () => {
+            <button className="btn btn-primary" disabled={savingConfig} onClick={async () => {
                 setSavingConfig(true)
                 try {
                   await api.updateEngagementConfig(id, {
@@ -308,7 +301,6 @@ export default function EngagementDetail() {
               }}>
                 {savingConfig ? 'Saving...' : 'Save Settings'}
               </button>
-            )}
             <button className="btn btn-secondary" onClick={() => setShowSettings(false)}>Close</button>
           </div>
           </>)})()}
