@@ -197,11 +197,6 @@ async def run_claude_chat(
     if system_prompt and not is_resume:
         cmd.extend(["--system-prompt", system_prompt])
 
-    # Give chat access to shared resources directory
-    chat_resources = os.path.join(os.path.abspath("audit_output"), "chat_resources")
-    if os.path.isdir(chat_resources):
-        cmd.extend(["--add-dir", chat_resources])
-
     if additional_dirs:
         cmd.extend(["--add-dir"] + additional_dirs)
 

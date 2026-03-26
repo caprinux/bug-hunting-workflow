@@ -164,10 +164,14 @@ class PipelineOrchestrator:
             self._reset_stage_result(run_id, current_stage)
 
         update_run(run_id, status="running", completed_at=None, pipeline_state=pipeline_state)
+        # Also persist cleaned state to disk so _execute_pipeline doesn't reload stale flags
+        run_dir = self._get_run_dir(run_id)
+        self._save_pipeline_state(run_dir, pipeline_state)
         await event_manager.emit_stage_update(
             self.engagement_id, run_id, "", "running",
             message=f"Pipeline resumed from {current_stage or 'start'}",
         )
+        self._running = True
         self._current_task = asyncio.create_task(
             self._execute_pipeline(run_id, run["run_type"], run.get("rehunt_target")),
         )

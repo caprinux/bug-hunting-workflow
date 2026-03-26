@@ -247,6 +247,9 @@ async def _stream_response(engagement_id: str, chat_id: str, prompt: str,
         output_dir = cfg.get("pipeline", {}).get("output_dir", "./audit_output")
         eng_dir = os.path.join(os.path.abspath(output_dir), "engagements", engagement_id)
         extra_dirs = [eng_dir] if os.path.isdir(eng_dir) else []
+        chat_resources = os.path.join(os.path.abspath(output_dir), "chat_resources")
+        if os.path.isdir(chat_resources):
+            extra_dirs.append(chat_resources)
 
         result = await run_claude_chat(
             prompt=prompt,
@@ -294,7 +297,10 @@ async def api_list_chat_files(engagement_id: str, path: str = Query(default=""))
     workspace = _get_chat_workspace(engagement_id)
     target = os.path.realpath(os.path.join(workspace, path))
     ws_real = os.path.realpath(workspace)
-    if not target.startswith(ws_real):
+    try:
+        if os.path.commonpath([ws_real, target]) != ws_real:
+            raise HTTPException(403, "Path traversal detected")
+    except ValueError:
         raise HTTPException(403, "Path traversal detected")
     if not os.path.exists(target):
         return {"files": []}

@@ -153,8 +153,9 @@ def _ensure_go_bin_in_path():
     import os as _os
     go_path = _os.environ.get("GOPATH", _os.path.expanduser("~/go"))
     go_bin = _os.environ.get("GOBIN", _os.path.join(go_path, "bin"))
-    if go_bin not in _os.environ.get("PATH", ""):
-        _os.environ["PATH"] = go_bin + ":" + _os.environ.get("PATH", "")
+    path_entries = _os.environ.get("PATH", "").split(_os.pathsep)
+    if go_bin not in path_entries:
+        _os.environ["PATH"] = go_bin + _os.pathsep + _os.environ.get("PATH", "")
 
 
 async def check_tool(name: str) -> ToolCheckResult:
