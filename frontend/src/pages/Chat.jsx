@@ -13,6 +13,8 @@ export default function Chat() {
   const [engagement, setEngagement] = useState(null)
   const [chats, setChats] = useState([])
   const [messages, setMessages] = useState([])
+  const [files, setFiles] = useState([])
+  const [showFiles, setShowFiles] = useState(false)
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [streamingText, setStreamingText] = useState('')
@@ -41,6 +43,16 @@ export default function Chat() {
   }, [engagementId])
 
   useEffect(() => { loadChats() }, [loadChats])
+
+  const loadFiles = useCallback(async () => {
+    try {
+      const data = await api.listChatFiles(engagementId)
+      setFiles(data.files || [])
+    } catch { setFiles([]) }
+  }, [engagementId])
+
+  // Reload files after each chat completion
+  useEffect(() => { if (showFiles) loadFiles() }, [showFiles, loadFiles])
 
   // Load messages when active chat changes
   useEffect(() => {
@@ -72,10 +84,11 @@ export default function Chat() {
       if (evt.type === 'chat_complete' && evt.data?.chat_id === activeChatId) {
         setStreaming(false)
         setStreamingText('')
-        // Reload messages to get the persisted assistant message
+        // Reload messages and files
         api.getChat(engagementId, activeChatId)
           .then(data => setMessages(data.messages || []))
           .catch(console.error)
+        loadFiles()
       }
       if (evt.type === 'chat_error' && evt.data?.chat_id === activeChatId) {
         setStreaming(false)
@@ -177,6 +190,10 @@ export default function Chat() {
         <span className={`ws-status ${connected ? 'connected' : 'disconnected'}`}>
           {connected ? 'Live' : 'Disconnected'}
         </span>
+        <button className={`btn btn-sm ${showFiles ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => { setShowFiles(!showFiles); if (!showFiles) loadFiles() }}>
+          Files {files.length > 0 && `(${files.length})`}
+        </button>
       </div>
 
       {error && (
@@ -304,6 +321,40 @@ export default function Chat() {
             </>
           )}
         </div>
+
+        {/* Files panel */}
+        {showFiles && (
+          <div className="chat-files-panel">
+            <div className="chat-sidebar-header">
+              <span style={{ fontWeight: 600, fontSize: 13 }}>Workspace Files</span>
+              <button className="btn btn-sm btn-secondary" onClick={loadFiles}>Refresh</button>
+            </div>
+            <div className="chat-files-list">
+              {files.length === 0 ? (
+                <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+                  No files yet
+                </div>
+              ) : (
+                files.map(f => (
+                  <div key={f.path} className="chat-file-item">
+                    <span className="chat-file-icon">{f.is_dir ? '📁' : '📄'}</span>
+                    <span className="chat-file-name" title={f.path}>{f.name}</span>
+                    {!f.is_dir && (
+                      <>
+                        <span className="chat-file-size">{f.size < 1024 ? `${f.size}B` : `${(f.size/1024).toFixed(1)}K`}</span>
+                        <a href={api.chatFileDownloadUrl(engagementId, f.path)}
+                           className="btn btn-sm btn-secondary"
+                           download style={{ padding: '2px 8px', fontSize: 11 }}>
+                          Download
+                        </a>
+                      </>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

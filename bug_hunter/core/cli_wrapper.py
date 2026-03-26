@@ -178,6 +178,8 @@ async def run_claude_chat(
     model: str = "sonnet",
     timeout: int = 120,
     on_event: Optional[Callable[[StreamEvent], None]] = None,
+    cwd: Optional[str] = None,
+    additional_dirs: Optional[list[str]] = None,
 ) -> CLIResult:
     """Run Claude Code CLI for chat — with session persistence for multi-turn.
 
@@ -200,13 +202,16 @@ async def run_claude_chat(
     if os.path.isdir(chat_resources):
         cmd.extend(["--add-dir", chat_resources])
 
+    if additional_dirs:
+        cmd.extend(["--add-dir"] + additional_dirs)
+
     cmd.append(prompt)
 
     env = os.environ.copy()
     env["IS_SANDBOX"] = "1"
 
     return await _run_cli_process(
-        cmd, env, None, timeout, on_event,
+        cmd, env, cwd, timeout, on_event,
         prompt=prompt,
         record_dir=None,
         record_request=None,

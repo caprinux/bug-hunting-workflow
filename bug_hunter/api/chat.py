@@ -8,7 +8,8 @@ import logging
 import os
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from bug_hunter.core.cli_wrapper import run_claude_chat, StreamEvent
@@ -42,6 +43,16 @@ class UpdateChatRequest(BaseModel):
 
 
 # --- Context builder ---
+
+def _get_chat_workspace(engagement_id: str) -> str:
+    """Get the shared chat workspace directory for an engagement."""
+    eng = get_engagement(engagement_id)
+    cfg = eng.get("config", {}) if eng else {}
+    output_dir = cfg.get("pipeline", {}).get("output_dir", "./audit_output")
+    workspace = os.path.join(os.path.abspath(output_dir), "engagements", engagement_id, "chat_workspace")
+    os.makedirs(workspace, exist_ok=True)
+    return workspace
+
 
 def _build_chat_context(engagement_id: str) -> str:
     """Build a system prompt pointing Claude at engagement files."""
@@ -187,9 +198,10 @@ async def api_send_message(engagement_id: str, chat_id: str, body: SendMessageRe
         update_chat(chat_id, title=title)
 
     # Launch streaming response in background
+    workspace = _get_chat_workspace(engagement_id)
     task = asyncio.create_task(
         _stream_response(engagement_id, chat_id, body.content,
-                         session_id, is_resume, system_prompt)
+                         session_id, is_resume, system_prompt, workspace)
     )
     _active_chats[chat_id] = task
 
@@ -197,7 +209,8 @@ async def api_send_message(engagement_id: str, chat_id: str, body: SendMessageRe
 
 
 async def _stream_response(engagement_id: str, chat_id: str, prompt: str,
-                            session_id: str, is_resume: bool, system_prompt: str):
+                            session_id: str, is_resume: bool, system_prompt: str,
+                            workspace: str = ""):
     """Run Claude and stream tokens to WebSocket."""
     accumulated: list[str] = []
 
@@ -228,12 +241,21 @@ async def _stream_response(engagement_id: str, chat_id: str, prompt: str,
                     pass
 
     try:
+        # Build additional dirs for engagement data access
+        eng = get_engagement(engagement_id)
+        cfg = eng.get("config", {}) if eng else {}
+        output_dir = cfg.get("pipeline", {}).get("output_dir", "./audit_output")
+        eng_dir = os.path.join(os.path.abspath(output_dir), "engagements", engagement_id)
+        extra_dirs = [eng_dir] if os.path.isdir(eng_dir) else []
+
         result = await run_claude_chat(
             prompt=prompt,
             session_id=session_id,
             is_resume=is_resume,
             system_prompt=system_prompt,
             model="sonnet",
+            cwd=workspace or None,
+            additional_dirs=extra_dirs,
             timeout=180,
             on_event=on_event,
         )
@@ -262,3 +284,41 @@ async def _stream_response(engagement_id: str, chat_id: str, prompt: str,
         await event_manager.emit_chat_error(engagement_id, chat_id, str(e))
     finally:
         _active_chats.pop(chat_id, None)
+
+
+# --- Workspace file endpoints ---
+
+@router.get("/files")
+async def api_list_chat_files(engagement_id: str, path: str = Query(default="")):
+    """List files in the engagement's chat workspace."""
+    workspace = _get_chat_workspace(engagement_id)
+    target = os.path.realpath(os.path.join(workspace, path))
+    ws_real = os.path.realpath(workspace)
+    if not target.startswith(ws_real):
+        raise HTTPException(403, "Path traversal detected")
+    if not os.path.exists(target):
+        return {"files": []}
+    if os.path.isfile(target):
+        return {"files": [{"name": os.path.basename(target), "path": path, "is_dir": False,
+                           "size": os.path.getsize(target)}]}
+    files = []
+    for entry in sorted(os.scandir(target), key=lambda e: (not e.is_dir(), e.name)):
+        rel = os.path.relpath(entry.path, workspace)
+        item = {"name": entry.name, "path": rel, "is_dir": entry.is_dir()}
+        if entry.is_file():
+            item["size"] = entry.stat().st_size
+        files.append(item)
+    return {"files": files}
+
+
+@router.get("/files/download")
+async def api_download_chat_file(engagement_id: str, path: str = Query(...)):
+    """Download a file from the chat workspace."""
+    workspace = _get_chat_workspace(engagement_id)
+    filepath = os.path.realpath(os.path.join(workspace, path))
+    ws_real = os.path.realpath(workspace)
+    if not filepath.startswith(ws_real):
+        raise HTTPException(403, "Path traversal detected")
+    if not os.path.isfile(filepath):
+        raise HTTPException(404, "File not found")
+    return FileResponse(filepath, filename=os.path.basename(filepath))

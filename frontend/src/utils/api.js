@@ -63,6 +63,8 @@ export const api = {
   deleteChat: (engId, chatId) => request(`/engagements/${engId}/chats/${chatId}`, { method: 'DELETE' }),
   updateChat: (engId, chatId, title) => request(`/engagements/${engId}/chats/${chatId}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
   sendChatMessage: (engId, chatId, content) => request(`/engagements/${engId}/chats/${chatId}/messages`, { method: 'POST', body: JSON.stringify({ content }) }),
+  listChatFiles: (engId, path) => request(`/engagements/${engId}/chats/files${path ? '?path=' + encodeURIComponent(path) : ''}`),
+  chatFileDownloadUrl: (engId, path) => `${API_BASE}/engagements/${engId}/chats/files/download?path=${encodeURIComponent(path)}`,
 
   getUsage: () => request('/usage'),
   getSettings: () => request('/settings'),
