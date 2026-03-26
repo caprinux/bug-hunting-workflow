@@ -137,11 +137,12 @@ async def run_claude(
     if max_budget_usd:
         cmd.extend(["--max-budget-usd", str(max_budget_usd)])
 
+    # Prompt must come BEFORE --add-dir (variadic flag consumes remaining args)
+    cmd.append(prompt)
+
     if additional_dirs:
         for d in additional_dirs:
             cmd.extend(["--add-dir", d])
-
-    cmd.append(prompt)
 
     env = os.environ.copy()
     env["IS_SANDBOX"] = "1"
@@ -198,11 +199,12 @@ async def run_claude_chat(
     if system_prompt and not is_resume:
         cmd.extend(["--system-prompt", system_prompt])
 
+    # Prompt must come BEFORE --add-dir (variadic flag consumes remaining args)
+    cmd.append(prompt)
+
     if additional_dirs:
         for d in additional_dirs:
             cmd.extend(["--add-dir", d])
-
-    cmd.append(prompt)
 
     env = os.environ.copy()
     env["IS_SANDBOX"] = "1"
@@ -234,11 +236,12 @@ async def run_codex(
     if cwd:
         cmd.extend(["-C", cwd])
 
+    # Prompt must come BEFORE --add-dir (variadic flag consumes remaining args)
+    cmd.append(prompt)
+
     if additional_dirs:
         for d in additional_dirs:
             cmd.extend(["--add-dir", d])
-
-    cmd.append(prompt)
 
     command_preview = list(cmd)
     if command_preview:
