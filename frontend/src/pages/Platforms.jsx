@@ -332,7 +332,8 @@ export default function Platforms() {
                       </div>
                     ))}
                   </div>
-              </div>
+                </div>
+              )}
             </>
           )}
         </div>
