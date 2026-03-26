@@ -22,6 +22,7 @@ export default function Layout({ children, theme, toggleTheme, onLogout }) {
             New Engagement
           </Link>
           <Link to="/platforms" className={isActive('/platforms')}>Programs</Link>
+          <Link to="/usage" className={isActive('/usage')}>Usage</Link>
           <Link to="/settings" className={isActive('/settings')}>Settings</Link>
         </nav>
         <div className="header-actions">

@@ -64,6 +64,7 @@ export const api = {
   updateChat: (engId, chatId, title) => request(`/engagements/${engId}/chats/${chatId}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
   sendChatMessage: (engId, chatId, content) => request(`/engagements/${engId}/chats/${chatId}/messages`, { method: 'POST', body: JSON.stringify({ content }) }),
 
+  getUsage: () => request('/usage'),
   getSettings: () => request('/settings'),
   updateSettings: (data) => request('/settings', { method: 'PUT', body: JSON.stringify(data) }),
 

@@ -12,6 +12,7 @@ import IntelBrowser from './pages/IntelBrowser'
 import Report from './pages/Report'
 import Chat from './pages/Chat'
 import Settings from './pages/Settings'
+import Usage from './pages/Usage'
 import Platforms from './pages/Platforms'
 
 export default function App() {
@@ -58,6 +59,7 @@ export default function App() {
         <Route path="/engagements/:id/report" element={<Report />} />
         <Route path="/engagements/:id/chat" element={<Chat />} />
         <Route path="/platforms" element={<Platforms />} />
+        <Route path="/usage" element={<Usage />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
