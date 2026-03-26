@@ -82,7 +82,13 @@ async def api_create_engagement(req: CreateEngagementRequest):
     }
 
     if req.config_overrides:
-        _deep_merge(eng_config, req.config_overrides)
+        # Strip dangerous overrides that could allow path injection
+        overrides = dict(req.config_overrides)
+        overrides.pop("pipeline", None) if "output_dir" in overrides.get("pipeline", {}) else None
+        if "pipeline" in overrides:
+            overrides["pipeline"].pop("output_dir", None)
+        overrides.pop("auth", None)
+        _deep_merge(eng_config, overrides)
 
     engagement = create_engagement(req.name, req.type, eng_config)
 
@@ -132,6 +138,10 @@ async def api_update_engagement_config(engagement_id: str, config_updates: dict)
         raise HTTPException(status_code=409, detail="Cannot modify config while a run is active")
 
     current_config = eng["config"]
+    # Strip dangerous overrides
+    config_updates.pop("auth", None)
+    if "pipeline" in config_updates:
+        config_updates["pipeline"].pop("output_dir", None)
     # Deep merge updates into existing config
     def _deep_merge(base, override):
         for k, v in override.items():

@@ -135,9 +135,10 @@ def _merge_dict_into_dataclass(dc: object, data: dict) -> None:
                     value = type(current)(value)
                 else:
                     continue
-            # For lists, validate all elements are strings (e.g. agents list)
+            # For lists, validate all elements match expected type (default: str)
             if isinstance(value, list) and isinstance(current, list):
-                if current and not all(isinstance(v, type(current[0])) for v in value):
+                elem_type = type(current[0]) if current else str
+                if not all(isinstance(v, elem_type) for v in value):
                     continue
             setattr(dc, key, value)
 

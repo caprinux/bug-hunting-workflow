@@ -39,6 +39,7 @@ BLACK_BOX_TOOLS = {
         "required": True,
         "install": "go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest",
         "description": "HTTP probing and tech fingerprinting",
+        "verify": "httpx -version",
     },
     "nmap": {
         "required": True,
@@ -147,14 +148,41 @@ class ToolCheckResult:
     required: bool = False
 
 
+def _ensure_go_bin_in_path():
+    """Add Go bin directories to PATH if not already present."""
+    import os as _os
+    go_path = _os.environ.get("GOPATH", _os.path.expanduser("~/go"))
+    go_bin = _os.environ.get("GOBIN", _os.path.join(go_path, "bin"))
+    if go_bin not in _os.environ.get("PATH", ""):
+        _os.environ["PATH"] = go_bin + ":" + _os.environ.get("PATH", "")
+
+
 async def check_tool(name: str) -> ToolCheckResult:
     """Check if a tool is available on the system."""
+    _ensure_go_bin_in_path()
     path = shutil.which(name)
     desc = ""
+    verify_cmd = None
     for toolset in [COMMON_TOOLS, SOURCE_CODE_TOOLS, BLACK_BOX_TOOLS, OPTIONAL_TOOLS]:
         if name in toolset:
             desc = toolset[name].get("description", "")
+            verify_cmd = toolset[name].get("verify")
             break
+
+    # If found but has a verify command, run it to confirm it's the right binary
+    if path and verify_cmd:
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                verify_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await asyncio.wait_for(proc.communicate(), timeout=10)
+            if proc.returncode != 0:
+                path = None  # Wrong binary (e.g. Python httpx vs ProjectDiscovery httpx)
+        except (asyncio.TimeoutError, Exception):
+            path = None
+
     return ToolCheckResult(
         name=name,
         available=path is not None,
