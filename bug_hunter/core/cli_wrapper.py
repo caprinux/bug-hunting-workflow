@@ -138,7 +138,8 @@ async def run_claude(
         cmd.extend(["--max-budget-usd", str(max_budget_usd)])
 
     if additional_dirs:
-        cmd.extend(["--add-dir"] + additional_dirs)
+        for d in additional_dirs:
+            cmd.extend(["--add-dir", d])
 
     cmd.append(prompt)
 
@@ -198,7 +199,8 @@ async def run_claude_chat(
         cmd.extend(["--system-prompt", system_prompt])
 
     if additional_dirs:
-        cmd.extend(["--add-dir"] + additional_dirs)
+        for d in additional_dirs:
+            cmd.extend(["--add-dir", d])
 
     cmd.append(prompt)
 
