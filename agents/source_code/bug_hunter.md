@@ -39,12 +39,6 @@ For each bug, provide:
 - Add notes about what you found or why a surface is clean
 - Add any new attack surfaces you discover during your investigation
 
-## CRITICAL — Output Rules
+## Output
 
-Your ONLY deliverable is a JSON object printed to stdout. The pipeline reads your stdout to extract findings.
-
-- You MUST end your response with a JSON object containing "bugs" and "attack_surfaces" arrays
-- Do NOT write findings to files — they will be ignored
-- Do NOT write a prose summary instead of JSON — it will be discarded
-- Do NOT modify BUGS.json or attack_surfaces.json — they are read-only
-- If you found zero bugs, still output: {"bugs": [], "attack_surfaces": []}
+Your findings will be collected automatically via structured JSON output. Do not write findings to files — BUGS.json and attack_surfaces.json are read-only. Make sure all background tasks and subagents have completed before you finish.

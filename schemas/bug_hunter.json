@@ -1,0 +1,52 @@
+{
+  "type": "object",
+  "properties": {
+    "bugs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source_file": {"type": "string"},
+          "line_range": {"type": "string"},
+          "vuln_class": {"type": "string"},
+          "vuln_type": {"type": "string"},
+          "description": {"type": "string"},
+          "reasoning": {"type": "string"},
+          "confidence": {"type": "string"},
+          "root_cause": {"type": "string"},
+          "security_impact": {"type": "string"},
+          "validated": {"type": "boolean"},
+          "poc": {
+            "type": "object",
+            "properties": {
+              "language": {"type": "string"},
+              "code": {"type": "string"},
+              "execution_result": {"type": "string"},
+              "output": {"type": "string"}
+            },
+            "required": ["language", "code", "execution_result", "output"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["source_file", "vuln_type", "description", "reasoning", "confidence", "root_cause", "security_impact"],
+        "additionalProperties": false
+      }
+    },
+    "attack_surfaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "status": {"type": "string"},
+          "findings_notes": {"type": "string"}
+        },
+        "required": ["id", "name", "status", "findings_notes"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["bugs", "attack_surfaces"],
+  "additionalProperties": false
+}

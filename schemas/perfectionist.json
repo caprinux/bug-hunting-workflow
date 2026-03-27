@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "properties": {
+    "expanded": {"type": "boolean"},
+    "expanded_primitives": {
+      "type": "object",
+      "properties": {
+        "demonstrated": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "primitive": {"type": "string"},
+              "poc_file": {"type": "string"},
+              "poc_code": {"type": "string"},
+              "execution_result": {"type": "string"}
+            },
+            "required": ["primitive", "poc_code", "execution_result"],
+            "additionalProperties": false
+          }
+        },
+        "theoretical": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "primitive": {"type": "string"},
+              "reason_not_demonstrated": {"type": "string"}
+            },
+            "required": ["primitive", "reason_not_demonstrated"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["demonstrated", "theoretical"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["expanded", "expanded_primitives"],
+  "additionalProperties": false
+}

@@ -1,0 +1,46 @@
+{
+  "type": "object",
+  "properties": {
+    "architecture": {
+      "type": "object",
+      "properties": {
+        "description": {"type": "string"},
+        "framework": {"type": "string"},
+        "entry_points": {"type": "array", "items": {"type": "string"}},
+        "key_modules": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": ["description", "framework", "entry_points", "key_modules"],
+      "additionalProperties": false
+    },
+    "attack_surfaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "location": {"type": "array", "items": {"type": "string"}},
+          "description": {"type": "string"},
+          "inputs": {"type": "string"},
+          "priority": {"type": "string"},
+          "potential_vulns": {"type": "array", "items": {"type": "string"}},
+          "status": {"type": "string"}
+        },
+        "required": ["id", "name", "location", "description", "inputs", "priority", "potential_vulns", "status"],
+        "additionalProperties": false
+      }
+    },
+    "scope_notes": {
+      "type": "object",
+      "properties": {
+        "qualifying": {"type": "array", "items": {"type": "string"}},
+        "non_qualifying": {"type": "array", "items": {"type": "string"}},
+        "excluded_paths": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": ["qualifying", "non_qualifying", "excluded_paths"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["architecture", "attack_surfaces", "scope_notes"],
+  "additionalProperties": false
+}

@@ -27,6 +27,7 @@ from bug_hunter.utils.schema_validator import validate_findings_list
 
 logger = logging.getLogger(__name__)
 AGENTS_DIR = Path(__file__).parent.parent.parent.parent / "agents"
+SCHEMAS_DIR = Path(__file__).parent.parent.parent.parent / "schemas"
 
 
 @register
@@ -297,44 +298,8 @@ BUGS ALREADY FOUND (do not duplicate): Read {bugs_file}
 {available_tools}
 {notes_section}
 
-IMPORTANT:
-- BUGS.json and attack_surfaces.json are READ-ONLY. Do NOT write to them.
-- Do NOT write your findings to any file. The ONLY way to report findings is via stdout JSON below.
-- If you write findings to a file instead of stdout, they WILL BE LOST.
-
-You MUST end your response with EXACTLY this JSON structure. No prose before or after. No markdown wrapping. Just the raw JSON object:
-{{
-  "bugs": [
-    {{
-      "source_file": "path/to/file",
-      "line_range": "10-25",
-      "vuln_class": "CWE-89",
-      "vuln_type": "SQL Injection",
-      "description": "Detailed description",
-      "reasoning": "Why this is exploitable",
-      "confidence": "high",
-      "root_cause": "What is wrong in the code",
-      "security_impact": "What an attacker can achieve",
-      "validated": true,
-      "poc": {{
-        "language": "python",
-        "code": "the PoC code",
-        "execution_result": "success or failure",
-        "output": "proof of exploitation"
-      }}
-    }}
-  ],
-  "attack_surfaces": [
-    {{
-      "id": "surface-001",
-      "name": "Updated surface name",
-      "status": "scanned",
-      "findings_notes": "What was found or why it's clean"
-    }}
-  ]
-}}
-
-If you found no bugs, output: {{"bugs": [], "attack_surfaces": []}}"""
+BUGS.json and attack_surfaces.json are READ-ONLY. Your output will be collected automatically via structured output — do not write findings to any file.
+When you are done, make sure all background tasks and subagents have completed before finishing."""
 
         if eng_type == "source_code":
             agent_file = str(AGENTS_DIR / "source_code" / "bug_hunter.md")
@@ -377,12 +342,15 @@ If you found no bugs, output: {{"bugs": [], "attack_surfaces": []}}"""
 
         cwd = source_path if eng_type == "source_code" else stage_dir
 
+        schema_file = str(SCHEMAS_DIR / "bug_hunter.json")
+
         if agent_name == "claude" or agent_name.startswith("claude"):
             return await run_claude(
                 prompt=prompt,
                 agent_file=agent_file,
                 model=context.config.models.bug_hunter_subagent,
                 cwd=cwd,
+                json_schema_file=schema_file,
                 timeout=context.config.pipeline.subagent_timeout,
                 on_event=on_event,
                 additional_dirs=extra_dirs,
@@ -399,6 +367,7 @@ If you found no bugs, output: {{"bugs": [], "attack_surfaces": []}}"""
                 additional_dirs=extra_dirs,
                 record_dir=record_dir,
                 record_metadata=record_meta,
+                output_schema_file=schema_file,
             )
         else:
             return CLIResult(success=False, error=f"Unknown agent: {agent_name}")

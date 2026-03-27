@@ -12,6 +12,7 @@ import contextlib
 import json
 import logging
 import os
+from pathlib import Path
 
 from bug_hunter.core.cli_wrapper import run_claude
 from bug_hunter.core.database import list_bugs, update_bug
@@ -22,6 +23,7 @@ from bug_hunter.pipeline.stages.registry import register
 
 logger = logging.getLogger(__name__)
 AGENTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "agents")
+SCHEMAS_DIR = Path(__file__).parent.parent.parent.parent / "schemas"
 
 
 @register
@@ -163,17 +165,7 @@ INFRASTRUCTURE ACCESS:
 APPLICATION CONTEXT: Read {scope_file}
 DESTRUCTIVE POC POLICY: {destructive_policy}
 
-Output a JSON object with this exact structure:
-{{
-  "validated": true,
-  "poc": {{
-    "language": "python",
-    "code": "the PoC source code",
-    "execution_result": "success|failure|error|destructive_skipped",
-    "output": "proof of exploitation output"
-  }},
-  "reason": "if not validated, explain why"
-}}"""
+Your output will be collected automatically via structured JSON output. Do not write results to any file."""
 
         result = await run_claude(
             prompt=prompt, agent_file=agent_file,
@@ -181,6 +173,7 @@ Output a JSON object with this exact structure:
             cwd=pocs_dir,
             timeout=context.config.pipeline.subagent_timeout,
             record_dir=record_dir, record_metadata=record_meta,
+            json_schema_file=str(SCHEMAS_DIR / "strict_validator.json"),
         )
 
         if not result.success:

@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "properties": {
+    "in_scope": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "out_of_scope": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "reason": {"type": "string"}
+        },
+        "required": ["id", "reason"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["in_scope", "out_of_scope"],
+  "additionalProperties": false
+}

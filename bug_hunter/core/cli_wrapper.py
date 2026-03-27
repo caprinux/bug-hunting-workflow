@@ -226,6 +226,7 @@ async def run_codex(
     additional_dirs: Optional[list[str]] = None,
     record_dir: Optional[str] = None,
     record_metadata: Optional[dict] = None,
+    output_schema_file: Optional[str] = None,
 ) -> CLIResult:
     """Run Codex CLI as a subprocess and capture output."""
     cmd = ["codex", "exec",
@@ -235,6 +236,9 @@ async def run_codex(
 
     if cwd:
         cmd.extend(["-C", cwd])
+
+    if output_schema_file:
+        cmd.extend(["--output-schema", str(Path(output_schema_file).resolve())])
 
     # Prompt must come BEFORE --add-dir (variadic flag consumes remaining args)
     cmd.append(prompt)
@@ -433,7 +437,12 @@ async def _run_cli_process(
         duration_ms = int((time.monotonic() - start_time) * 1000)
 
         if result_data:
-            parsed_result = _parse_result_payload(result_data.get("result"))
+            # Prefer structured_output (from --json-schema) over raw result text
+            structured = result_data.get("structured_output")
+            if structured and isinstance(structured, dict):
+                parsed_result = structured
+            else:
+                parsed_result = _parse_result_payload(result_data.get("result"))
             usage = result_data.get("usage")
             return finalize_record(CLIResult(
                 success=not result_data.get("is_error", False),

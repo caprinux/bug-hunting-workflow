@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 
 from bug_hunter.core.cli_wrapper import run_claude
 from bug_hunter.core.database import list_bugs, update_bug
@@ -15,6 +16,7 @@ from bug_hunter.pipeline.stages.registry import register
 
 logger = logging.getLogger(__name__)
 AGENTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "agents")
+SCHEMAS_DIR = Path(__file__).parent.parent.parent.parent / "schemas"
 
 
 @register
@@ -57,19 +59,7 @@ RULES:
 5. When merging, combine reasoning from all agents. Note which agents agreed (multi-agent agreement = higher confidence).
 6. Preserve the most specific/detailed version of each field.
 
-CRITICAL: Output ONLY a JSON object with this exact structure:
-{{
-  "deduplicated": [
-    // merged findings with combined reasoning and found_by lists
-  ],
-  "duplicate_groups": [
-    {{
-      "merged_into": "bug-id",
-      "duplicates": ["bug-id-1", "bug-id-2"],
-      "reason": "same vulnerable SQL query at line 45"
-    }}
-  ]
-}}"""
+Your output will be collected automatically via structured JSON output. Do not write results to any file."""
 
         agent_file = os.path.join(AGENTS_DIR, "shared", "deduplicator.md")
         record_dir, record_metadata = self.prepare_agent_run(
@@ -86,6 +76,7 @@ CRITICAL: Output ONLY a JSON object with this exact structure:
             timeout=context.config.pipeline.subagent_timeout,
             record_dir=record_dir,
             record_metadata=record_metadata,
+            json_schema_file=str(SCHEMAS_DIR / "deduplicator.json"),
         )
 
         if not result.success:

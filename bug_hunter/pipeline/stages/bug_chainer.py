@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 
 from bug_hunter.core.cli_wrapper import run_claude
 from bug_hunter.core.database import create_chain, list_bugs
@@ -15,6 +16,7 @@ from bug_hunter.pipeline.stages.registry import register
 
 logger = logging.getLogger(__name__)
 AGENTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "agents")
+SCHEMAS_DIR = Path(__file__).parent.parent.parent.parent / "schemas"
 
 
 @register
@@ -85,42 +87,7 @@ INSTRUCTIONS:
 5. Suggest re-hunt targets: specific bug classes that would enable higher-impact chains
    (these will require human approval before re-hunting)
 
-CRITICAL: Output ONLY a JSON object with this exact structure:
-{{
-  "individual_bugs": [
-    // all confirmed bugs (unchanged, for the report)
-  ],
-  "demonstrated_chains": [
-    {{
-      "id": "chain-001",
-      "bug_ids": ["bug-001", "bug-003"],
-      "description": "SSRF + leaked internal IP -> internal admin panel access",
-      "combined_impact": "Full admin access to internal services",
-      "execution_order": "Step 1: Use SSRF (bug-001) to reach internal IP from intel...",
-      "status": "demonstrated",
-      "combined_poc_file": "chain_pocs/chain_001.py",
-      "severity": "critical"
-    }}
-  ],
-  "proposed_chains": [
-    {{
-      "id": "chain-002",
-      "bug_ids": ["bug-002", "bug-005"],
-      "description": "XSS + CSRF -> account takeover",
-      "combined_impact": "...",
-      "execution_order": "...",
-      "status": "proposed",
-      "severity": "high"
-    }}
-  ],
-  "rehunt_suggestions": [
-    {{
-      "target_bug_class": "Stored XSS in admin panel",
-      "reason": "Would chain with confirmed CSRF (bug-004) for persistent admin account takeover",
-      "priority": "high"
-    }}
-  ]
-}}"""
+Your output will be collected automatically via structured JSON output. Do not write results to any file."""
 
         agent_file = os.path.join(AGENTS_DIR, "shared", "bug_chainer.md")
         record_dir, record_metadata = self.prepare_agent_run(
@@ -141,6 +108,7 @@ CRITICAL: Output ONLY a JSON object with this exact structure:
             timeout=context.config.pipeline.subagent_timeout * 2,
             record_dir=record_dir,
             record_metadata=record_metadata,
+            json_schema_file=str(SCHEMAS_DIR / "bug_chainer.json"),
         )
 
         if not result.success:

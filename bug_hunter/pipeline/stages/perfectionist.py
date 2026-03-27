@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+from pathlib import Path
 
 from bug_hunter.core.cli_wrapper import run_claude
 from bug_hunter.core.database import list_bugs, update_bug
@@ -16,6 +17,7 @@ from bug_hunter.pipeline.stages.registry import register
 
 logger = logging.getLogger(__name__)
 AGENTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "agents")
+SCHEMAS_DIR = Path(__file__).parent.parent.parent.parent / "schemas"
 
 
 @register
@@ -122,26 +124,7 @@ INFRASTRUCTURE ACCESS:
 APPLICATION CONTEXT: Read {summaries_file} for architecture and code summaries.
 Save expanded PoCs to: {expanded_pocs_dir}/bug_{bug_id}_<expansion>.py
 
-Output a JSON object with this exact structure:
-{{
-  "expanded": true,
-  "expanded_primitives": {{
-    "demonstrated": [
-      {{
-        "primitive": "SQLi read -> SQLi write via UNION + INTO OUTFILE",
-        "poc_file": "path/to/poc",
-        "poc_code": "the code",
-        "execution_result": "success"
-      }}
-    ],
-    "theoretical": [
-      {{
-        "primitive": "SQLi write -> RCE via webshell",
-        "reason_not_demonstrated": "Web root not writable in test environment"
-      }}
-    ]
-  }}
-}}"""
+Your output will be collected automatically via structured JSON output. Do not write results to any file."""
 
         result = await run_claude(
             prompt=prompt,
@@ -151,6 +134,7 @@ Output a JSON object with this exact structure:
             timeout=context.config.pipeline.subagent_timeout,
             record_dir=record_dir,
             record_metadata=record_metadata,
+            json_schema_file=str(SCHEMAS_DIR / "perfectionist.json"),
         )
 
         if not result.success:

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 
 from bug_hunter.core.cli_wrapper import run_claude
 from bug_hunter.core.database import list_bugs, update_bug
@@ -25,6 +26,7 @@ from bug_hunter.pipeline.stages.registry import register
 
 logger = logging.getLogger(__name__)
 AGENTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "agents")
+SCHEMAS_DIR = Path(__file__).parent.parent.parent.parent / "schemas"
 
 
 @register
@@ -76,15 +78,7 @@ CONFIDENCE (based on evidence quality):
 
 For each finding, output its id, tag (confidence), severity, and a brief note.
 
-CRITICAL: Output ONLY a JSON object with this exact structure:
-{{
-  "tagged": [
-    {{"id": "bug-001", "tag": "strong", "severity": "critical", "note": "Working RCE via deserialization with full PoC"}},
-    {{"id": "bug-002", "tag": "weak", "severity": "high", "note": "Auth bypass identified but PoC could not fully demonstrate"}},
-    {{"id": "bug-003", "tag": "strong", "severity": "medium", "note": "IDOR on assessment grades with working PoC"}},
-    {{"id": "bug-004", "tag": "informational", "severity": "informational", "note": "Server version disclosed in headers"}}
-  ]
-}}"""
+Your output will be collected automatically via structured JSON output. Do not write results to any file."""
 
         agent_file = os.path.join(AGENTS_DIR, "shared", "triager.md")
         if not os.path.exists(agent_file):
@@ -102,6 +96,7 @@ CRITICAL: Output ONLY a JSON object with this exact structure:
             timeout=min(context.config.pipeline.subagent_timeout, 600),  # fast pass
             record_dir=record_dir,
             record_metadata=record_meta,
+            json_schema_file=str(SCHEMAS_DIR / "strict_triager.json"),
         )
 
         if not result.success:

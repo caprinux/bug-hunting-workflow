@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 
 from bug_hunter.core.cli_wrapper import run_claude
 from bug_hunter.core.database import list_bugs, update_bug
@@ -20,6 +21,7 @@ from bug_hunter.pipeline.stages.registry import register
 
 logger = logging.getLogger(__name__)
 AGENTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "agents")
+SCHEMAS_DIR = Path(__file__).parent.parent.parent.parent / "schemas"
 
 
 @register
@@ -79,13 +81,7 @@ RULES:
 For each finding, output its id and whether it's "in_scope" or "out_of_scope".
 For out_of_scope findings, briefly note which rule excludes it.
 
-CRITICAL: Output ONLY a JSON object with this exact structure:
-{{
-  "in_scope": ["bug-id-1", "bug-id-2"],
-  "out_of_scope": [
-    {{"id": "bug-id-3", "reason": "Non-qualifying: informational version disclosure"}}
-  ]
-}}"""
+Your output will be collected automatically via structured JSON output. Do not write results to any file."""
 
         agent_file = os.path.join(AGENTS_DIR, "shared", "scope_validator.md")
         if not os.path.exists(agent_file):
@@ -103,6 +99,7 @@ CRITICAL: Output ONLY a JSON object with this exact structure:
             timeout=min(context.config.pipeline.subagent_timeout, 300),  # fast pass
             record_dir=record_dir,
             record_metadata=record_meta,
+            json_schema_file=str(SCHEMAS_DIR / "scope_validator.json"),
         )
 
         if not result.success:

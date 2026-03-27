@@ -15,6 +15,7 @@ from bug_hunter.pipeline.stages.registry import register
 
 logger = logging.getLogger(__name__)
 AGENTS_DIR = Path(__file__).parent.parent.parent.parent / "agents"
+SCHEMAS_DIR = Path(__file__).parent.parent.parent.parent / "schemas"
 
 
 @register
@@ -82,6 +83,7 @@ class ScoperStage(PipelineStage):
             timeout=context.config.pipeline.subagent_timeout,
             record_dir=record_dir,
             record_metadata=record_meta,
+            json_schema_file=str(SCHEMAS_DIR / "scoper.json"),
         )
 
         if not result.success:
@@ -121,32 +123,7 @@ class ScoperStage(PipelineStage):
 SCOPE DEFINITION:
 {scope_def or "All code is in scope. Focus on security-relevant functionality."}
 
-Output a JSON object:
-{{
-  "architecture": {{
-    "description": "Brief description of what this application does",
-    "framework": "The web framework or technology stack",
-    "entry_points": ["List of main entry point files"],
-    "key_modules": ["List of security-relevant modules/directories"]
-  }},
-  "attack_surfaces": [
-    {{
-      "id": "surface-001",
-      "name": "User Authentication",
-      "location": ["src/auth/login.py", "src/auth/jwt.py"],
-      "description": "JWT-based authentication with password login",
-      "inputs": "username, password via POST /api/login",
-      "priority": "high",
-      "potential_vulns": ["auth bypass", "JWT manipulation", "brute force"],
-      "status": "not_scanned"
-    }}
-  ],
-  "scope_notes": {{
-    "qualifying": ["Types of vulns that are in scope"],
-    "non_qualifying": ["Types of vulns that are out of scope"],
-    "excluded_paths": ["Paths/components explicitly excluded"]
-  }}
-}}"""
+Your output will be collected automatically via structured JSON output. Do not write results to any file."""
 
     def _build_black_box_prompt(self, domains: list, scope_def: str, infra_config: str,
                                 available_tools: str = "") -> str:
@@ -160,29 +137,4 @@ INFRASTRUCTURE ACCESS:
 
 {available_tools}
 
-Output a JSON object with this exact structure:
-{{
-  "architecture": {{
-    "description": "What this application does",
-    "framework": "Technology stack",
-    "entry_points": ["main entry point URLs or files"],
-    "key_modules": ["security-relevant components"]
-  }},
-  "attack_surfaces": [
-    {{
-      "id": "surface-001",
-      "name": "Surface name",
-      "location": ["URLs or endpoints"],
-      "description": "What it does",
-      "inputs": "What user input it accepts",
-      "priority": "high|medium|low",
-      "potential_vulns": ["possible vulnerability types"],
-      "status": "not_scanned"
-    }}
-  ],
-  "scope_notes": {{
-    "qualifying": ["qualifying vuln types"],
-    "non_qualifying": ["non-qualifying vuln types"],
-    "excluded_paths": ["excluded targets"]
-  }}
-}}"""
+Your output will be collected automatically via structured JSON output. Do not write results to any file."""
