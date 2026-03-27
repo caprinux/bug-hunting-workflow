@@ -18,7 +18,7 @@
           "status": {"type": "string"},
           "severity": {"type": "string"}
         },
-        "required": ["id", "bug_ids", "description", "combined_impact", "status", "severity"],
+        "required": ["id", "bug_ids", "description", "combined_impact", "execution_order", "status", "severity"],
         "additionalProperties": false
       }
     },

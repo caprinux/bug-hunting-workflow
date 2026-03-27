@@ -30,7 +30,7 @@
             "additionalProperties": false
           }
         },
-        "required": ["vuln_type", "description", "reasoning", "confidence", "root_cause", "security_impact"],
+        "required": ["source_file", "line_range", "url", "http_evidence", "vuln_class", "vuln_type", "description", "reasoning", "confidence", "root_cause", "security_impact", "validated", "poc"],
         "additionalProperties": false
       }
     },

@@ -15,7 +15,7 @@
               "poc_code": {"type": "string"},
               "execution_result": {"type": "string"}
             },
-            "required": ["primitive", "poc_code", "execution_result"],
+            "required": ["primitive", "poc_file", "poc_code", "execution_result"],
             "additionalProperties": false
           }
         },
