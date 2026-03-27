@@ -54,11 +54,14 @@ def _get_chat_workspace(engagement_id: str) -> str:
     return workspace
 
 
-def _build_chat_context(engagement_id: str) -> str:
-    """Build a system prompt pointing Claude at engagement files."""
+def _build_chat_context(engagement_id: str) -> tuple[str, list[str]]:
+    """Build a system prompt and list of additional dirs for chat access.
+
+    Returns (system_prompt, extra_dirs).
+    """
     eng = get_engagement(engagement_id)
     if not eng:
-        return ""
+        return "", []
 
     cfg = eng.get("config", {})
     eng_cfg = cfg.get("engagement", {})
@@ -68,18 +71,20 @@ def _build_chat_context(engagement_id: str) -> str:
     parts.append(f"# Engagement: {eng['name']}")
     parts.append(f"Type: {eng['type']}")
 
-    # Write scope/infra to a file so it doesn't blow up the system prompt
     eng_dir = os.path.join(os.path.abspath(output_dir), "engagements", engagement_id)
     os.makedirs(eng_dir, exist_ok=True)
+    extra_dirs = [eng_dir]
+
+    # Write scope/infra to a file
     context_file = os.path.join(eng_dir, "chat_context.md")
     with open(context_file, "w") as f:
         if eng_cfg.get("scope_definition"):
             f.write(f"## Scope\n{eng_cfg['scope_definition']}\n\n")
         if eng_cfg.get("infra_config"):
             f.write(f"## Infrastructure\n{eng_cfg['infra_config']}\n")
-    parts.append(f"\nEngagement details: Read {context_file}")
-    cumulative_dir = os.path.join(eng_dir, "cumulative")
+    parts.append(f"\nEngagement scope and infrastructure: {context_file}")
 
+    cumulative_dir = os.path.join(eng_dir, "cumulative")
     file_refs = []
     for filename, label in [
         ("all_confirmed_bugs.json", "Confirmed bugs"),
@@ -91,8 +96,9 @@ def _build_chat_context(engagement_id: str) -> str:
         if os.path.exists(path) and os.path.getsize(path) > 2:
             file_refs.append(f"- {label}: {path}")
 
-    # Find latest run's scope and BUGS.json
+    # Find latest run's scope, BUGS.json, and source code path
     runs = list_runs(engagement_id)
+    source_path = ""
     if runs:
         latest = runs[-1]
         run_dir = os.path.join(eng_dir, "runs", latest["id"])
@@ -101,22 +107,41 @@ def _build_chat_context(engagement_id: str) -> str:
         if os.path.exists(scope_path):
             file_refs.append(f"- Scope/architecture: {scope_path}")
         if os.path.exists(bugs_path):
-            file_refs.append(f"- All bugs (raw): {bugs_path}")
+            file_refs.append(f"- All bugs found: {bugs_path}")
 
-    # Shared resources directory
+        # Find source code path from setup
+        setup_path = os.path.join(run_dir, "00_setup", "setup.json")
+        if os.path.exists(setup_path):
+            try:
+                import json as _json
+                with open(setup_path) as sf:
+                    setup_data = _json.load(sf)
+                source_path = setup_data.get("source", {}).get("local_path", "")
+            except Exception:
+                pass
+    if not source_path:
+        source_path = eng_cfg.get("source_path", "")
+
+    if source_path and os.path.isdir(source_path):
+        abs_source = os.path.abspath(source_path)
+        file_refs.append(f"- Source code: {abs_source}")
+        extra_dirs.append(abs_source)
+
+    # Shared resources
     chat_resources = os.path.join(os.path.abspath(output_dir), "chat_resources")
     if os.path.isdir(chat_resources) and os.listdir(chat_resources):
         file_refs.append(f"- Shared reference files: {chat_resources}")
+        extra_dirs.append(chat_resources)
 
     if file_refs:
-        parts.append("\n## Data Files\nRead these files for detailed engagement data:")
+        parts.append("\n## Available Data")
         parts.extend(file_refs)
 
     parts.append(f"\n## Runs ({len(runs)} total)")
     for r in runs:
         parts.append(f"- Run #{r['run_number']} ({r['run_type']}) — {r['status']}")
 
-    return "\n".join(parts)
+    return "\n".join(parts), extra_dirs
 
 
 # --- Endpoints ---
@@ -187,8 +212,9 @@ async def api_send_message(engagement_id: str, chat_id: str, body: SendMessageRe
 
     # Build context for first message only
     system_prompt = ""
+    context_dirs = []
     if not is_resume:
-        system_prompt = _build_chat_context(engagement_id)
+        system_prompt, context_dirs = _build_chat_context(engagement_id)
 
     # Auto-title from first user message
     if chat["title"] == "New Chat":
@@ -201,7 +227,8 @@ async def api_send_message(engagement_id: str, chat_id: str, body: SendMessageRe
     workspace = _get_chat_workspace(engagement_id)
     task = asyncio.create_task(
         _stream_response(engagement_id, chat_id, body.content,
-                         session_id, is_resume, system_prompt, workspace)
+                         session_id, is_resume, system_prompt, workspace,
+                         context_dirs)
     )
     _active_chats[chat_id] = task
 
@@ -210,7 +237,7 @@ async def api_send_message(engagement_id: str, chat_id: str, body: SendMessageRe
 
 async def _stream_response(engagement_id: str, chat_id: str, prompt: str,
                             session_id: str, is_resume: bool, system_prompt: str,
-                            workspace: str = ""):
+                            workspace: str = "", context_dirs: list[str] = None):
     """Run Claude and stream tokens to WebSocket."""
     accumulated: list[str] = []
 
@@ -241,15 +268,7 @@ async def _stream_response(engagement_id: str, chat_id: str, prompt: str,
                     pass
 
     try:
-        # Build additional dirs for engagement data access
-        eng = get_engagement(engagement_id)
-        cfg = eng.get("config", {}) if eng else {}
-        output_dir = cfg.get("pipeline", {}).get("output_dir", "./audit_output")
-        eng_dir = os.path.join(os.path.abspath(output_dir), "engagements", engagement_id)
-        extra_dirs = [eng_dir] if os.path.isdir(eng_dir) else []
-        chat_resources = os.path.join(os.path.abspath(output_dir), "chat_resources")
-        if os.path.isdir(chat_resources):
-            extra_dirs.append(chat_resources)
+        extra_dirs = context_dirs or []
 
         result = await run_claude_chat(
             prompt=prompt,
