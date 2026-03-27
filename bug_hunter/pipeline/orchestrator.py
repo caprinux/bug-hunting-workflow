@@ -79,10 +79,16 @@ class PipelineOrchestrator:
                 multi_agent = len(self.config.bug_hunter.agents) > 1
                 if not self.config.deduplicator.enabled and not multi_agent:
                     continue
-            if name == "skills_hunter" and not self.config.skills_hunter.enabled:
-                continue
-            if name == "variant_hunter" and not self.config.variant_hunter.enabled:
-                continue
+            if name == "skills_hunter":
+                if not self.config.skills_hunter.enabled:
+                    continue
+                if self.engagement and self.engagement.get("type") == "black_box":
+                    continue
+            if name == "variant_hunter":
+                if not self.config.variant_hunter.enabled:
+                    continue
+                if self.engagement and self.engagement.get("type") == "black_box":
+                    continue
             if name == "perfectionist" and not self.config.perfectionist.enabled:
                 continue
             if name == "bug_chainer" and not self.config.bug_chainer.enabled:
