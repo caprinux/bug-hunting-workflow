@@ -34,6 +34,17 @@ If the scope includes Android mobile apps or APK package names:
 
 If you encounter CAPTCHAs during reconnaissance (e.g. on staging infrastructure), use the captcha-solver MCP tools to bypass them. Available solvers include reCAPTCHA v2/v3, hCaptcha, Cloudflare Turnstile, AWS WAF, and more.
 
+## Business Logic Questions
+
+Based on what this application does, generate 5-10 questions about how the intended functionality could be abused. These questions will be passed to the Bug Hunter as leads to investigate.
+
+Think about: what does this application let users do? What assumptions does the code make about user behavior? What would happen if those assumptions were violated?
+
+Examples of good questions (adapt to the specific application):
+- "Can user A access user B's data by manipulating the resource ID?"
+- "What happens if a request is replayed after the action was already completed?"
+- "Are there admin-only operations that can be reached through the regular API?"
+
 ## What NOT to Do
 
 - Do NOT hunt for specific vulnerabilities (that's the Bug Hunter's job)

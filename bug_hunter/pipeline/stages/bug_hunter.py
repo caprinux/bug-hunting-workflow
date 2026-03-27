@@ -297,7 +297,7 @@ ATTACK SURFACES: Read {surfaces_file}
 BUGS ALREADY FOUND (do not duplicate): Read {bugs_file}
 {available_tools}
 {notes_section}
-
+{self._format_business_logic_questions(scope_data)}
 BUGS.json and attack_surfaces.json are READ-ONLY. Your output will be collected automatically via structured output — do not write findings to any file.
 When you are done, make sure all background tasks and subagents have completed before finishing."""
 
@@ -394,3 +394,14 @@ When you are done, make sure all background tasks and subagents have completed b
                     json.dump(existing, f, indent=2)
             except Exception as e:
                 logger.warning(f"Failed to merge attack surfaces: {e}")
+
+    @staticmethod
+    def _format_business_logic_questions(scope_data: dict) -> str:
+        questions = scope_data.get("business_logic_questions", [])
+        if not questions:
+            return ""
+        lines = "\n".join(f"- {q}" for q in questions)
+        return f"""
+BUSINESS LOGIC LEADS (from scoper — investigate these in addition to your own findings):
+{lines}
+"""

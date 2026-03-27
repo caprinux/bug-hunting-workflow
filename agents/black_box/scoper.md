@@ -40,6 +40,12 @@ If you encounter CAPTCHAs during reconnaissance (e.g. Cloudflare challenge pages
 - File upload features, admin panels, debug endpoints
 - API documentation endpoints (swagger, graphql playground)
 
+## Business Logic Questions
+
+Based on what this application does, generate 5-10 questions about how the intended functionality could be abused. These questions will be passed to the Bug Hunter as leads to investigate.
+
+Think about: what does this application let users do? What assumptions does it make about user behavior? What would happen if those assumptions were violated?
+
 ## What NOT to Do
 
 - Do NOT exploit anything (that's the Bug Hunter's job)

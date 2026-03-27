@@ -6,18 +6,42 @@ You are performing automated security scanning using static analysis tools and s
 
 ## Scan 1: Semgrep
 
-1. Detect which languages are present (check file extensions in the repo)
-2. Run semgrep with security rulesets per detected language:
-   - Always include: `--config=p/security-audit --config=p/secrets`
-   - Python: add `--config=p/python`
-   - JavaScript/TypeScript: add `--config=p/javascript --config=p/typescript`
-   - Java: add `--config=p/java`
-   - Go: add `--config=p/golang`
-   - Ruby: add `--config=p/ruby`
-   - PHP: add `--config=p/php`
-   - C/C++: add `--config=p/c`
-   - Rust: add `--config=p/rust`
-3. Always use `--metrics=off --json`
+1. Detect which languages and frameworks are present (check file extensions, package manifests, config files)
+2. Run semgrep with the following rulesets. Always use `--metrics=off --json`.
+
+### Baseline (always include):
+- `--config=p/security-audit` — comprehensive vulnerability detection
+- `--config=p/secrets` — hardcoded credentials, API keys, tokens
+- `--config=p/owasp-top-ten` — OWASP Top 10 patterns
+
+### Per-language rulesets:
+- Python: `p/python` + framework: `p/django`, `p/flask`, `p/fastapi`
+- JavaScript/TypeScript: `p/javascript`, `p/typescript` + framework: `p/react`, `p/nodejs`, `p/express`, `p/nextjs`
+- Java/Kotlin: `p/java`, `p/kotlin` + framework: `p/spring`, `p/findsecbugs`
+- Go: `p/golang`
+- Ruby: `p/ruby` + framework: `p/rails`
+- PHP: `p/php` + framework: `p/laravel`, `p/symfony`, `p/phpcs-security-audit`
+- C/C++: `p/c`
+- Rust: `p/rust`
+- C#: `p/csharp`
+
+### Infrastructure rulesets (if present):
+- Dockerfiles: `p/dockerfile`
+- Terraform/HCL: `p/terraform`
+- Kubernetes manifests: `p/kubernetes`
+- GitHub Actions: `p/github-actions`
+
+### Third-party rulesets (clone repos, then pass local path as --config):
+These contain real-world patterns from security engagements. Clone each relevant repo to a temp dir, then use `--config=/tmp/rulerepo/`.
+- Python, Go, Ruby, JS/TS, Terraform: `https://github.com/trailofbits/semgrep-rules`
+- C, C++: `https://github.com/0xdea/semgrep-rules`
+- Multi-language (Java, Go, JS, C#, Python, PHP): `https://github.com/elttam/semgrep-rules`
+- Malicious code detection: `https://github.com/apiiro/malicious-code-ruleset`
+- Solidity/Cairo/Rust smart contracts: `https://github.com/Decurity/semgrep-smart-contracts`
+- Go: `https://github.com/dgryski/semgrep-go`
+- Android (Java/Kotlin): `https://github.com/mindedsecurity/semgrep-rules-android-security`
+
+3. Detect frameworks by looking for: `settings.py`/`urls.py` (Django), `@app.route` (Flask), `package.json` with react/express/next dependencies, `pom.xml` with spring, `Gemfile` with rails, `composer.json` with laravel/symfony
 4. Parse the JSON output and create a bug entry for each finding with severity >= WARNING
 5. If semgrep is not installed, note it and continue to the next scan
 
