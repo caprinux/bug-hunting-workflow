@@ -266,8 +266,9 @@ async def _stream_response(engagement_id: str, chat_id: str, prompt: str,
                 elif delta.get("type") == "thinking_delta":
                     thinking = delta.get("thinking", "")
             # Handle full message content (non-streaming fallback)
-            elif raw.get("type") == "message":
-                content = raw.get("content", [])
+            # Covers both {"type":"message","content":[...]} and {"type":"assistant","message":{"content":[...]}}
+            else:
+                content = raw.get("message", {}).get("content", raw.get("content", []))
                 if isinstance(content, list):
                     for block in content:
                         if block.get("type") == "text" and block.get("text"):
