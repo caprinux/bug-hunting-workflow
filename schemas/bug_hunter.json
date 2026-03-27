@@ -8,6 +8,8 @@
         "properties": {
           "source_file": {"type": "string"},
           "line_range": {"type": "string"},
+          "url": {"type": "string"},
+          "http_evidence": {"type": "string"},
           "vuln_class": {"type": "string"},
           "vuln_type": {"type": "string"},
           "description": {"type": "string"},
@@ -28,7 +30,7 @@
             "additionalProperties": false
           }
         },
-        "required": ["source_file", "vuln_type", "description", "reasoning", "confidence", "root_cause", "security_impact"],
+        "required": ["vuln_type", "description", "reasoning", "confidence", "root_cause", "security_impact"],
         "additionalProperties": false
       }
     },

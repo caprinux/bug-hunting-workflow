@@ -223,11 +223,9 @@ async def api_send_message(engagement_id: str, chat_id: str, body: SendMessageRe
         session_id = str(uuid4())
         update_chat(chat_id, claude_session_id=session_id)
 
-    # Build context for first message only
-    system_prompt = ""
-    context_dirs = []
-    if not is_resume:
-        system_prompt, context_dirs = _build_chat_context(engagement_id)
+    # Build context — system prompt only on first message, dirs on every message
+    built_prompt, context_dirs = _build_chat_context(engagement_id)
+    system_prompt = "" if is_resume else built_prompt
 
     # Auto-title from first user message
     if chat["title"] == "New Chat":

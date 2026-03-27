@@ -181,9 +181,15 @@ Your output will be collected automatically via structured JSON output. Do not w
                     "cost_usd": result.cost_usd}
 
         validation = parse_agent_result(result.result, ['validated', 'poc'], "strict_validator")
+        validated = validation.get("validated", False)
+        poc = validation.get("poc", {})
+        # Don't accept validated=true without an actual PoC
+        if validated and (not poc or not poc.get("code")):
+            validated = False
+            validation["reason"] = validation.get("reason", "") or "Marked validated but no PoC provided"
         return {
-            "validated": validation.get("validated", False),
+            "validated": validated,
             "reason": validation.get("reason", ""),
-            "updates": {"poc": validation.get("poc", {})} if validation.get("validated") else {},
+            "updates": {"poc": poc} if validated else {},
             "cost_usd": result.cost_usd,
         }
