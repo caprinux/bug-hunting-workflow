@@ -1509,9 +1509,37 @@ h2 {
   opacity: 0.9;
 }
 
-.chat-thinking {
+.chat-thinking-label {
   color: var(--text-muted);
   font-style: italic;
+}
+
+.chat-thinking-block,
+.chat-thinking-block-inline {
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.chat-thinking-block summary,
+.chat-thinking-block-inline summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 12px;
+  user-select: none;
+}
+
+.chat-thinking-content {
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
 .chat-cursor {

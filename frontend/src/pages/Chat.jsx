@@ -18,6 +18,7 @@ export default function Chat() {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [streamingText, setStreamingText] = useState('')
+  const [thinkingText, setThinkingText] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -77,6 +78,10 @@ export default function Chat() {
     lastProcessedEvent.current = events.length
 
     for (const evt of newEvents) {
+      if (evt.type === 'chat_thinking' && evt.data?.chat_id === activeChatId) {
+        setStreaming(true)
+        setThinkingText(prev => prev + (evt.data.text || ''))
+      }
       if (evt.type === 'chat_stream' && evt.data?.chat_id === activeChatId) {
         setStreaming(true)
         setStreamingText(prev => prev + (evt.data.text || ''))
@@ -84,6 +89,7 @@ export default function Chat() {
       if (evt.type === 'chat_complete' && evt.data?.chat_id === activeChatId) {
         setStreaming(false)
         setStreamingText('')
+        setThinkingText('')
         // Reload messages and files
         api.getChat(engagementId, activeChatId)
           .then(data => setMessages(data.messages || []))
@@ -275,15 +281,29 @@ export default function Chat() {
                   </div>
                 ))}
 
-                {/* Streaming partial message */}
+                {/* Streaming thinking + partial message */}
+                {streaming && thinkingText && !streamingText && (
+                  <div className="chat-msg-row chat-msg-row-left">
+                    <details className="chat-thinking-block" open>
+                      <summary>Thinking...</summary>
+                      <div className="chat-thinking-content">{thinkingText}</div>
+                    </details>
+                  </div>
+                )}
                 {streaming && (
                   <div className="chat-msg-row chat-msg-row-left">
                     <div className="chat-msg-bubble chat-msg-assistant chat-msg-streaming">
+                      {thinkingText && streamingText && (
+                        <details className="chat-thinking-block-inline">
+                          <summary>Thought for a moment</summary>
+                          <div className="chat-thinking-content">{thinkingText}</div>
+                        </details>
+                      )}
                       {streamingText ? (
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingText}</ReactMarkdown>
-                      ) : (
-                        <span className="chat-thinking">Thinking...</span>
-                      )}
+                      ) : !thinkingText ? (
+                        <span className="chat-thinking-label">Thinking...</span>
+                      ) : null}
                       <span className="chat-cursor" />
                     </div>
                   </div>

@@ -58,7 +58,7 @@ class EventManager:
         msg_json = json.dumps(message)
 
         # Persist to database (skip high-frequency stream events to avoid flooding the DB)
-        if run_id and event_type not in ("agent_stream", "chat_stream"):
+        if run_id and event_type not in ("agent_stream", "chat_stream", "chat_thinking"):
             try:
                 from bug_hunter.core.database import create_event
                 create_event(engagement_id, run_id, event_type, stage, data, timestamp)

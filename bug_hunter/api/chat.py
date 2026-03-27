@@ -251,16 +251,20 @@ async def _stream_response(engagement_id: str, chat_id: str, prompt: str,
                             workspace: str = "", context_dirs: list[str] = None):
     """Run Claude and stream tokens to WebSocket."""
     accumulated: list[str] = []
+    thinking_accumulated: list[str] = []
 
     def on_event(event: StreamEvent):
         if event.type == "assistant":
             raw = event.data
             text = ""
-            # Handle content_block_delta with text_delta
+            thinking = ""
+            # Handle content_block_delta with text_delta or thinking_delta
             if raw.get("type") == "content_block_delta":
                 delta = raw.get("delta", {})
                 if delta.get("type") == "text_delta":
                     text = delta.get("text", "")
+                elif delta.get("type") == "thinking_delta":
+                    thinking = delta.get("thinking", "")
             # Handle full message content (non-streaming fallback)
             elif raw.get("type") == "message":
                 content = raw.get("content", [])
@@ -268,12 +272,25 @@ async def _stream_response(engagement_id: str, chat_id: str, prompt: str,
                     for block in content:
                         if block.get("type") == "text" and block.get("text"):
                             text += block["text"]
+                        elif block.get("type") == "thinking" and block.get("thinking"):
+                            thinking += block["thinking"]
             if text:
                 accumulated.append(text)
                 try:
                     loop = asyncio.get_running_loop()
                     loop.create_task(
                         event_manager.emit_chat_stream(engagement_id, chat_id, text)
+                    )
+                except RuntimeError:
+                    pass
+            if thinking:
+                thinking_accumulated.append(thinking)
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(
+                        event_manager.emit("chat_thinking", engagement_id, data={
+                            "chat_id": chat_id, "text": thinking,
+                        })
                     )
                 except RuntimeError:
                     pass
