@@ -67,13 +67,12 @@ def _build_chat_context(engagement_id: str) -> tuple[str, list[str]]:
     eng_cfg = cfg.get("engagement", {})
     output_dir = cfg.get("pipeline", {}).get("output_dir", "./audit_output")
 
-    parts = []
-    parts.append(f"# Engagement: {eng['name']}")
-    parts.append(f"Type: {eng['type']}")
-
     eng_dir = os.path.join(os.path.abspath(output_dir), "engagements", engagement_id)
     os.makedirs(eng_dir, exist_ok=True)
     extra_dirs = [eng_dir]
+
+    workspace = os.path.join(eng_dir, "chat_workspace")
+    os.makedirs(workspace, exist_ok=True)
 
     # Write scope/infra to a file
     context_file = os.path.join(eng_dir, "chat_context.md")
@@ -82,8 +81,8 @@ def _build_chat_context(engagement_id: str) -> tuple[str, list[str]]:
             f.write(f"## Scope\n{eng_cfg['scope_definition']}\n\n")
         if eng_cfg.get("infra_config"):
             f.write(f"## Infrastructure\n{eng_cfg['infra_config']}\n")
-    parts.append(f"\nEngagement scope and infrastructure: {context_file}")
 
+    # Gather data file references
     cumulative_dir = os.path.join(eng_dir, "cumulative")
     file_refs = []
     for filename, label in [
@@ -109,7 +108,6 @@ def _build_chat_context(engagement_id: str) -> tuple[str, list[str]]:
         if os.path.exists(bugs_path):
             file_refs.append(f"- All bugs found: {bugs_path}")
 
-        # Find source code path from setup
         setup_path = os.path.join(run_dir, "00_setup", "setup.json")
         if os.path.exists(setup_path):
             try:
@@ -122,19 +120,34 @@ def _build_chat_context(engagement_id: str) -> tuple[str, list[str]]:
     if not source_path:
         source_path = eng_cfg.get("source_path", "")
 
+    abs_source = ""
     if source_path and os.path.isdir(source_path):
         abs_source = os.path.abspath(source_path)
-        file_refs.append(f"- Source code: {abs_source}")
         extra_dirs.append(abs_source)
 
-    # Shared resources
     chat_resources = os.path.join(os.path.abspath(output_dir), "chat_resources")
-    if os.path.isdir(chat_resources) and os.listdir(chat_resources):
-        file_refs.append(f"- Shared reference files: {chat_resources}")
+    if os.path.isdir(chat_resources):
         extra_dirs.append(chat_resources)
 
+    # Build prompt
+    parts = [
+        "You are a security consultant assistant. Your job is to answer questions about this security audit engagement and help the consultant with any task.",
+        f"\n# Engagement: {eng['name']}",
+        f"Type: {eng['type']}",
+        f"\n## Your Directories",
+        f"- Working directory (cwd): {workspace} — save any output files here",
+        f"- Engagement data: {eng_dir}",
+    ]
+    if abs_source:
+        parts.append(f"- Source code (read-only): {abs_source}")
+    if os.path.isdir(chat_resources) and os.listdir(chat_resources):
+        parts.append(f"- Shared reference files: {chat_resources}")
+
+    parts.append(f"\n## Engagement Details")
+    parts.append(f"- Scope and infrastructure: {context_file}")
+
     if file_refs:
-        parts.append("\n## Available Data")
+        parts.append(f"\n## Available Data")
         parts.extend(file_refs)
 
     parts.append(f"\n## Runs ({len(runs)} total)")
