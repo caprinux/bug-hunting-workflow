@@ -13,7 +13,7 @@ export default function Login({ onLogin, theme, toggleTheme }) {
     setError(null)
     try {
       const token = await api.login(password)
-      sessionStorage.setItem('bhw_token', token)
+      localStorage.setItem('bhw_token', token)
       setAuthToken(token)
       onLogin()
     } catch (e) {

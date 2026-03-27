@@ -17,7 +17,7 @@ import Platforms from './pages/Platforms'
 
 export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
-  const [authenticated, setAuthenticated] = useState(() => !!sessionStorage.getItem('bhw_token'))
+  const [authenticated, setAuthenticated] = useState(() => !!localStorage.getItem('bhw_token'))
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -28,7 +28,7 @@ export default function App() {
   useEffect(() => {
     if (!authenticated) return
     const interval = setInterval(() => {
-      if (!sessionStorage.getItem('bhw_token')) {
+      if (!localStorage.getItem('bhw_token')) {
         setAuthenticated(false)
       }
     }, 1000)
@@ -38,7 +38,7 @@ export default function App() {
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark')
 
   const handleLogout = useCallback(() => {
-    sessionStorage.removeItem('bhw_token')
+    localStorage.removeItem('bhw_token')
     setAuthenticated(false)
   }, [])
 

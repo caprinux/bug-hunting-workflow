@@ -2,11 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 
 function getAuthToken() {
   // The frontend stores the signed session token after a successful login.
-  return sessionStorage.getItem('bhw_token') || ''
+  return localStorage.getItem('bhw_token') || ''
 }
 
 export function setAuthToken(token) {
-  sessionStorage.setItem('bhw_token', token)
+  localStorage.setItem('bhw_token', token)
 }
 
 export function useWebSocket(engagementId = null) {
@@ -67,7 +67,7 @@ export function useWebSocket(engagementId = null) {
       // 1008 = Policy Violation (server rejected auth). Don't reconnect.
       if (evt.code === 1008) {
         console.warn('WebSocket auth rejected — clearing token')
-        sessionStorage.removeItem('bhw_token')
+        localStorage.removeItem('bhw_token')
         return
       }
       reconnectTimer.current = setTimeout(connect, 3000)

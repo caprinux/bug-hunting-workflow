@@ -1,7 +1,7 @@
 const API_BASE = '/api'
 
 function getAuthHeader() {
-  const token = sessionStorage.getItem('bhw_token') || ''
+  const token = localStorage.getItem('bhw_token') || ''
   if (!token) return {}
   return { 'Authorization': 'Bearer ' + token }
 }
@@ -12,7 +12,7 @@ async function request(path, options = {}) {
     ...options,
   })
   if (res.status === 401) {
-    sessionStorage.removeItem('bhw_token')
+    localStorage.removeItem('bhw_token')
     window.location.reload()
     throw new Error('Unauthorized')
   }
