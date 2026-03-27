@@ -38,13 +38,15 @@ LIMIT_ERROR_PATTERNS = (
 PIPELINE_STAGES = [
     ("setup", 0),
     ("scoper", 1),
-    ("bug_hunter", 2),
-    ("deduplicator", 3),
-    ("scope_validator", 4),
-    ("strict_validator", 5),
-    ("perfectionist", 6),
-    ("strict_triager", 7),
-    ("bug_chainer", 8),
+    ("skills_hunter", 2),
+    ("bug_hunter", 3),
+    ("variant_hunter", 4),
+    ("deduplicator", 5),
+    ("scope_validator", 6),
+    ("strict_validator", 7),
+    ("perfectionist", 8),
+    ("strict_triager", 9),
+    ("bug_chainer", 10),
 ]
 
 # Keep legacy constants for backward compatibility
@@ -77,6 +79,10 @@ class PipelineOrchestrator:
                 multi_agent = len(self.config.bug_hunter.agents) > 1
                 if not self.config.deduplicator.enabled and not multi_agent:
                     continue
+            if name == "skills_hunter" and not self.config.skills_hunter.enabled:
+                continue
+            if name == "variant_hunter" and not self.config.variant_hunter.enabled:
+                continue
             if name == "perfectionist" and not self.config.perfectionist.enabled:
                 continue
             if name == "bug_chainer" and not self.config.bug_chainer.enabled:
@@ -244,6 +250,13 @@ class PipelineOrchestrator:
 
                 if stage_name in pipeline_state.get("completed_stages", []):
                     logger.info(f"Skipping completed stage: {stage_name}")
+                    continue
+
+                # Skip skills_hunter on rehunts (it only needs to run once)
+                if stage_name == "skills_hunter" and run_type == "rehunt":
+                    logger.info("Skipping skills_hunter on rehunt")
+                    await self._mark_stage_skipped(run_id, stage_name)
+                    pipeline_state["completed_stages"].append(stage_name)
                     continue
 
                 pipeline_state["current_stage"] = stage_name

@@ -4,7 +4,9 @@ from bug_hunter.pipeline.stages.registry import get, list_stages
 
 from bug_hunter.pipeline.stages.setup import SetupStage
 from bug_hunter.pipeline.stages.scoper import ScoperStage
+from bug_hunter.pipeline.stages.skills_hunter import SkillsHunterStage
 from bug_hunter.pipeline.stages.bug_hunter import BugHunterStage
+from bug_hunter.pipeline.stages.variant_hunter import VariantHunterStage
 from bug_hunter.pipeline.stages.deduplicator import DeduplicatorStage
 from bug_hunter.pipeline.stages.scope_validator import ScopeValidatorStage
 from bug_hunter.pipeline.stages.strict_validator import StrictValidatorStage
@@ -15,8 +17,9 @@ from bug_hunter.pipeline.stages.summarizer import SummarizerStage
 
 __all__ = [
     "get", "list_stages",
-    "SetupStage", "ScoperStage",
-    "BugHunterStage", "DeduplicatorStage", "ScopeValidatorStage",
+    "SetupStage", "ScoperStage", "SkillsHunterStage",
+    "BugHunterStage", "VariantHunterStage",
+    "DeduplicatorStage", "ScopeValidatorStage",
     "StrictValidatorStage", "PerfectionistStage", "StrictTriagerStage",
     "BugChainerStage", "SummarizerStage",
 ]

@@ -78,9 +78,21 @@ class BugChainerConfig:
 
 
 @dataclass
+class SkillsHunterConfig:
+    enabled: bool = True
+
+
+@dataclass
+class VariantHunterConfig:
+    enabled: bool = True
+
+
+@dataclass
 class ModelsConfig:
     scoper: str = "opus"
+    skills_hunter: str = "opus"
     bug_hunter_subagent: str = "opus"
+    variant_hunter: str = "opus"
     deduplicator: str = "opus"
     strict_validator: str = "opus"
     perfectionist: str = "opus"
@@ -103,6 +115,8 @@ class AppConfig:
     perfectionist: PerfectionistConfig = field(default_factory=PerfectionistConfig)
     strict_triager: StrictTriagerConfig = field(default_factory=StrictTriagerConfig)
     bug_chainer: BugChainerConfig = field(default_factory=BugChainerConfig)
+    skills_hunter: SkillsHunterConfig = field(default_factory=SkillsHunterConfig)
+    variant_hunter: VariantHunterConfig = field(default_factory=VariantHunterConfig)
     models: ModelsConfig = field(default_factory=ModelsConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
     # Legacy aliases for backward compatibility with existing config files
@@ -119,6 +133,7 @@ def _merge_dict_into_dataclass(dc: object, data: dict) -> None:
                                 BugHunterConfig, DeduplicatorConfig,
                                 StrictValidatorConfig, PerfectionistConfig,
                                 StrictTriagerConfig, BugChainerConfig,
+                                SkillsHunterConfig, VariantHunterConfig,
                                 ModelsConfig, AuthConfig)):
             if isinstance(value, dict):
                 _merge_dict_into_dataclass(current, value)

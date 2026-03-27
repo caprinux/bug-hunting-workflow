@@ -4,7 +4,9 @@ import ElapsedTimer from './ElapsedTimer'
 const STAGE_LABELS = {
   setup: 'Setup',
   scoper: 'Scoper',
+  skills_hunter: 'Skills Hunter',
   bug_hunter: 'Bug Hunter',
+  variant_hunter: 'Variant Hunter',
   deduplicator: 'De-duplicator',
   scope_validator: 'Scope Check',
   strict_validator: 'Validator',

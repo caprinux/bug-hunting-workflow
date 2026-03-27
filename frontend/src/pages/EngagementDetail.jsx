@@ -38,6 +38,8 @@ export default function EngagementDetail() {
         iterations: cfg.bug_hunter?.iterations || cfg.broad_bug_hunter?.iterations || 1,
         mode: cfg.bug_hunter?.mode || 'parallel',
         subagent_timeout: cfg.pipeline?.subagent_timeout || 3600,
+        skills_hunter_enabled: cfg.skills_hunter?.enabled !== false,
+        variant_hunter_enabled: cfg.variant_hunter?.enabled !== false,
         perfectionist_enabled: cfg.perfectionist?.enabled === true,
         bug_chainer_enabled: cfg.bug_chainer?.enabled === true,
       })
@@ -269,6 +271,22 @@ export default function EngagementDetail() {
             </div>
             <div className="form-group">
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={engConfig.skills_hunter_enabled}
+                  onChange={e => setEngConfig(c => ({ ...c, skills_hunter_enabled: e.target.checked }))} />
+                Skills Hunter
+              </label>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Run semgrep, insecure defaults search, and supply chain audit</span>
+            </div>
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={engConfig.variant_hunter_enabled}
+                  onChange={e => setEngConfig(c => ({ ...c, variant_hunter_enabled: e.target.checked }))} />
+                Variant Hunter
+              </label>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Search for additional instances of discovered bug patterns</span>
+            </div>
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                 <input type="checkbox" checked={engConfig.perfectionist_enabled}
                   onChange={e => setEngConfig(c => ({ ...c, perfectionist_enabled: e.target.checked }))} />
                 Perfectionist
@@ -291,6 +309,8 @@ export default function EngagementDetail() {
                   await api.updateEngagementConfig(id, {
                     bug_hunter: { agents: engConfig.agents, codex_model: engConfig.codex_model, iterations: engConfig.iterations, mode: engConfig.mode },
                     pipeline: { subagent_timeout: engConfig.subagent_timeout },
+                    skills_hunter: { enabled: engConfig.skills_hunter_enabled },
+                    variant_hunter: { enabled: engConfig.variant_hunter_enabled },
                     perfectionist: { enabled: engConfig.perfectionist_enabled },
                     bug_chainer: { enabled: engConfig.bug_chainer_enabled },
                   })
