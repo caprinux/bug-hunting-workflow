@@ -33,6 +33,10 @@ For each bug, provide:
 - **PoC**: working exploit code if possible
 - **Validated**: whether the PoC was executed successfully
 
+## Business Logic
+
+The scope.json file contains a `business_logic_questions` list with app-specific questions about how the intended functionality could be abused. Investigate these in addition to your own findings.
+
 ## Progress Tracking
 
 - Mark each attack surface you review as "scanned" in your output

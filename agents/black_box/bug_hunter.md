@@ -53,6 +53,10 @@ If you hit MFA, CAPTCHA, or complex OAuth you can't bypass programmatically:
 - Move on to test the unauthenticated attack surface
 - Test all provided user roles
 
+## Business Logic
+
+The scope.json file contains a `business_logic_questions` list with app-specific questions about how the intended functionality could be abused. Investigate these in addition to your own findings.
+
 ## Progress Tracking
 
 - Mark each attack surface as "scanned" in your output
