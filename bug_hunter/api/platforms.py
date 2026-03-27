@@ -148,8 +148,8 @@ Extract and output a JSON object with these exact fields:
   "non_qualifying_vulns": "one vulnerability type per line, extracted from non_qualifying_vulnerability list",
   "assets_in_scope": "one asset per line with type (e.g., '*.example.com (web application, HIGH)')",
   "assets_not_in_scope": "one asset per line from out_of_scope list",
-  "scope_notes": "any important rules, special conditions, or restrictions from rules_text",
-  "additional_context": "any extra context worth noting for the bug hunter — VPN requirements, account access info, reward tiers, program-specific guidance",
+  "scope_notes": "ONLY technical testing constraints that affect how a bug hunter should test — e.g., 'do not test in production hours', 'only test on staging environment', 'do not perform DoS attacks', 'rate limit to N requests/sec'. Empty string if none.",
+  "additional_context": "technical context useful for bug hunting — VPN requirements, account access info, staging URLs, API documentation links, special testing instructions. Empty string if none.",
   "source_repo": "any GitHub/GitLab/source code repository URLs found in scopes OR rules_text, comma-separated if multiple (e.g., 'https://gitlab.com/org/repo1, https://github.com/org/repo2'). Look for markdown links like [name](url) in rules_text. Empty string if none.",
   "infra_url": "primary target URL if identifiable (empty string if none)",
   "credentials": "extract ALL credentials from hunter_credentials field. Format each as 'role: username / password'. Include all accounts, API keys, tokens, and access details. Empty string if none."
@@ -157,7 +157,15 @@ Extract and output a JSON object with these exact fields:
 
 Be thorough — include all qualifying and non-qualifying vulnerability types.
 For assets_in_scope, include the scope_type and asset_value for each entry.
-For scope_notes, summarize the key rules — don't include the entire rules text."""
+
+IMPORTANT: Exclude ALL platform/administrative information that does not help the bug hunter find bugs:
+- Duplicate/reporting policies (first reporter rules, 24-hour windows, report via platform only)
+- Eligibility restrictions (employee exclusions, age requirements, country restrictions)
+- Reward tiers, bounty amounts, payment terms
+- Legal disclaimers, safe harbor language, responsible disclosure timelines
+- Reporter conduct rules, communication policies
+- How rewards are calculated or what severity ratings map to
+Only keep information that directly affects HOW to test the target system."""
 
             result = await run_claude(
                 prompt=prompt,
