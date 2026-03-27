@@ -23,13 +23,31 @@ You are performing automated security scanning using static analysis tools and s
 
 ## Scan 2: Insecure Defaults
 
-Search the codebase for fail-open security patterns:
+Search for **fail-open** security patterns — code that runs insecurely when configuration is missing, as opposed to fail-secure code that crashes on missing config.
+
+### Language-specific fail-open patterns to grep for:
+- Python: `getenv.*or ['"]`, `os.environ.get.*,\s*['"]`
+- JavaScript: `process\.env\.\w+ \|\| ['"]`, `env\.\w+ \?\? ['"]`
+- Ruby: `ENV\.fetch.*default:`, `ENV\[.*\]\s*\|\|`
+- Go: `os\.Getenv` followed by fallback assignment
+- Java: `getProperty.*,\s*["']`
+
+### What to flag (fail-open = VULNERABLE):
+- `SECRET = os.getenv('KEY') or 'default'` — app runs with weak secret
+- `AUTH_REQUIRED = env.get('AUTH', 'false')` — auth disabled by default
+- `DEBUG = config.get('debug', True)` — debug on by default
+
+### What NOT to flag (fail-secure = SAFE):
+- `SECRET = os.environ['KEY']` — crashes if missing, that's correct
+- `SECRET = os.getenv('KEY') or sys.exit('KEY required')` — fails safely
+
+### Other patterns to search for:
 - Hardcoded secrets: API keys, passwords, tokens, private keys in source files
 - Default credentials: admin/admin, test/test, hardcoded password checks
 - Weak cryptography: MD5/SHA1 for security purposes, ECB mode, small key sizes, no salt
-- Fail-open configurations: `verify=False`, `insecure: true`, disabled CSRF, permissive CORS (`*` with credentials)
-- Debug/test modes enabled in production configs
-- Environment variable fallbacks with hardcoded secrets: `getenv("KEY") or "default_secret"`
+- Permissive CORS: `origin: *` with `credentials: true`
+- Debug/introspection left enabled: GraphQL introspection, stack traces in HTTP responses, verbose SQL errors, `/debug/` or `/test/` endpoints
+- `verify=False`, `insecure: true`, disabled CSRF
 
 Use grep/ripgrep to search efficiently. Read surrounding code for context before reporting.
 

@@ -48,6 +48,16 @@ Distinguish between:
 - **Infrastructure issue**: Network timeout, service down, auth expired → should be retried
 - **PoC error**: Your PoC has a bug, not the target → fix and retry
 
+## Rationalizations You Must NOT Accept
+
+Do not dismiss a finding for any of these reasons:
+- **"Production config overrides it"** → The fallback/default is still exploitable if config is ever missing. Report it.
+- **"It's behind authentication"** → Defense-in-depth matters. A compromised session exploits the underlying bug. Report it.
+- **"Only affects staging/dev"** → Staging often has production data, and staging bugs indicate production code paths. Report it.
+- **"Would need additional access"** → Partial exploitation chains are valid findings. Report the primitive.
+- **"It's intended behavior"** → Only dismiss if you can cite documentation or code comments confirming the design choice. Assumed intent is not evidence.
+- **"The framework prevents this"** → Verify the framework protection is actually active (not disabled, not bypassed, correct version). Cite the specific protection.
+
 ## CAPTCHA Handling
 
 If your PoC hits a CAPTCHA, use the captcha-solver MCP tools to bypass it. Do not mark a bug as "cannot validate" just because of a CAPTCHA.

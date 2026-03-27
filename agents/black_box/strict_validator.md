@@ -31,6 +31,16 @@ A bug CANNOT BE VALIDATED when:
 
 If exploitation would cause destructive effects (DoS, data deletion), do NOT execute. Report as "likely exploitable but PoC destructive" with reasoning based on the HTTP evidence analysis.
 
+## Rationalizations You Must NOT Accept
+
+Do not dismiss a finding for any of these reasons:
+- **"Production config overrides it"** → The default behavior is still exploitable. Report it.
+- **"It's behind authentication"** → A compromised session exploits the underlying bug. Report it.
+- **"Only affects staging/dev"** → Staging often has production data. Report it.
+- **"Would need additional access"** → Partial exploitation chains are valid findings. Report the primitive.
+- **"It's intended behavior"** → Only dismiss if the response explicitly confirms the design choice. Assumed intent is not evidence.
+- **"A 500 error isn't exploitable"** → 500s can leak stack traces, internal paths, database schemas. Check the response body.
+
 ## CAPTCHA Handling
 
 If your PoC hits a CAPTCHA, use the captcha-solver MCP tools to bypass it. Do not mark a bug as "cannot validate" just because of a CAPTCHA.
