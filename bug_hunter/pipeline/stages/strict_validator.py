@@ -44,6 +44,17 @@ class StrictValidatorStage(PipelineStage):
         eng_type = context.engagement["type"]
         infra_config = eng_config.get("engagement", {}).get("infra_config", "")
 
+        # For revalidation runs, append testing_setup infra info
+        if context.run_type == "revalidation":
+            testing_infra_file = os.path.join(
+                context.run_dir, "00_testing_setup", "testing_infra.txt"
+            )
+            if os.path.exists(testing_infra_file):
+                with open(testing_infra_file) as f:
+                    testing_infra = f.read().strip()
+                if testing_infra:
+                    infra_config = f"{infra_config}\n\n## Local Testing Environment\n{testing_infra}" if infra_config else testing_infra
+
         # Point agent to scope file instead of inlining
         scope_file = self._stage_output_path(context, "scoper", "scope.json")
 

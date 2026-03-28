@@ -49,6 +49,13 @@ PIPELINE_STAGES = [
     ("bug_chainer", 10),
 ]
 
+# Revalidation pipeline — testing setup + validation + triage only
+REVALIDATION_STAGES = [
+    ("testing_setup", 0),
+    ("strict_validator", 1),
+    ("strict_triager", 2),
+]
+
 # Keep legacy constants for backward compatibility
 SOURCE_CODE_STAGES = PIPELINE_STAGES
 BLACK_BOX_STAGES = PIPELINE_STAGES
@@ -69,7 +76,10 @@ class PipelineOrchestrator:
         self._current_run_id: Optional[str] = None
         self._current_task: Optional[asyncio.Task] = None
 
-    def _get_stage_list(self) -> list[tuple[str, int]]:
+    def _get_stage_list(self, run_type: str = "initial") -> list[tuple[str, int]]:
+        if run_type == "revalidation":
+            return list(REVALIDATION_STAGES)
+
         stages = list(PIPELINE_STAGES)
 
         filtered = []
@@ -106,7 +116,8 @@ class PipelineOrchestrator:
         return output_dir / "engagements" / self.engagement_id / "cumulative"
 
     async def start_run(self, run_type: str = "initial",
-                        rehunt_target: str = None) -> str:
+                        rehunt_target: str = None,
+                        setup_instructions: str = None) -> str:
         """Start a new pipeline run.
 
         Creates the run with status='running' immediately so the unique
@@ -115,7 +126,9 @@ class PipelineOrchestrator:
         """
         # This INSERT will raise IntegrityError if another run is already
         # 'running' for this engagement, thanks to idx_one_active_run_per_engagement.
-        run = create_run(self.engagement_id, run_type, rehunt_target, status="running")
+        # For revalidation, store setup_instructions in the rehunt_target DB field
+        target = setup_instructions if run_type == "revalidation" else rehunt_target
+        run = create_run(self.engagement_id, run_type, target, status="running")
         run_id = run["id"]
         self._current_run_id = run_id
 
@@ -130,7 +143,7 @@ class PipelineOrchestrator:
         if not config_path.exists():
             save_config(self.config, str(config_path))
 
-        stages = self._get_stage_list()
+        stages = self._get_stage_list(run_type)
         for stage_name, stage_order in stages:
             create_stage_result(run_id, stage_name, stage_order)
 
@@ -140,6 +153,12 @@ class PipelineOrchestrator:
         if run_type == "rehunt":
             rehunt_copied_stages = self._copy_prior_stage_outputs(run_id, run_dir, ["setup", "scoper"])
             self._copy_bug_hunter_progress(run_id, run_dir)
+
+        # For revalidation: copy setup/scoper from prior run (for context),
+        # and reset cannot_validate bugs to found so validator picks them up
+        if run_type == "revalidation":
+            self._copy_prior_stage_outputs(run_id, run_dir, ["setup", "scoper"])
+            self._prepare_revalidation_bugs(run_id)
 
         await event_manager.emit_stage_update(
             self.engagement_id, run_id, "", "running",
@@ -223,7 +242,7 @@ class PipelineOrchestrator:
         """Execute the full pipeline sequentially."""
         self._running = True
         run_dir = self._get_run_dir(run_id)
-        stages = self._get_stage_list()
+        stages = self._get_stage_list(run_type)
 
         pipeline_state = {"completed_stages": [], "current_stage": None, "failed": False}
 
@@ -652,6 +671,30 @@ class PipelineOrchestrator:
 
             if surfaces_file.exists():
                 break
+
+    def _prepare_revalidation_bugs(self, run_id: str):
+        """Clone cannot_validate bugs from prior runs into this revalidation run as 'found'.
+
+        Creates new bug records (linked to this run_id) so the strict_validator
+        picks them up. The original bugs in prior runs are left untouched.
+        """
+        from bug_hunter.core.database import create_bug, get_db
+
+        cv_bugs = list_bugs(self.engagement_id, status="cannot_validate")
+        if not cv_bugs:
+            logger.info("Revalidation: no cannot_validate bugs to revalidate")
+            return
+
+        count = 0
+        for bug in cv_bugs:
+            bd = dict(bug["bug_data"])
+            # Clear previous validation failure info
+            bd.pop("cannot_validate_reason", None)
+            bd["validated"] = False
+            create_bug(self.engagement_id, run_id, bd)
+            count += 1
+
+        logger.info(f"Revalidation: cloned {count} cannot_validate bugs into run {run_id[:8]}")
 
     def _save_pipeline_state(self, run_dir: Path, state: dict):
         state_file = run_dir / "pipeline_state.json"

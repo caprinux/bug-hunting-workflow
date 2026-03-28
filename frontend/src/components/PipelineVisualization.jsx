@@ -14,6 +14,7 @@ const STAGE_LABELS = {
   strict_triager: 'Triager',
   bug_chainer: 'Bug Chainer',
   summarizer: 'Summary Report',
+  testing_setup: 'Testing Setup',
 }
 
 const STATUS_COLORS = {

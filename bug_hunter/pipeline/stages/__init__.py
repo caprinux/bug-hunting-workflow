@@ -14,6 +14,7 @@ from bug_hunter.pipeline.stages.perfectionist import PerfectionistStage
 from bug_hunter.pipeline.stages.strict_triager import StrictTriagerStage
 from bug_hunter.pipeline.stages.bug_chainer import BugChainerStage
 from bug_hunter.pipeline.stages.summarizer import SummarizerStage
+from bug_hunter.pipeline.stages.testing_setup import TestingSetupStage
 
 __all__ = [
     "get", "list_stages",
@@ -21,5 +22,5 @@ __all__ = [
     "BugHunterStage", "VariantHunterStage",
     "DeduplicatorStage", "ScopeValidatorStage",
     "StrictValidatorStage", "PerfectionistStage", "StrictTriagerStage",
-    "BugChainerStage", "SummarizerStage",
+    "BugChainerStage", "SummarizerStage", "TestingSetupStage",
 ]

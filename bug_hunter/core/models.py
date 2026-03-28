@@ -19,8 +19,9 @@ class CreateEngagementRequest(BaseModel):
 
 
 class StartRunRequest(BaseModel):
-    run_type: str = Field(default="initial", pattern="^(initial|rehunt)$")
+    run_type: str = Field(default="initial", pattern="^(initial|rehunt|revalidation)$")
     rehunt_target: str = ""
+    setup_instructions: str = ""
 
 
 class EngagementResponse(BaseModel):

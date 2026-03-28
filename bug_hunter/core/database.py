@@ -64,7 +64,7 @@ def init_db(db_path: Optional[str] = None) -> None:
                 status TEXT NOT NULL DEFAULT 'pending'
                     CHECK(status IN ('pending', 'running', 'completed', 'failed', 'paused', 'cancelled')),
                 run_type TEXT NOT NULL DEFAULT 'initial'
-                    CHECK(run_type IN ('initial', 'rehunt')),
+                    CHECK(run_type IN ('initial', 'rehunt', 'revalidation')),
                 rehunt_target TEXT,
                 current_stage TEXT,
                 pipeline_state TEXT,
@@ -222,6 +222,47 @@ def _run_migrations(conn) -> None:
             """)
     except Exception:
         pass  # Table doesn't exist yet — init_db will create it
+
+    # Migration: expand runs run_type CHECK to include 'revalidation'.
+    try:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='runs'"
+        ).fetchone()
+        if row and row[0] and "revalidation" not in row[0]:
+            conn.executescript("""
+                PRAGMA foreign_keys=OFF;
+
+                ALTER TABLE runs RENAME TO runs_old;
+
+                CREATE TABLE runs (
+                    id TEXT PRIMARY KEY,
+                    engagement_id TEXT NOT NULL REFERENCES engagements(id),
+                    run_number INTEGER NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending'
+                        CHECK(status IN ('pending', 'running', 'completed', 'failed', 'paused', 'cancelled')),
+                    run_type TEXT NOT NULL DEFAULT 'initial'
+                        CHECK(run_type IN ('initial', 'rehunt', 'revalidation')),
+                    rehunt_target TEXT,
+                    current_stage TEXT,
+                    pipeline_state TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    cost_usd REAL DEFAULT 0.0,
+                    UNIQUE(engagement_id, run_number)
+                );
+
+                INSERT INTO runs SELECT * FROM runs_old;
+                DROP TABLE runs_old;
+
+                CREATE INDEX IF NOT EXISTS idx_runs_engagement ON runs(engagement_id);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_run_per_engagement
+                    ON runs(engagement_id) WHERE status = 'running';
+
+                PRAGMA foreign_keys=ON;
+            """)
+    except Exception:
+        pass
 
 
 def _now() -> str:

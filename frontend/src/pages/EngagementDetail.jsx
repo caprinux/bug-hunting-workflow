@@ -14,6 +14,8 @@ export default function EngagementDetail() {
   const [startingRun, setStartingRun] = useState(false)
   const [rehuntTarget, setRehuntTarget] = useState('')
   const [showRehunt, setShowRehunt] = useState(false)
+  const [setupInstructions, setSetupInstructions] = useState('')
+  const [showRevalidation, setShowRevalidation] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showDetails, setShowDetails] = useState(false)
   const [engConfig, setEngConfig] = useState({})
@@ -125,9 +127,14 @@ export default function EngagementDetail() {
           <button className="btn btn-primary" onClick={() => startRun()} disabled={startingRun}>
             {runs.length === 0 ? 'Start Pipeline' : 'New Run'}
           </button>
-          <button className="btn btn-secondary" onClick={() => setShowRehunt(!showRehunt)}>
+          <button className="btn btn-secondary" onClick={() => { setShowRehunt(!showRehunt); setShowRevalidation(false) }}>
             Re-hunt
           </button>
+          {runs.length > 0 && cannotValidate.length > 0 && (
+            <button className="btn btn-secondary" onClick={() => { setShowRevalidation(!showRevalidation); setShowRehunt(false) }}>
+              Revalidate ({cannotValidate.length})
+            </button>
+          )}
           <button className="btn btn-secondary" onClick={() => setShowSettings(!showSettings)}>
             Settings
           </button>
@@ -207,6 +214,32 @@ export default function EngagementDetail() {
               Start Re-hunt
             </button>
             <button className="btn btn-secondary" onClick={() => setShowRehunt(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {showRevalidation && (
+        <div className="rehunt-form">
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+            Set up a local testing environment to revalidate {cannotValidate.length} bugs that couldn't be validated.
+            Provide instructions for the setup agent (e.g., how to build and run the Docker environment).
+          </p>
+          <textarea value={setupInstructions} onChange={e => setSetupInstructions(e.target.value)}
+                    placeholder="e.g. Build the Docker image from the Dockerfile in the repo root, run docker-compose up, wait for the app to be healthy on port 8080. Run database migrations with: docker exec app python manage.py migrate"
+                    rows={5} />
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn btn-primary"
+                    disabled={!setupInstructions.trim() || startingRun}
+                    onClick={() => {
+                      setStartingRun(true)
+                      api.startRun(id, { run_type: 'revalidation', setup_instructions: setupInstructions.trim() })
+                        .then(() => loadAll())
+                        .catch(console.error)
+                        .finally(() => { setStartingRun(false); setShowRevalidation(false); setSetupInstructions('') })
+                    }}>
+              Start Revalidation
+            </button>
+            <button className="btn btn-secondary" onClick={() => setShowRevalidation(false)}>Cancel</button>
           </div>
         </div>
       )}
