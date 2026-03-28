@@ -58,9 +58,7 @@ class PipelineStage(ABC):
 
     def _get_stage_order(self, context: StageContext) -> int:
         """Get the numeric order for this stage."""
-        from bug_hunter.pipeline.orchestrator import SOURCE_CODE_STAGES, BLACK_BOX_STAGES
-        stages = SOURCE_CODE_STAGES if context.engagement["type"] == "source_code" else BLACK_BOX_STAGES
-        for name, order in stages:
+        for name, order in self._get_stage_lookup(context):
             if name == self.name:
                 return order
         return 99
@@ -69,17 +67,33 @@ class PipelineStage(ABC):
                             filename: str) -> str:
         """Get the absolute file path for a previous stage's output."""
         import os
-        from bug_hunter.pipeline.orchestrator import SOURCE_CODE_STAGES, BLACK_BOX_STAGES
-        stages = SOURCE_CODE_STAGES if context.engagement["type"] == "source_code" else BLACK_BOX_STAGES
 
-        order = 0
-        for name, o in stages:
-            if name == stage_name:
-                order = o
-                break
-
+        order = self._resolve_stage_order(context, stage_name)
         dir_name = f"{order:02d}_{stage_name}"
         return os.path.abspath(os.path.join(context.run_dir, dir_name, filename))
+
+    @staticmethod
+    def _get_stage_lookup(context: StageContext) -> list:
+        """Get the stage list appropriate for the current run type."""
+        from bug_hunter.pipeline.orchestrator import PIPELINE_STAGES, REVALIDATION_STAGES
+        if context.run_type == "revalidation":
+            return REVALIDATION_STAGES
+        return PIPELINE_STAGES
+
+    @staticmethod
+    def _resolve_stage_order(context: StageContext, stage_name: str) -> int:
+        """Resolve the numeric order for a stage, falling back to PIPELINE_STAGES
+        for copied prerequisite stages (e.g. scoper/setup in revalidation runs)."""
+        from bug_hunter.pipeline.orchestrator import PIPELINE_STAGES, REVALIDATION_STAGES
+        lookup = REVALIDATION_STAGES if context.run_type == "revalidation" else PIPELINE_STAGES
+        for name, order in lookup:
+            if name == stage_name:
+                return order
+        # Fall back to main pipeline for copied stages
+        for name, order in PIPELINE_STAGES:
+            if name == stage_name:
+                return order
+        return 99
 
     def read_previous_output(self, context: StageContext, stage_name: str,
                              filename: str) -> Any:

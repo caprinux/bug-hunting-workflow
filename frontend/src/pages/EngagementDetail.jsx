@@ -426,7 +426,7 @@ export default function EngagementDetail() {
                   <span className="run-type">{run.run_type}</span>
                   {run.cost_usd > 0 && <span className="cost">${run.cost_usd.toFixed(3)}</span>}
                 </div>
-                {run.rehunt_target && (
+                {run.rehunt_target && run.run_type !== 'revalidation' && (
                   <div className="run-rehunt">Target: {run.rehunt_target}</div>
                 )}
                 {run.current_stage && run.status === 'running' && (

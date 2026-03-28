@@ -206,7 +206,10 @@ async def api_download_chat_file(engagement_id: str, path: str = Query(...)):
     workspace = _get_chat_workspace(engagement_id)
     filepath = os.path.realpath(os.path.join(workspace, path))
     ws_real = os.path.realpath(workspace)
-    if not filepath.startswith(ws_real):
+    try:
+        if os.path.commonpath([ws_real, filepath]) != ws_real:
+            raise HTTPException(403, "Path traversal detected")
+    except ValueError:
         raise HTTPException(403, "Path traversal detected")
     if not os.path.isfile(filepath):
         raise HTTPException(404, "File not found")
@@ -248,6 +251,9 @@ async def api_update_chat(engagement_id: str, chat_id: str, body: UpdateChatRequ
 @router.get("/{chat_id}/streaming")
 async def api_chat_streaming_status(engagement_id: str, chat_id: str):
     """Check if a chat currently has an active streaming response."""
+    chat = get_chat(chat_id)
+    if not chat or chat["engagement_id"] != engagement_id:
+        raise HTTPException(404, "Chat not found")
     task = _active_chats.get(chat_id)
     is_streaming = task is not None and not task.done()
     return {"streaming": is_streaming}

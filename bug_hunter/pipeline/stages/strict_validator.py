@@ -46,8 +46,8 @@ class StrictValidatorStage(PipelineStage):
 
         # For revalidation runs, append testing_setup infra info
         if context.run_type == "revalidation":
-            testing_infra_file = os.path.join(
-                context.run_dir, "00_testing_setup", "testing_infra.txt"
+            testing_infra_file = self._stage_output_path(
+                context, "testing_setup", "testing_infra.txt"
             )
             if os.path.exists(testing_infra_file):
                 with open(testing_infra_file) as f:

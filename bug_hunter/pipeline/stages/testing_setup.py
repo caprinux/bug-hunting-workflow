@@ -95,16 +95,29 @@ class TestingSetupStage(PipelineStage):
         setup_result = parse_agent_result(result.result, ["status", "base_url"], "testing_setup")
 
         if not setup_result:
-            setup_result = {"status": "ready", "notes": "Setup completed (no structured output)"}
+            return StageResult(success=False, error="Setup agent returned no structured output", cost_usd=result.cost_usd)
+
+        if setup_result.get("status") != "ready" or not setup_result.get("base_url"):
+            self.write_output(context, "testing_setup.json", setup_result)
+            reason = setup_result.get("notes", setup_result.get("status", "unknown"))
+            if not setup_result.get("base_url") and setup_result.get("status") == "ready":
+                reason = "Setup reported ready but no base_url provided"
+            return StageResult(
+                success=False,
+                error=f"Testing environment setup failed: {reason}",
+                cost_usd=result.cost_usd,
+            )
 
         self.write_output(context, "testing_setup.json", setup_result)
 
-        # Write infra info to a file the validator can reference
+        # Write infra info as plain text for the validator to read
         if setup_result.get("base_url"):
             infra_notes = f"Testing environment: {setup_result['base_url']}"
             if setup_result.get("notes"):
                 infra_notes += f"\n{setup_result['notes']}"
-            self.write_output(context, "testing_infra.txt", infra_notes)
+            stage_dir = self.get_stage_dir(context)
+            with open(os.path.join(stage_dir, "testing_infra.txt"), "w") as f:
+                f.write(infra_notes)
 
         return StageResult(
             success=True,

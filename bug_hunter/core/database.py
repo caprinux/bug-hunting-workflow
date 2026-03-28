@@ -360,14 +360,24 @@ def create_run(engagement_id: str, run_type: str = "initial",
     return get_run(run_id)
 
 
-def get_run(run_id: str) -> Optional[dict]:
+def _parse_run_row(row) -> dict:
+    r = dict(row)
+    if r.get("pipeline_state"):
+        r["pipeline_state"] = json.loads(r["pipeline_state"])
+    # Redact setup instructions from API responses for revalidation runs
+    if r.get("run_type") == "revalidation" and r.get("rehunt_target"):
+        r["rehunt_target"] = None
+    return r
+
+
+def get_run(run_id: str, include_instructions: bool = False) -> Optional[dict]:
     with get_db() as conn:
         row = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
     if not row:
         return None
-    result = dict(row)
-    if result.get("pipeline_state"):
-        result["pipeline_state"] = json.loads(result["pipeline_state"])
+    result = _parse_run_row(row)
+    if include_instructions and dict(row).get("run_type") == "revalidation":
+        result["rehunt_target"] = dict(row).get("rehunt_target")
     return result
 
 
@@ -376,13 +386,7 @@ def list_runs(engagement_id: str) -> list[dict]:
         rows = conn.execute(
             "SELECT * FROM runs WHERE engagement_id = ? ORDER BY run_number", (engagement_id,)
         ).fetchall()
-    results = []
-    for row in rows:
-        r = dict(row)
-        if r.get("pipeline_state"):
-            r["pipeline_state"] = json.loads(r["pipeline_state"])
-        results.append(r)
-    return results
+    return [_parse_run_row(row) for row in rows]
 
 
 def update_run(run_id: str, **kwargs) -> Optional[dict]:

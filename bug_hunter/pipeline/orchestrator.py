@@ -170,13 +170,13 @@ class PipelineOrchestrator:
         self._pause_reason = ""
         self._running = True
         self._current_task = asyncio.create_task(
-            self._execute_pipeline(run_id, run_type, rehunt_target, rehunt_copied_stages)
+            self._execute_pipeline(run_id, run_type, target, rehunt_copied_stages)
         )
         return run_id
 
     async def resume_run(self, run_id: str) -> bool:
         """Resume a paused, failed, or cancelled pipeline run from its saved state."""
-        run = get_run(run_id)
+        run = get_run(run_id, include_instructions=True)
         if not run or run["engagement_id"] != self.engagement_id:
             return False
         if run["status"] not in ("paused", "failed", "cancelled"):
@@ -678,17 +678,35 @@ class PipelineOrchestrator:
         Creates new bug records (linked to this run_id) so the strict_validator
         picks them up. The original bugs in prior runs are left untouched.
         """
-        from bug_hunter.core.database import create_bug, get_db
+        from bug_hunter.core.database import create_bug, get_db, list_runs as db_list_runs
+
+        # Only clone from non-revalidation runs to avoid duplicating across
+        # repeated revalidation attempts
+        non_reval_run_ids = {
+            r["id"] for r in db_list_runs(self.engagement_id)
+            if r["run_type"] != "revalidation" and r["id"] != run_id
+        }
 
         cv_bugs = list_bugs(self.engagement_id, status="cannot_validate")
         if not cv_bugs:
             logger.info("Revalidation: no cannot_validate bugs to revalidate")
             return
 
+        # Deduplicate by bug_data id — take the latest per logical bug
+        seen_ids: set[str] = set()
+        unique_bugs = []
+        for bug in reversed(cv_bugs):
+            if bug["run_id"] not in non_reval_run_ids:
+                continue
+            bug_id = bug["bug_data"].get("id", bug["id"])
+            if bug_id in seen_ids:
+                continue
+            seen_ids.add(bug_id)
+            unique_bugs.append(bug)
+
         count = 0
-        for bug in cv_bugs:
+        for bug in unique_bugs:
             bd = dict(bug["bug_data"])
-            # Clear previous validation failure info
             bd.pop("cannot_validate_reason", None)
             bd["validated"] = False
             create_bug(self.engagement_id, run_id, bd)

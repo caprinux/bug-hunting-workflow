@@ -47,9 +47,11 @@ async def api_list_engagements():
         # Include bug counts for dashboard display
         all_bugs = list_bugs(eng["id"])
         active = [b for b in all_bugs if b["status"] in ("found", "confirmed", "validated")]
+        confirmed_only = [b for b in all_bugs if b["status"] == "confirmed"]
         eng["bug_counts"] = {
             "total": len(all_bugs),
-            "confirmed": len(active),
+            "active": len(active),
+            "confirmed": len(confirmed_only),
             "cannot_validate": sum(1 for b in all_bugs if b["status"] == "cannot_validate"),
         }
         # Severity breakdown of active bugs (found + confirmed + validated)

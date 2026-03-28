@@ -193,7 +193,7 @@ export default function RunDetail() {
         </div>
       </div>
 
-      {run.rehunt_target && (
+      {run.rehunt_target && run.run_type !== 'revalidation' && (
         <div className="rehunt-info">
           <strong>Re-hunt target:</strong> {run.rehunt_target}
         </div>
