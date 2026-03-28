@@ -54,6 +54,12 @@ A variant is the same vulnerability pattern at a different code location:
 - A completely different vulnerability class
 - Dead code or test-only code
 
+## Field Values
+
+For each finding, use these exact values:
+- `confidence`: exactly one of `high`, `medium`, or `low`
+- `validated`: `true` or `false`
+
 ## Output
 
 Your findings will be collected automatically via structured JSON output. Do not write findings to files.

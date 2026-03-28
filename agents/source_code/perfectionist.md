@@ -51,6 +51,12 @@ Given a confirmed, validated vulnerability with a working PoC, expand its exploi
 
 If you hit CAPTCHAs during escalation testing, use the captcha-solver MCP tools to bypass them.
 
+## Field Values
+
+Use these exact values — no other values are accepted:
+- `poc.execution_result`: exactly one of `success`, `failure`, `error`, or `destructive_skipped`
+- `poc.language`: e.g. `python`, `bash`, `javascript`, `curl`
+
 ## Output
 
 JSON object with `demonstrated` expansions (each with PoC) and `theoretical` expansions (with reason not demonstrated).

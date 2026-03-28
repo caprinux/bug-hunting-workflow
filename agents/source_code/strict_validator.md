@@ -62,6 +62,13 @@ Do not dismiss a finding for any of these reasons:
 
 If your PoC hits a CAPTCHA, use the captcha-solver MCP tools to bypass it. Do not mark a bug as "cannot validate" just because of a CAPTCHA.
 
+## Field Values
+
+Use these exact values — no other values are accepted:
+- `validated`: `true` or `false`
+- `poc.execution_result`: exactly one of `success`, `failure`, `error`, or `destructive_skipped`
+- `poc.language`: e.g. `python`, `bash`, `javascript`, `curl`
+
 ## Output
 
 JSON object with `validated` (boolean), `poc` (code, execution result), and `reason` (if not validated).

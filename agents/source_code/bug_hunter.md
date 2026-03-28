@@ -32,6 +32,7 @@ For each bug, provide:
 - **Security impact**: what an attacker can achieve
 - **PoC**: working exploit code if possible
 - **Validated**: whether the PoC was executed successfully
+- **Confidence**: exactly one of `high`, `medium`, or `low` (no other values)
 
 ## Business Logic
 

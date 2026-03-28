@@ -28,6 +28,12 @@ You are tagging security vulnerability findings by quality and strength. This is
 - Look at expanded primitives — were escalations demonstrated or theoretical?
 - Consider the overall exploitation story: is this something a real attacker could use?
 
+## Field Values
+
+Use these exact values — no other values are accepted:
+- `tag`: exactly one of `strong`, `weak`, or `informational`
+- `confidence`: exactly one of `high`, `medium`, or `low`
+
 ## What NOT to do
 
 - Don't remove any bugs — just tag them

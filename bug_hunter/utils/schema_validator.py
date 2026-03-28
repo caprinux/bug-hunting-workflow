@@ -1,8 +1,4 @@
-"""Validate agent outputs against JSON schemas.
-
-Includes normalization to handle common field name variations from
-different LLMs (e.g., Codex using "title" instead of "vuln_type").
-"""
+"""Validate agent outputs against JSON schemas."""
 
 from __future__ import annotations
 
@@ -18,60 +14,14 @@ SCHEMAS_DIR = Path(__file__).parent.parent.parent / "schemas"
 
 _schema_cache: dict[str, dict] = {}
 
-# Map alternative field names to canonical schema field names.
-# LLMs (especially Codex) often use different names for the same concept.
-FIELD_ALIASES = {
-    "vuln_class": ["vulnerability_class", "cwe", "cwe_id", "vulnerability_category"],
-    "vuln_type": ["title", "vulnerability_type", "vulnerability", "name", "type"],
-    "description": ["summary", "details", "finding_description", "security_impact", "impact"],
-    "reasoning": ["root_cause", "analysis", "explanation", "rationale", "justification"],
-    "confidence": ["confidence_level"],
-    "source_file": ["file", "filepath", "file_path", "path", "location"],
-    "line_range": ["lines", "line_numbers", "line"],
-}
-
 
 def _normalize_finding(finding: dict) -> dict:
-    """Normalize a finding by mapping alternative field names to canonical ones.
+    """Light normalization — only copies the finding, no value transformations.
 
-    Does not overwrite fields that already exist in the finding.
+    Field name aliases and value normalization have been removed.
+    Agent prompts now enforce strict field names and values directly.
     """
-    normalized = dict(finding)
-
-    for canonical, aliases in FIELD_ALIASES.items():
-        if canonical in normalized and normalized[canonical]:
-            continue  # Already has the canonical field with a value
-        for alias in aliases:
-            if alias in normalized and normalized[alias]:
-                normalized[canonical] = normalized[alias]
-                break
-
-    # Normalize confidence — fix invalid values like "critical" (severity/confidence confusion)
-    VALID_CONFIDENCE = {"high", "medium", "low"}
-    conf = normalized.get("confidence", "")
-    if conf not in VALID_CONFIDENCE:
-        # Map severity-style values to valid confidence levels
-        if conf in ("critical", "high"):
-            normalized["confidence"] = "high"
-        elif conf == "medium":
-            normalized["confidence"] = "medium"
-        elif conf in ("low", "informational"):
-            normalized["confidence"] = "low"
-        elif not conf:
-            # Fall back to severity field
-            sev = normalized.get("severity", "")
-            if sev in ("critical", "high"):
-                normalized["confidence"] = "high"
-            elif sev == "medium":
-                normalized["confidence"] = "medium"
-            elif sev in ("low", "informational"):
-                normalized["confidence"] = "low"
-
-    # Ensure vuln_class has a value — use vuln_type as fallback
-    if not normalized.get("vuln_class") and normalized.get("vuln_type"):
-        normalized["vuln_class"] = normalized["vuln_type"]
-
-    return normalized
+    return dict(finding)
 
 
 def _load_schema(schema_name: str) -> Optional[dict]:

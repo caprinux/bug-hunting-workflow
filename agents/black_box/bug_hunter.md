@@ -44,6 +44,7 @@ For each bug, provide:
 - **HTTP evidence**: request/response proving the issue
 - **PoC**: working exploit code
 - **Validated**: whether exploitation was confirmed
+- **Confidence**: exactly one of `high`, `medium`, or `low` (no other values)
 
 ## Authentication Barriers
 

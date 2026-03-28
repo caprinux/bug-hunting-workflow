@@ -28,7 +28,7 @@ When merging duplicates:
 - Combine the `reasoning` from all agents (each may have caught different aspects)
 - Union the `found_by` lists
 - Keep the most specific/detailed version of `description`, `vuln_class`, `line_range`
-- Use the highest `confidence` level among the duplicates
+- Use the highest `confidence` level among the duplicates (must be exactly one of `high`, `medium`, or `low`)
 - Note multi-agent agreement as a confidence signal
 
 ## Output

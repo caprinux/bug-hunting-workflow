@@ -47,3 +47,10 @@ JSON object with:
 - `rehunt_suggestions`: Specific bug classes to hunt for next (require human approval)
 
 Each chain includes: id, bug_ids, description, combined_impact, execution_order, status, severity.
+
+## Field Values
+
+Use these exact values — no other values are accepted:
+- `status`: exactly one of `demonstrated` or `proposed`
+- `severity`: exactly one of `critical`, `high`, `medium`, `low`, or `informational`
+- `rehunt_suggestions[].priority`: exactly one of `high`, `medium`, or `low`

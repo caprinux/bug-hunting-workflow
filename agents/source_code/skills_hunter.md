@@ -45,6 +45,10 @@ These contain real-world patterns from security engagements. Clone each relevant
 4. Parse the JSON output and create a bug entry for each finding with severity >= WARNING
 5. If semgrep is not installed, note it and continue to the next scan
 
+### Performance rules:
+- Only clone third-party rulesets that match the detected languages (e.g. skip `0xdea` for Python projects, skip `dgryski/semgrep-go` for C projects)
+- For large codebases (>1000 source files), run semgrep in separate batches: first the baseline + per-language rulesets, then each third-party ruleset individually. Do NOT combine all rulesets into a single semgrep invocation.
+
 ## Scan 2: Insecure Defaults
 
 Search for **fail-open** security patterns — code that runs insecurely when configuration is missing, as opposed to fail-secure code that crashes on missing config.
@@ -89,6 +93,7 @@ Find and analyze dependency manifests:
 - Report every finding, even low-severity ones — downstream stages handle filtering.
 - Do not deeply investigate or write PoCs — just scan and report.
 - Set `validated` to `false` for all findings.
+- Set `confidence` to exactly one of `high`, `medium`, or `low` (no other values).
 
 ## Output
 
