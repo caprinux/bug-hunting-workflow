@@ -366,8 +366,13 @@ async def _run_cli_process(
                     event = _parse_stream_event(event_data)
 
                     # Claude Code format: "result" event with result field
+                    # Multiple result events may arrive (e.g. background tasks completing).
+                    # Preserve structured_output from the first event that has it.
                     if event.type == "result":
+                        prev_structured = result_data.get("structured_output") if result_data else None
                         result_data = event.data
+                        if prev_structured and not result_data.get("structured_output"):
+                            result_data["structured_output"] = prev_structured
                         cost_usd = event.data.get("total_cost_usd", 0.0)
                         session_id = event.data.get("session_id", "")
 
