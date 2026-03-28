@@ -224,43 +224,68 @@ def _run_migrations(conn) -> None:
         pass  # Table doesn't exist yet — init_db will create it
 
     # Migration: expand runs run_type CHECK to include 'revalidation'.
+    # Also fix any foreign key references corrupted by prior ALTER TABLE RENAME.
     try:
         row = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='runs'"
         ).fetchone()
-        if row and row[0] and "revalidation" not in row[0]:
+        needs_runs_migration = row and row[0] and "revalidation" not in row[0]
+
+        # Check if any table still references runs_old (corrupted by prior rename)
+        corrupted = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE sql LIKE '%runs_old%'"
+        ).fetchone()[0]
+
+        if needs_runs_migration or corrupted:
             conn.executescript("""
                 PRAGMA foreign_keys=OFF;
-
-                ALTER TABLE runs RENAME TO runs_old;
-
-                CREATE TABLE runs (
-                    id TEXT PRIMARY KEY,
-                    engagement_id TEXT NOT NULL REFERENCES engagements(id),
-                    run_number INTEGER NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending'
-                        CHECK(status IN ('pending', 'running', 'completed', 'failed', 'paused', 'cancelled')),
-                    run_type TEXT NOT NULL DEFAULT 'initial'
-                        CHECK(run_type IN ('initial', 'rehunt', 'revalidation')),
-                    rehunt_target TEXT,
-                    current_stage TEXT,
-                    pipeline_state TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    completed_at TEXT,
-                    cost_usd REAL DEFAULT 0.0,
-                    UNIQUE(engagement_id, run_number)
-                );
-
-                INSERT INTO runs SELECT * FROM runs_old;
-                DROP TABLE runs_old;
-
-                CREATE INDEX IF NOT EXISTS idx_runs_engagement ON runs(engagement_id);
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_run_per_engagement
-                    ON runs(engagement_id) WHERE status = 'running';
-
-                PRAGMA foreign_keys=ON;
             """)
+            if needs_runs_migration:
+                conn.executescript("""
+                    ALTER TABLE runs RENAME TO _runs_mig;
+
+                    CREATE TABLE runs (
+                        id TEXT PRIMARY KEY,
+                        engagement_id TEXT NOT NULL REFERENCES engagements(id),
+                        run_number INTEGER NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'pending'
+                            CHECK(status IN ('pending', 'running', 'completed', 'failed', 'paused', 'cancelled')),
+                        run_type TEXT NOT NULL DEFAULT 'initial'
+                            CHECK(run_type IN ('initial', 'rehunt', 'revalidation')),
+                        rehunt_target TEXT,
+                        current_stage TEXT,
+                        pipeline_state TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        completed_at TEXT,
+                        cost_usd REAL DEFAULT 0.0,
+                        UNIQUE(engagement_id, run_number)
+                    );
+
+                    INSERT INTO runs SELECT * FROM _runs_mig;
+                    DROP TABLE _runs_mig;
+
+                    CREATE INDEX IF NOT EXISTS idx_runs_engagement ON runs(engagement_id);
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_run_per_engagement
+                        ON runs(engagement_id) WHERE status = 'running';
+                """)
+
+            # Fix any tables with corrupted foreign keys pointing to runs_old
+            if corrupted:
+                for table_name in ['stage_results', 'bugs']:
+                    trow = conn.execute(
+                        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+                        (table_name,),
+                    ).fetchone()
+                    if trow and 'runs_old' in trow[0]:
+                        fixed_sql = trow[0].replace('"runs_old"', 'runs').replace("'runs_old'", 'runs')
+                        tmp_name = f"_{table_name}_mig"
+                        conn.execute(f"ALTER TABLE {table_name} RENAME TO {tmp_name}")
+                        conn.execute(fixed_sql)
+                        conn.execute(f"INSERT INTO {table_name} SELECT * FROM {tmp_name}")
+                        conn.execute(f"DROP TABLE {tmp_name}")
+
+            conn.executescript("PRAGMA foreign_keys=ON;")
     except Exception:
         pass
 
