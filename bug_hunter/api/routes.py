@@ -46,15 +46,15 @@ async def api_list_engagements():
         eng["runs"] = list_runs(eng["id"])
         # Include bug counts for dashboard display
         all_bugs = list_bugs(eng["id"])
-        confirmed = [b for b in all_bugs if b["status"] == "confirmed"]
+        active = [b for b in all_bugs if b["status"] in ("found", "confirmed", "validated")]
         eng["bug_counts"] = {
             "total": len(all_bugs),
-            "confirmed": len(confirmed),
+            "confirmed": len(active),
             "cannot_validate": sum(1 for b in all_bugs if b["status"] == "cannot_validate"),
         }
-        # Severity breakdown of confirmed bugs
+        # Severity breakdown of active bugs (found + confirmed + validated)
         sev = {}
-        for b in confirmed:
+        for b in active:
             s = b["bug_data"].get("severity", "unknown")
             sev[s] = sev.get(s, 0) + 1
         eng["bug_counts"]["by_severity"] = sev
@@ -190,6 +190,7 @@ async def api_start_run(engagement_id: str, req: StartRunRequest):
         run_id = await orchestrator.start_run(
             run_type=req.run_type,
             rehunt_target=req.rehunt_target if req.rehunt_target else None,
+            setup_instructions=req.setup_instructions if req.setup_instructions else None,
         )
     except sqlite3.IntegrityError:
         raise HTTPException(
