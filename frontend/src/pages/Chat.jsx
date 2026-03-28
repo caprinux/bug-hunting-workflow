@@ -55,13 +55,14 @@ export default function Chat() {
   // Reload files after each chat completion
   useEffect(() => { if (showFiles) loadFiles() }, [showFiles, loadFiles])
 
-  // Load messages when active chat changes
+  // Load messages when active chat changes, and check if backend is still streaming
   useEffect(() => {
     if (!activeChatId) {
       setMessages([])
       return
     }
     setStreamingText('')
+    setThinkingText('')
     setStreaming(false)
     api.getChat(engagementId, activeChatId)
       .then(data => setMessages(data.messages || []))
@@ -69,7 +70,33 @@ export default function Chat() {
         console.error('Failed to load chat:', e)
         setMessages([])
       })
+    // Check if backend has an active stream for this chat (e.g. after page reload)
+    api.chatStreamingStatus(engagementId, activeChatId)
+      .then(data => {
+        if (data.streaming) setStreaming(true)
+      })
+      .catch(() => {})
   }, [engagementId, activeChatId])
+
+  // Poll for completion while streaming but no WebSocket events are arriving (e.g. after reload)
+  useEffect(() => {
+    if (!streaming || !activeChatId) return
+    const interval = setInterval(async () => {
+      try {
+        const data = await api.chatStreamingStatus(engagementId, activeChatId)
+        if (!data.streaming) {
+          setStreaming(false)
+          setStreamingText('')
+          setThinkingText('')
+          // Reload messages to get the completed response
+          const chat = await api.getChat(engagementId, activeChatId)
+          setMessages(chat.messages || [])
+          loadFiles()
+        }
+      } catch {}
+    }, 2000)
+    return () => clearInterval(interval)
+  }, [streaming, activeChatId, engagementId, loadFiles])
 
   // Process WebSocket events for chat streaming
   useEffect(() => {

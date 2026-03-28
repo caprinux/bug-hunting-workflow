@@ -172,6 +172,49 @@ async def api_create_chat(engagement_id: str, body: CreateChatRequest):
     return create_chat(engagement_id, body.title)
 
 
+# --- Workspace file endpoints (must be before /{chat_id} to avoid path conflict) ---
+
+@router.get("/files")
+async def api_list_chat_files(engagement_id: str, path: str = Query(default="")):
+    """List files in the engagement's chat workspace."""
+    workspace = _get_chat_workspace(engagement_id)
+    target = os.path.realpath(os.path.join(workspace, path))
+    ws_real = os.path.realpath(workspace)
+    try:
+        if os.path.commonpath([ws_real, target]) != ws_real:
+            raise HTTPException(403, "Path traversal detected")
+    except ValueError:
+        raise HTTPException(403, "Path traversal detected")
+    if not os.path.exists(target):
+        return {"files": []}
+    if os.path.isfile(target):
+        return {"files": [{"name": os.path.basename(target), "path": path, "is_dir": False,
+                           "size": os.path.getsize(target)}]}
+    files = []
+    for entry in sorted(os.scandir(target), key=lambda e: (not e.is_dir(), e.name)):
+        rel = os.path.relpath(entry.path, workspace)
+        item = {"name": entry.name, "path": rel, "is_dir": entry.is_dir()}
+        if entry.is_file():
+            item["size"] = entry.stat().st_size
+        files.append(item)
+    return {"files": files}
+
+
+@router.get("/files/download")
+async def api_download_chat_file(engagement_id: str, path: str = Query(...)):
+    """Download a file from the chat workspace."""
+    workspace = _get_chat_workspace(engagement_id)
+    filepath = os.path.realpath(os.path.join(workspace, path))
+    ws_real = os.path.realpath(workspace)
+    if not filepath.startswith(ws_real):
+        raise HTTPException(403, "Path traversal detected")
+    if not os.path.isfile(filepath):
+        raise HTTPException(404, "File not found")
+    return FileResponse(filepath, filename=os.path.basename(filepath))
+
+
+# --- Chat CRUD ---
+
 @router.get("/{chat_id}")
 async def api_get_chat(engagement_id: str, chat_id: str):
     chat = get_chat(chat_id)
@@ -200,6 +243,14 @@ async def api_update_chat(engagement_id: str, chat_id: str, body: UpdateChatRequ
     if not chat or chat["engagement_id"] != engagement_id:
         raise HTTPException(404, "Chat not found")
     return update_chat(chat_id, title=body.title)
+
+
+@router.get("/{chat_id}/streaming")
+async def api_chat_streaming_status(engagement_id: str, chat_id: str):
+    """Check if a chat currently has an active streaming response."""
+    task = _active_chats.get(chat_id)
+    is_streaming = task is not None and not task.done()
+    return {"streaming": is_streaming}
 
 
 @router.post("/{chat_id}/messages")
@@ -337,42 +388,3 @@ async def _stream_response(engagement_id: str, chat_id: str, prompt: str,
         _active_chats.pop(chat_id, None)
 
 
-# --- Workspace file endpoints ---
-
-@router.get("/files")
-async def api_list_chat_files(engagement_id: str, path: str = Query(default="")):
-    """List files in the engagement's chat workspace."""
-    workspace = _get_chat_workspace(engagement_id)
-    target = os.path.realpath(os.path.join(workspace, path))
-    ws_real = os.path.realpath(workspace)
-    try:
-        if os.path.commonpath([ws_real, target]) != ws_real:
-            raise HTTPException(403, "Path traversal detected")
-    except ValueError:
-        raise HTTPException(403, "Path traversal detected")
-    if not os.path.exists(target):
-        return {"files": []}
-    if os.path.isfile(target):
-        return {"files": [{"name": os.path.basename(target), "path": path, "is_dir": False,
-                           "size": os.path.getsize(target)}]}
-    files = []
-    for entry in sorted(os.scandir(target), key=lambda e: (not e.is_dir(), e.name)):
-        rel = os.path.relpath(entry.path, workspace)
-        item = {"name": entry.name, "path": rel, "is_dir": entry.is_dir()}
-        if entry.is_file():
-            item["size"] = entry.stat().st_size
-        files.append(item)
-    return {"files": files}
-
-
-@router.get("/files/download")
-async def api_download_chat_file(engagement_id: str, path: str = Query(...)):
-    """Download a file from the chat workspace."""
-    workspace = _get_chat_workspace(engagement_id)
-    filepath = os.path.realpath(os.path.join(workspace, path))
-    ws_real = os.path.realpath(workspace)
-    if not filepath.startswith(ws_real):
-        raise HTTPException(403, "Path traversal detected")
-    if not os.path.isfile(filepath):
-        raise HTTPException(404, "File not found")
-    return FileResponse(filepath, filename=os.path.basename(filepath))
