@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '../utils/api'
+import useTitle from '../hooks/useTitle'
 
 export default function ChainBrowser() {
+  useTitle('Chains')
   const { id } = useParams()
   const [chains, setChains] = useState([])
   const [expanded, setExpanded] = useState(null)

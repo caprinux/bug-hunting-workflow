@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { api } from '../utils/api'
+import useTitle from '../hooks/useTitle'
 
 function UsageBar({ percent, color }) {
   return (
@@ -30,6 +31,7 @@ function formatReset(value) {
 }
 
 export default function Usage() {
+  useTitle('Usage')
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)

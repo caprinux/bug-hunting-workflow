@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { api } from '../utils/api'
+import useTitle from '../hooks/useTitle'
 
 const DEFAULT_ADVANCED = {
   agents: ['claude', 'codex'],
@@ -25,6 +26,7 @@ function normalizeRepoUrls(raw) {
 }
 
 export default function NewEngagement() {
+  useTitle('New Engagement')
   const navigate = useNavigate()
   const location = useLocation()
   const prefill = location.state?.prefill || null

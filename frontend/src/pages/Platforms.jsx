@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../utils/api'
+import useTitle from '../hooks/useTitle'
 
 export default function Platforms() {
+  useTitle('Platforms')
   const navigate = useNavigate()
   const [platforms, setPlatforms] = useState([])
   const [programs, setPrograms] = useState([])

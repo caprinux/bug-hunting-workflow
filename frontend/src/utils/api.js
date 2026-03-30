@@ -29,6 +29,7 @@ export const api = {
   getEngagement: (id) => request(`/engagements/${id}`),
   deleteEngagement: (id) => request(`/engagements/${id}`, { method: 'DELETE' }),
   updateEngagementConfig: (id, config) => request(`/engagements/${id}/config`, { method: 'PATCH', body: JSON.stringify(config) }),
+  updateEngagementNotes: (id, notes) => request(`/engagements/${id}/notes`, { method: 'PATCH', body: JSON.stringify({ notes }) }),
   startRun: (id, data) => request(`/engagements/${id}/runs`, { method: 'POST', body: JSON.stringify(data) }),
   listRuns: (id) => request(`/engagements/${id}/runs`),
   getRun: (engId, runId) => request(`/engagements/${engId}/runs/${runId}`),

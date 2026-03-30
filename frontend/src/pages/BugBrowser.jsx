@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '../utils/api'
 import { useAutoRefresh } from '../hooks/useAutoRefresh'
+import useTitle from '../hooks/useTitle'
 
 const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, informational: 4 }
 
 export default function BugBrowser() {
+  useTitle('Bugs')
   const { id } = useParams()
   const [bugs, setBugs] = useState([])
   const [runs, setRuns] = useState([])

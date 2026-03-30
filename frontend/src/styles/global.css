@@ -532,6 +532,15 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 0
   font-size: 13px; color: var(--text-secondary);
 }
 .card-date { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
+.card-timestamps { font-size: 11px; color: var(--text-muted); margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
+.engagement-card-wrapper { display: flex; flex-direction: column; }
+.engagement-card-wrapper .engagement-card { flex: 1; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+.card-notes { padding: 6px 20px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-top: none; border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+.card-notes .notes-display { cursor: pointer; font-size: 12px; min-height: 20px; }
+.card-notes .notes-text { color: var(--text-secondary); white-space: pre-wrap; }
+.card-notes .notes-placeholder { color: var(--text-muted); font-style: italic; }
+.card-notes .notes-edit textarea { width: 100%; font-size: 12px; padding: 6px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); resize: vertical; font-family: inherit; }
+.card-notes .notes-edit textarea:focus { outline: none; border-color: var(--accent-border); }
 
 /* Bug counts on dashboard cards */
 .card-bugs {

@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from '../utils/api'
 import { useWebSocket } from '../hooks/useWebSocket'
+import useTitle from '../hooks/useTitle'
 
 export default function Chat() {
   const { id: engagementId } = useParams()
@@ -11,6 +12,7 @@ export default function Chat() {
   const activeChatId = searchParams.get('chat')
 
   const [engagement, setEngagement] = useState(null)
+  useTitle(engagement ? `Chat — ${engagement.name}` : 'Chat')
   const [chats, setChats] = useState([])
   const [messages, setMessages] = useState([])
   const [files, setFiles] = useState([])

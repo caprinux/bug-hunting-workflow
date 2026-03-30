@@ -6,11 +6,13 @@ import { useAutoRefresh } from '../hooks/useAutoRefresh'
 import PipelineVisualization from '../components/PipelineVisualization'
 import StageOutputBrowser from '../components/StageOutputBrowser'
 import ElapsedTimer from '../components/ElapsedTimer'
+import useTitle from '../hooks/useTitle'
 
 export default function RunDetail() {
   const { id: engagementId, runId } = useParams()
   const navigate = useNavigate()
   const [run, setRun] = useState(null)
+  useTitle(run ? `Run #${run.run_number}` : 'Run')
   const [loading, setLoading] = useState(true)
   const [selectedStage, setSelectedStage] = useState(null)
   const [cancelling, setCancelling] = useState(false)

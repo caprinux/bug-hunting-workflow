@@ -5,9 +5,11 @@ import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import 'highlight.js/styles/github-dark.css'
 import { api } from '../utils/api'
+import useTitle from '../hooks/useTitle'
 
 
 export default function Report() {
+  useTitle('Report')
   const { id } = useParams()
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)

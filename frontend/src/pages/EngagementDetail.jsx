@@ -3,11 +3,13 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { api } from '../utils/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useAutoRefresh } from '../hooks/useAutoRefresh'
+import useTitle from '../hooks/useTitle'
 
 export default function EngagementDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [engagement, setEngagement] = useState(null)
+  useTitle(engagement?.name || 'Engagement')
   const [bugs, setBugs] = useState([])
   const [chains, setChains] = useState([])
   const [loading, setLoading] = useState(true)
@@ -16,6 +18,7 @@ export default function EngagementDetail() {
   const [showRehunt, setShowRehunt] = useState(false)
   const [setupInstructions, setSetupInstructions] = useState('')
   const [showRevalidation, setShowRevalidation] = useState(false)
+  const [selectedBugIds, setSelectedBugIds] = useState(new Set())
   const [showSettings, setShowSettings] = useState(false)
   const [showDetails, setShowDetails] = useState(false)
   const [engConfig, setEngConfig] = useState({})
@@ -221,23 +224,66 @@ export default function EngagementDetail() {
       {showRevalidation && (
         <div className="rehunt-form">
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-            Set up a local testing environment to revalidate {cannotValidate.length} bugs that couldn't be validated.
-            Provide instructions for the setup agent (e.g., how to build and run the Docker environment).
+            Select bugs to revalidate, then provide setup instructions for the testing environment.
           </p>
+          <div style={{ marginBottom: '8px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button className="btn btn-sm btn-secondary" onClick={() => setSelectedBugIds(new Set(cannotValidate.map(b => b.id)))}>
+              Select All ({cannotValidate.length})
+            </button>
+            <button className="btn btn-sm btn-secondary" onClick={() => setSelectedBugIds(new Set())}>
+              Clear
+            </button>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              {selectedBugIds.size} selected
+            </span>
+          </div>
+          <div style={{ maxHeight: '200px', overflow: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px', marginBottom: '8px' }}>
+            {cannotValidate.map(bug => {
+              const bd = bug.bug_data || {}
+              return (
+                <label key={bug.id} style={{
+                  display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '6px 10px',
+                  borderBottom: '1px solid var(--border-color)', cursor: 'pointer', fontSize: '13px',
+                }}>
+                  <input type="checkbox" checked={selectedBugIds.has(bug.id)}
+                    onChange={e => {
+                      const next = new Set(selectedBugIds)
+                      e.target.checked ? next.add(bug.id) : next.delete(bug.id)
+                      setSelectedBugIds(next)
+                    }}
+                    style={{ marginTop: '2px' }}
+                  />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <code style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>{bug.external_id?.split('/').pop() || ''}</code>
+                      <span style={{ fontWeight: 500 }}>{bd.vuln_type || 'Unknown'}</span>
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      {bd.source_file || bd.url || ''}{bd.line_range ? `:${bd.line_range}` : ''}
+                    </div>
+                  </div>
+                </label>
+              )
+            })}
+          </div>
           <textarea value={setupInstructions} onChange={e => setSetupInstructions(e.target.value)}
-                    placeholder="e.g. Build the Docker image from the Dockerfile in the repo root, run docker-compose up, wait for the app to be healthy on port 8080. Run database migrations with: docker exec app python manage.py migrate"
-                    rows={5} />
+                    placeholder="e.g. Build the Docker image from the Dockerfile in the repo root, run docker-compose up, wait for the app to be healthy on port 8080."
+                    rows={4} />
           <div style={{ display: 'flex', gap: '8px' }}>
             <button className="btn btn-primary"
-                    disabled={!setupInstructions.trim() || startingRun}
+                    disabled={!setupInstructions.trim() || selectedBugIds.size === 0 || startingRun}
                     onClick={() => {
                       setStartingRun(true)
-                      api.startRun(id, { run_type: 'revalidation', setup_instructions: setupInstructions.trim() })
+                      api.startRun(id, {
+                        run_type: 'revalidation',
+                        setup_instructions: setupInstructions.trim(),
+                        bug_ids: [...selectedBugIds],
+                      })
                         .then(() => loadAll())
                         .catch(console.error)
-                        .finally(() => { setStartingRun(false); setShowRevalidation(false); setSetupInstructions('') })
+                        .finally(() => { setStartingRun(false); setShowRevalidation(false); setSetupInstructions(''); setSelectedBugIds(new Set()) })
                     }}>
-              Start Revalidation
+              Revalidate {selectedBugIds.size} Bug{selectedBugIds.size !== 1 ? 's' : ''}
             </button>
             <button className="btn btn-secondary" onClick={() => setShowRevalidation(false)}>Cancel</button>
           </div>

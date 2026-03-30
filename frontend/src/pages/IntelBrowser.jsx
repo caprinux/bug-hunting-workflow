@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '../utils/api'
+import useTitle from '../hooks/useTitle'
 
 export default function IntelBrowser() {
+  useTitle('Intel')
   const { id } = useParams()
   const [intel, setIntel] = useState([])
   const [loading, setLoading] = useState(true)
