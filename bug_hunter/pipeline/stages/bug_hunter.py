@@ -18,6 +18,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from uuid import uuid4
+
 from bug_hunter.core.cli_wrapper import CLIResult, StreamEvent, run_claude, run_codex
 from bug_hunter.core.database import create_bug
 from bug_hunter.core.events import event_manager
@@ -39,6 +41,34 @@ class BugHunterStage(PipelineStage):
     @property
     def name(self) -> str:
         return "bug_hunter"
+
+    def _get_sessions_file(self, context: StageContext) -> str:
+        """Get the path to the engagement-level sessions file for persistent agent sessions."""
+        eng_dir = os.path.dirname(os.path.dirname(context.run_dir))  # engagement dir
+        return os.path.join(eng_dir, "agent_sessions.json")
+
+    def _load_sessions(self, context: StageContext) -> dict:
+        path = self._get_sessions_file(context)
+        if os.path.exists(path):
+            with open(path) as f:
+                return json.load(f)
+        return {}
+
+    def _save_sessions(self, context: StageContext, sessions: dict):
+        path = self._get_sessions_file(context)
+        with open(path, "w") as f:
+            json.dump(sessions, f, indent=2)
+
+    def _get_agent_session(self, context: StageContext, agent_name: str) -> tuple[str, bool]:
+        """Get or create a persistent session ID for an agent. Returns (session_id, is_resume)."""
+        sessions = self._load_sessions(context)
+        key = f"bug_hunter_{agent_name}"
+        if key in sessions:
+            return sessions[key], True
+        session_id = str(uuid4())
+        sessions[key] = session_id
+        self._save_sessions(context, sessions)
+        return session_id, False
 
     async def execute(self, context: StageContext) -> StageResult:
         stage_dir = self.get_stage_dir(context)
@@ -89,11 +119,12 @@ class BugHunterStage(PipelineStage):
         all_new_bugs = []
         agent_stats = {agent: {"succeeded": 0, "failed": 0, "running": 0, "total": iterations} for agent in agents}
 
-        # Initialize notes files based on mode
+        # Notes live at the engagement level so they persist across runs
+        eng_dir = os.path.dirname(os.path.dirname(context.run_dir))
         if mode == "sequential":
-            notes_files = {agent: os.path.join(stage_dir, "NOTES.md") for agent in agents}
+            notes_files = {agent: os.path.join(eng_dir, "NOTES.md") for agent in agents}
         else:
-            notes_files = {agent: os.path.join(stage_dir, f"NOTES_{agent}.md") for agent in agents}
+            notes_files = {agent: os.path.join(eng_dir, f"NOTES_{agent}.md") for agent in agents}
         for nf in set(notes_files.values()):
             if not os.path.exists(nf):
                 with open(nf, "w") as f:
@@ -273,13 +304,11 @@ class BugHunterStage(PipelineStage):
         surfaces_file = os.path.abspath(os.path.join(stage_dir, "attack_surfaces.json"))
         bugs_file = os.path.abspath(os.path.join(stage_dir, "BUGS.json"))
 
-        rehunt_instruction = ""
-        if context.rehunt_target:
-            rehunt_instruction = f"""
-SPECIFIC INSTRUCTIONS FOR THIS RUN:
-{context.rehunt_target}
-
-The above instructions are your PRIMARY OBJECTIVE for this run. Prioritize them over general scanning."""
+        # Determine session state early — needed for prompt construction
+        session_id = None
+        is_resume = False
+        if context.config.bug_hunter.mode == "parallel" and (agent_name == "claude" or agent_name.startswith("claude")):
+            session_id, is_resume = self._get_agent_session(context, agent_name)
 
         notes_section = ""
         if notes_file:
@@ -288,8 +317,18 @@ The above instructions are your PRIMARY OBJECTIVE for this run. Prioritize them 
 WORKING NOTES: {notes_path}
 Read this file for context from previous iterations. Update it with your own observations — areas explored, dead ends, leads to follow up, informational findings. Keep it concise. Future iterations will read it."""
 
-        prompt = f"""{rehunt_instruction}
-{"SOURCE CODE ROOT: " + source_path if eng_type == "source_code" else ""}
+        if context.run_type == "rehunt" and context.rehunt_target and is_resume:
+            # Rehunt with persistent session — agent already has full context
+            prompt = context.rehunt_target
+        else:
+            rehunt_instruction = ""
+            if context.rehunt_target:
+                rehunt_instruction = f"""SPECIFIC INSTRUCTIONS FOR THIS RUN:
+{context.rehunt_target}
+
+The above instructions are your PRIMARY OBJECTIVE for this run. Prioritize them over general scanning.
+"""
+            prompt = f"""{rehunt_instruction}{"SOURCE CODE ROOT: " + source_path if eng_type == "source_code" else ""}
 {"INFRASTRUCTURE ACCESS:" + chr(10) + infra_config if infra_config else ""}
 
 APPLICATION CONTEXT: Read {scope_file}
@@ -339,14 +378,20 @@ When you are done, make sure all background tasks and subagents have completed b
         # Grant access to stage_dir so agents can read/write NOTES.md
         extra_dirs = [os.path.abspath(stage_dir)]
 
-        cwd = source_path if eng_type == "source_code" else stage_dir
+        if eng_type == "source_code":
+            cwd = source_path
+        else:
+            # For black_box with persistent sessions, use engagement dir as cwd
+            # so Claude's session storage path is consistent across runs
+            eng_dir = os.path.dirname(os.path.dirname(context.run_dir))
+            cwd = eng_dir
 
         schema_file = str(SCHEMAS_DIR / "bug_hunter.json")
 
         if agent_name == "claude" or agent_name.startswith("claude"):
-            return await run_claude(
+            result = await run_claude(
                 prompt=prompt,
-                agent_file=agent_file,
+                agent_file=agent_file if not is_resume else None,  # system prompt only on first message
                 model=context.config.models.bug_hunter_subagent,
                 cwd=cwd,
                 json_schema_file=schema_file,
@@ -355,9 +400,34 @@ When you are done, make sure all background tasks and subagents have completed b
                 additional_dirs=extra_dirs,
                 record_dir=record_dir,
                 record_metadata=record_meta,
+                session_id=session_id,
+                is_resume=is_resume,
             )
+
+            # If resume failed (expired/missing session), retry with a fresh session
+            check_text = f"{result.error} {result.raw_output}"
+            if not result.success and is_resume and "No conversation found" in check_text:
+                logger.warning(f"Session expired for {agent_name}, starting fresh session")
+                new_sid = str(uuid4())
+                sessions = self._load_sessions(context)
+                sessions[f"bug_hunter_{agent_name}"] = new_sid
+                self._save_sessions(context, sessions)
+                result = await run_claude(
+                    prompt=prompt,
+                    agent_file=agent_file,
+                    model=context.config.models.bug_hunter_subagent,
+                    cwd=cwd,
+                    json_schema_file=schema_file,
+                    timeout=context.config.pipeline.subagent_timeout,
+                    on_event=on_event,
+                    additional_dirs=extra_dirs,
+                    record_dir=record_dir,
+                    record_metadata=record_meta,
+                    session_id=new_sid,
+                    is_resume=False,
+                )
         elif agent_name == "codex" or agent_name.startswith("codex"):
-            return await run_codex(
+            result = await run_codex(
                 prompt=prompt,
                 model=context.config.bug_hunter.codex_model,
                 cwd=cwd,
@@ -370,6 +440,15 @@ When you are done, make sure all background tasks and subagents have completed b
             )
         else:
             return CLIResult(success=False, error=f"Unknown agent: {agent_name}")
+
+        # Save session/thread ID for future resumption (codex returns thread_id via stream)
+        if not is_resume and result.session_id:
+            sessions = self._load_sessions(context)
+            key = f"bug_hunter_{agent_name}"
+            sessions[key] = result.session_id
+            self._save_sessions(context, sessions)
+
+        return result
 
     async def _merge_attack_surfaces(self, surfaces_file: str, new_surfaces: list):
         """Merge updated attack surfaces into the existing file."""

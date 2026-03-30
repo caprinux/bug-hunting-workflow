@@ -117,7 +117,8 @@ class PipelineOrchestrator:
 
     async def start_run(self, run_type: str = "initial",
                         rehunt_target: str = None,
-                        setup_instructions: str = None) -> str:
+                        setup_instructions: str = None,
+                        bug_ids: list[str] = None) -> str:
         """Start a new pipeline run.
 
         Creates the run with status='running' immediately so the unique
@@ -158,7 +159,7 @@ class PipelineOrchestrator:
         # and reset cannot_validate bugs to found so validator picks them up
         if run_type == "revalidation":
             self._copy_prior_stage_outputs(run_id, run_dir, ["setup", "scoper"])
-            self._prepare_revalidation_bugs(run_id)
+            self._prepare_revalidation_bugs(run_id, bug_ids)
 
         await event_manager.emit_stage_update(
             self.engagement_id, run_id, "", "running",
@@ -346,6 +347,10 @@ class PipelineOrchestrator:
                 completed_at=now if final_status in ("completed", "failed", "cancelled") else None,
                 pipeline_state=pipeline_state,
             )
+
+            # For completed revalidation runs, clean up stale originals
+            if final_status == "completed" and run_type == "revalidation":
+                self._cleanup_revalidation_originals(run_id)
 
             self._update_cumulative_state()
 
@@ -659,24 +664,18 @@ class PipelineOrchestrator:
                     shutil.copy2(str(surfaces_file), str(dst_file))
                     logger.info(f"Copied attack_surfaces.json from run {prior_run['id'][:8]}")
 
-            # Copy all notes files (NOTES.md for sequential, NOTES_*.md for parallel)
-            import glob as _glob
-            for nf in _glob.glob(str(bh_dir / "NOTES*.md")):
-                nf_path = Path(nf)
-                if nf_path.stat().st_size > 0:
-                    dst_file = dst_dir / nf_path.name
-                    if not dst_file.exists():
-                        shutil.copy2(nf, str(dst_file))
-                        logger.info(f"Copied {nf_path.name} from run {prior_run['id'][:8]}")
+            # Notes now live at the engagement level — no need to copy per-run
 
             if surfaces_file.exists():
                 break
 
-    def _prepare_revalidation_bugs(self, run_id: str):
+    def _prepare_revalidation_bugs(self, run_id: str, bug_ids: list[str] = None):
         """Clone cannot_validate bugs from prior runs into this revalidation run as 'found'.
 
         Creates new bug records (linked to this run_id) so the strict_validator
         picks them up. The original bugs in prior runs are left untouched.
+
+        If bug_ids is provided, only clone bugs whose DB id is in the list.
         """
         from bug_hunter.core.database import create_bug, get_db, list_runs as db_list_runs
 
@@ -691,6 +690,11 @@ class PipelineOrchestrator:
         if not cv_bugs:
             logger.info("Revalidation: no cannot_validate bugs to revalidate")
             return
+
+        # Filter to selected bugs if specified
+        if bug_ids:
+            selected = set(bug_ids)
+            cv_bugs = [b for b in cv_bugs if b["id"] in selected]
 
         # Deduplicate by bug_data id — take the latest per logical bug
         seen_ids: set[str] = set()
@@ -713,6 +717,33 @@ class PipelineOrchestrator:
             count += 1
 
         logger.info(f"Revalidation: cloned {count} cannot_validate bugs into run {run_id[:8]}")
+
+    def _cleanup_revalidation_originals(self, run_id: str):
+        """After revalidation completes, delete the stale originals that were cloned.
+
+        For each bug in the revalidation run, find the original with the same
+        external_id in earlier runs and delete it (the clone is authoritative).
+        """
+        from bug_hunter.core.database import get_db
+
+        reval_bugs = list_bugs(self.engagement_id, run_id=run_id)
+        reval_ext_ids = {b["external_id"] for b in reval_bugs if b["external_id"]}
+
+        if not reval_ext_ids:
+            return
+
+        all_bugs = list_bugs(self.engagement_id)
+        deleted = 0
+        with get_db() as conn:
+            for bug in all_bugs:
+                if bug["run_id"] == run_id:
+                    continue
+                if bug["external_id"] in reval_ext_ids:
+                    conn.execute("DELETE FROM bugs WHERE id = ?", (bug["id"],))
+                    deleted += 1
+
+        if deleted:
+            logger.info(f"Revalidation cleanup: deleted {deleted} stale original bugs")
 
     def _save_pipeline_state(self, run_dir: Path, state: dict):
         state_file = run_dir / "pipeline_state.json"
