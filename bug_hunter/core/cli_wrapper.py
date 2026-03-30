@@ -15,6 +15,58 @@ from typing import Any, AsyncIterator, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
+CODEX_MODELS = {"gpt-5.4", "o3", "o4-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"}
+
+
+def is_codex_model(model: str) -> bool:
+    """Check if a model string refers to a Codex/OpenAI model."""
+    return model in CODEX_MODELS or model.startswith("gpt-") or model.startswith("o3") or model.startswith("o4")
+
+
+async def run_agent(
+    prompt: str,
+    model: str = "opus",
+    agent_file: Optional[str] = None,
+    cwd: Optional[str] = None,
+    json_schema_file: Optional[str] = None,
+    timeout: int = 300,
+    on_event: Optional[Callable] = None,
+    additional_dirs: Optional[list[str]] = None,
+    record_dir: Optional[str] = None,
+    record_metadata: Optional[dict] = None,
+    session_id: Optional[str] = None,
+    is_resume: bool = False,
+):
+    """Dispatch to run_claude or run_codex based on the model string."""
+    if is_codex_model(model):
+        return await run_codex(
+            prompt=prompt,
+            model=model,
+            cwd=cwd,
+            timeout=timeout,
+            on_event=on_event,
+            additional_dirs=additional_dirs,
+            record_dir=record_dir,
+            record_metadata=record_metadata,
+            output_schema_file=json_schema_file,
+            thread_id=session_id if is_resume else None,
+        )
+    else:
+        return await run_claude(
+            prompt=prompt,
+            agent_file=agent_file,
+            model=model,
+            cwd=cwd,
+            json_schema_file=json_schema_file,
+            timeout=timeout,
+            on_event=on_event,
+            additional_dirs=additional_dirs,
+            record_dir=record_dir,
+            record_metadata=record_metadata,
+            session_id=session_id,
+            is_resume=is_resume,
+        )
+
 
 def _parse_result_payload(payload: Any) -> Any:
     """Best-effort normalization for CLI payloads that should contain JSON."""
@@ -109,6 +161,8 @@ async def run_claude(
     additional_dirs: Optional[list[str]] = None,
     record_dir: Optional[str] = None,
     record_metadata: Optional[dict] = None,
+    session_id: Optional[str] = None,
+    is_resume: bool = False,
 ) -> CLIResult:
     """Run Claude Code CLI as a subprocess and capture output.
 
@@ -122,9 +176,19 @@ async def run_claude(
         on_event: Callback for streaming events.
         max_budget_usd: Maximum API spend.
         additional_dirs: Additional directories to grant access to.
+        session_id: Optional session ID for persistent multi-turn sessions.
+        is_resume: If True, resume an existing session instead of starting new.
     """
     cmd = ["claude", "--print", "--output-format", "stream-json", "--verbose",
-           "--dangerously-skip-permissions", "--model", model, "--no-session-persistence"]
+           "--dangerously-skip-permissions", "--model", model]
+
+    if session_id:
+        if is_resume:
+            cmd.extend(["--resume", session_id])
+        else:
+            cmd.extend(["--session-id", session_id])
+    else:
+        cmd.append("--no-session-persistence")
 
     if agent_file:
         cmd.extend(["--append-system-prompt-file", str(Path(agent_file).resolve())])
@@ -227,21 +291,31 @@ async def run_codex(
     record_dir: Optional[str] = None,
     record_metadata: Optional[dict] = None,
     output_schema_file: Optional[str] = None,
+    thread_id: Optional[str] = None,
 ) -> CLIResult:
     """Run Codex CLI as a subprocess and capture output."""
-    cmd = ["codex", "exec",
-           "--dangerously-bypass-approvals-and-sandbox",
-           "--json", "--ephemeral", "--skip-git-repo-check",
-           "-m", model]
+    if thread_id:
+        # Resume an existing thread
+        cmd = ["codex", "resume",
+               "--dangerously-bypass-approvals-and-sandbox",
+               "--json", "--skip-git-repo-check",
+               thread_id]
+        # For resume, prompt is the new message
+        cmd.append(prompt)
+    else:
+        cmd = ["codex", "exec",
+               "--dangerously-bypass-approvals-and-sandbox",
+               "--json", "--skip-git-repo-check",
+               "-m", model]
 
-    if cwd:
-        cmd.extend(["-C", cwd])
+        if cwd:
+            cmd.extend(["-C", cwd])
 
-    if output_schema_file:
-        cmd.extend(["--output-schema", str(Path(output_schema_file).resolve())])
+        if output_schema_file:
+            cmd.extend(["--output-schema", str(Path(output_schema_file).resolve())])
 
-    # Prompt must come BEFORE --add-dir (variadic flag consumes remaining args)
-    cmd.append(prompt)
+        # Prompt must come BEFORE --add-dir (variadic flag consumes remaining args)
+        cmd.append(prompt)
 
     if additional_dirs:
         for d in additional_dirs:
@@ -376,6 +450,10 @@ async def _run_cli_process(
                         cost_usd = event.data.get("total_cost_usd", 0.0)
                         session_id = event.data.get("session_id", "")
 
+                    # Codex format: "thread.started" with thread_id
+                    elif event.type == "thread.started":
+                        session_id = event.data.get("thread_id", "")
+
                     # Codex format: "item.completed" with agent_message text
                     elif event.type == "item.completed":
                         item = event.data.get("item", {})
@@ -442,6 +520,10 @@ async def _run_cli_process(
         duration_ms = int((time.monotonic() - start_time) * 1000)
 
         if result_data:
+            # Extract error messages from result event (Claude puts them in 'errors' array)
+            if not error_msg and result_data.get("errors"):
+                error_msg = "; ".join(str(e) for e in result_data["errors"])
+
             # Prefer structured_output (from --json-schema) over raw result text
             structured = result_data.get("structured_output")
             if structured and isinstance(structured, dict):
@@ -466,6 +548,7 @@ async def _run_cli_process(
             error=error_msg or "No result received from CLI",
             duration_ms=duration_ms,
             cost_usd=cost_usd,
+            session_id=session_id,
         ))
 
     except asyncio.CancelledError:

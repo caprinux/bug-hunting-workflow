@@ -7,7 +7,7 @@ import logging
 import os
 from pathlib import Path
 
-from bug_hunter.core.cli_wrapper import run_claude
+from bug_hunter.core.cli_wrapper import run_agent
 from bug_hunter.core.events import event_manager
 from bug_hunter.utils.result_parser import parse_agent_result
 from bug_hunter.pipeline.stages.base import PipelineStage, StageContext, StageResult
@@ -75,7 +75,7 @@ class ScoperStage(PipelineStage):
             {"model": context.config.models.scoper, "engagement_type": eng_type},
         )
 
-        result = await run_claude(
+        result = await run_agent(
             prompt=prompt,
             agent_file=agent_file,
             model=context.config.models.scoper,

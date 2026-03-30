@@ -7,7 +7,7 @@ import logging
 import os
 from pathlib import Path
 
-from bug_hunter.core.cli_wrapper import run_claude
+from bug_hunter.core.cli_wrapper import run_agent
 from bug_hunter.core.events import event_manager
 from bug_hunter.pipeline.stages.base import PipelineStage, StageContext, StageResult
 from bug_hunter.pipeline.stages.registry import register
@@ -77,7 +77,7 @@ class TestingSetupStage(PipelineStage):
             {"model": context.config.models.strict_validator, "engagement_type": eng_type},
         )
 
-        result = await run_claude(
+        result = await run_agent(
             prompt=prompt,
             agent_file=agent_file,
             model=context.config.models.strict_validator,

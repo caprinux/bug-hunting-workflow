@@ -7,7 +7,7 @@ import logging
 import os
 from pathlib import Path
 
-from bug_hunter.core.cli_wrapper import run_claude
+from bug_hunter.core.cli_wrapper import run_agent
 from bug_hunter.core.database import list_bugs, update_bug
 from bug_hunter.core.events import event_manager
 from bug_hunter.utils.result_parser import parse_agent_result
@@ -35,21 +35,40 @@ class DeduplicatorStage(PipelineStage):
 
         bug_data_list = [b["bug_data"] for b in bugs]
 
-        # Write findings to file so LLM reads on its own
+        # Collect existing bugs from prior runs (confirmed, cannot_validate, etc.)
+        # The deduplicator should discard new findings that duplicate these
+        all_existing = list_bugs(context.engagement_id)
+        existing_bugs = [
+            b["bug_data"] for b in all_existing
+            if b["run_id"] != context.run_id and b["status"] not in ("discarded", "out_of_scope")
+        ]
+
         stage_dir = self.get_stage_dir(context)
+
+        # Write new findings
         findings_file = os.path.join(stage_dir, "input_findings.json")
         with open(findings_file, "w") as f:
             json.dump(bug_data_list, f, indent=2)
         findings_path = os.path.abspath(findings_file)
 
+        # Write existing bugs for reference
+        existing_section = ""
+        if existing_bugs:
+            existing_file = os.path.join(stage_dir, "existing_bugs.json")
+            with open(existing_file, "w") as f:
+                json.dump(existing_bugs, f, indent=2)
+            existing_path = os.path.abspath(existing_file)
+            existing_section = f"\nEXISTING BUGS FROM PRIOR RUNS ({len(existing_bugs)} total): Read {existing_path}\nDo NOT remove or modify these. Only discard NEW findings that duplicate an existing bug."
+
         await event_manager.emit_log(
             context.engagement_id, context.run_id, self.name,
-            f"De-duplicating {len(bug_data_list)} findings",
+            f"De-duplicating {len(bug_data_list)} findings against {len(existing_bugs)} existing bugs",
         )
 
         prompt = f"""You are de-duplicating security vulnerability findings that may have been flagged by multiple agents.
 
-FINDINGS ({len(bug_data_list)} total): Read {findings_path}
+NEW FINDINGS ({len(bug_data_list)} total): Read {findings_path}
+{existing_section}
 
 RULES:
 1. Same file and line range (source code) OR same URL and parameter (black box) = obvious duplicate → merge
@@ -58,6 +77,7 @@ RULES:
 4. Same vulnerability PATTERN at genuinely DIFFERENT locations = NOT duplicates, preserve as distinct bugs
 5. When merging, combine reasoning from all agents. Note which agents agreed (multi-agent agreement = higher confidence).
 6. Preserve the most specific/detailed version of each field.
+7. If a new finding duplicates an EXISTING bug from a prior run, discard the new finding (mark it as a duplicate of the existing bug ID).
 
 Your output will be collected automatically via structured JSON output. Do not write results to any file."""
 
@@ -69,7 +89,7 @@ Your output will be collected automatically via structured JSON output. Do not w
             {"model": context.config.models.deduplicator, "finding_count": len(bug_data_list)},
         )
 
-        result = await run_claude(
+        result = await run_agent(
             prompt=prompt,
             agent_file=agent_file,
             model=context.config.models.deduplicator,

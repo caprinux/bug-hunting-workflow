@@ -89,15 +89,15 @@ class VariantHunterConfig:
 
 @dataclass
 class ModelsConfig:
-    scoper: str = "opus"
-    skills_hunter: str = "opus"
+    scoper: str = "gpt-5.4"
+    skills_hunter: str = "gpt-5.4"
     bug_hunter_subagent: str = "opus"
-    variant_hunter: str = "opus"
-    deduplicator: str = "opus"
-    strict_validator: str = "opus"
-    perfectionist: str = "opus"
-    strict_triager: str = "opus"
-    bug_chainer: str = "opus"
+    variant_hunter: str = "gpt-5.4"
+    deduplicator: str = "gpt-5.4"
+    strict_validator: str = "gpt-5.4"
+    perfectionist: str = "gpt-5.4"
+    strict_triager: str = "gpt-5.4"
+    bug_chainer: str = "gpt-5.4"
 
 
 @dataclass

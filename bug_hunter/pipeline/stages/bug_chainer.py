@@ -7,7 +7,7 @@ import logging
 import os
 from pathlib import Path
 
-from bug_hunter.core.cli_wrapper import run_claude
+from bug_hunter.core.cli_wrapper import run_agent
 from bug_hunter.core.database import create_chain, list_bugs
 from bug_hunter.core.events import event_manager
 from bug_hunter.utils.result_parser import parse_agent_result
@@ -101,7 +101,7 @@ Your output will be collected automatically via structured JSON output. Do not w
             },
         )
 
-        result = await run_claude(
+        result = await run_agent(
             prompt=prompt,
             agent_file=agent_file,
             model=context.config.models.bug_chainer,

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { api } from '../utils/api'
+import useTitle from '../hooks/useTitle'
 
 const CLAUDE_MODEL_OPTIONS = [
   { value: 'opus', label: 'Claude Opus 4.6' },
@@ -87,20 +88,23 @@ const SECTIONS = [
   {
     key: 'models',
     label: 'Models',
-    description: 'LLM model selection per pipeline stage.',
+    description: 'LLM model selection per pipeline stage. Claude models use Claude Code CLI, Codex models use OpenAI Codex CLI.',
     fields: [
-      { key: 'scoper', label: 'Scoper', type: 'select', options: CLAUDE_MODEL_OPTIONS },
-      { key: 'bug_hunter_subagent', label: 'Bug Hunter', type: 'select', options: CLAUDE_MODEL_OPTIONS },
-      { key: 'deduplicator', label: 'De-duplicator', type: 'select', options: CLAUDE_MODEL_OPTIONS },
-      { key: 'strict_validator', label: 'Validator', type: 'select', options: CLAUDE_MODEL_OPTIONS },
-      { key: 'perfectionist', label: 'Perfectionist', type: 'select', options: CLAUDE_MODEL_OPTIONS },
-      { key: 'strict_triager', label: 'Triager', type: 'select', options: CLAUDE_MODEL_OPTIONS },
-      { key: 'bug_chainer', label: 'Bug Chainer', type: 'select', options: CLAUDE_MODEL_OPTIONS },
+      { key: 'scoper', label: 'Scoper', type: 'select', options: [...CLAUDE_MODEL_OPTIONS, ...CODEX_MODEL_OPTIONS] },
+      { key: 'skills_hunter', label: 'Skills Hunter', type: 'select', options: [...CLAUDE_MODEL_OPTIONS, ...CODEX_MODEL_OPTIONS] },
+      { key: 'bug_hunter_subagent', label: 'Bug Hunter', type: 'select', options: [...CLAUDE_MODEL_OPTIONS, ...CODEX_MODEL_OPTIONS] },
+      { key: 'variant_hunter', label: 'Variant Hunter', type: 'select', options: [...CLAUDE_MODEL_OPTIONS, ...CODEX_MODEL_OPTIONS] },
+      { key: 'deduplicator', label: 'De-duplicator', type: 'select', options: [...CLAUDE_MODEL_OPTIONS, ...CODEX_MODEL_OPTIONS] },
+      { key: 'strict_validator', label: 'Validator', type: 'select', options: [...CLAUDE_MODEL_OPTIONS, ...CODEX_MODEL_OPTIONS] },
+      { key: 'perfectionist', label: 'Perfectionist', type: 'select', options: [...CLAUDE_MODEL_OPTIONS, ...CODEX_MODEL_OPTIONS] },
+      { key: 'strict_triager', label: 'Triager', type: 'select', options: [...CLAUDE_MODEL_OPTIONS, ...CODEX_MODEL_OPTIONS] },
+      { key: 'bug_chainer', label: 'Bug Chainer', type: 'select', options: [...CLAUDE_MODEL_OPTIONS, ...CODEX_MODEL_OPTIONS] },
     ],
   },
 ]
 
 export default function Settings() {
+  useTitle('Settings')
   const [settings, setSettings] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
