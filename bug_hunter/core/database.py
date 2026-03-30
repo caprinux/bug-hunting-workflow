@@ -170,6 +170,10 @@ def _run_migrations(conn) -> None:
         cursor = conn.execute(f"PRAGMA table_info({table})")
         return any(row[1] == column for row in cursor.fetchall())
 
+    # Migration: add notes to engagements table
+    if not _column_exists("engagements", "notes"):
+        conn.execute("ALTER TABLE engagements ADD COLUMN notes TEXT DEFAULT ''")
+
     # Migration: add external_id to bugs table
     if not _column_exists("bugs", "external_id"):
         conn.execute("ALTER TABLE bugs ADD COLUMN external_id TEXT NOT NULL DEFAULT ''")
@@ -329,7 +333,7 @@ def list_engagements() -> list[dict]:
 
 
 def update_engagement(eng_id: str, **kwargs) -> Optional[dict]:
-    allowed = {"name", "status", "cost_total_usd"}
+    allowed = {"name", "status", "cost_total_usd", "notes"}
     updates = {k: v for k, v in kwargs.items() if k in allowed}
     if not updates:
         return get_engagement(eng_id)

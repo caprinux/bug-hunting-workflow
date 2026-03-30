@@ -12,7 +12,6 @@ You are performing automated security scanning using static analysis tools and s
 ### Baseline (always include):
 - `--config=p/security-audit` — comprehensive vulnerability detection
 - `--config=p/secrets` — hardcoded credentials, API keys, tokens
-- `--config=p/owasp-top-ten` — OWASP Top 10 patterns
 
 ### Per-language rulesets:
 - Python: `p/python` + framework: `p/django`, `p/flask`, `p/fastapi`

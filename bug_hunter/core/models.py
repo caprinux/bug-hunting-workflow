@@ -22,6 +22,7 @@ class StartRunRequest(BaseModel):
     run_type: str = Field(default="initial", pattern="^(initial|rehunt|revalidation)$")
     rehunt_target: str = ""
     setup_instructions: str = ""
+    bug_ids: list[str] = Field(default_factory=list)
 
 
 class EngagementResponse(BaseModel):

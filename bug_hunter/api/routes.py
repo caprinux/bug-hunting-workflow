@@ -83,6 +83,16 @@ async def api_create_engagement(req: CreateEngagementRequest):
         "infra_config": req.infra_config,
     }
 
+    # Apply engagement-type-specific defaults
+    if req.type == "black_box":
+        eng_config.setdefault("bug_hunter", {})
+        eng_config["bug_hunter"].setdefault("agents", ["claude"])
+        eng_config["bug_hunter"].setdefault("mode", "parallel")
+    else:  # source_code
+        eng_config.setdefault("bug_hunter", {})
+        eng_config["bug_hunter"].setdefault("agents", ["claude", "codex"])
+        eng_config["bug_hunter"].setdefault("mode", "parallel")
+
     if req.config_overrides and isinstance(req.config_overrides, dict):
         # Strip dangerous overrides that could allow path injection
         overrides = dict(req.config_overrides)
@@ -128,6 +138,15 @@ async def api_get_engagement(engagement_id: str):
         raise HTTPException(status_code=404, detail="Engagement not found")
     eng["runs"] = list_runs(engagement_id)
     return eng
+
+
+@router.patch("/engagements/{engagement_id}/notes")
+async def api_update_engagement_notes(engagement_id: str, body: dict):
+    """Update engagement notes."""
+    eng = get_engagement(engagement_id)
+    if not eng:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    return update_engagement(engagement_id, notes=body.get("notes", ""))
 
 
 @router.patch("/engagements/{engagement_id}/config")
@@ -193,6 +212,7 @@ async def api_start_run(engagement_id: str, req: StartRunRequest):
             run_type=req.run_type,
             rehunt_target=req.rehunt_target if req.rehunt_target else None,
             setup_instructions=req.setup_instructions if req.setup_instructions else None,
+            bug_ids=req.bug_ids if req.bug_ids else None,
         )
     except sqlite3.IntegrityError:
         raise HTTPException(
