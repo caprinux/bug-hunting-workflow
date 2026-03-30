@@ -2,6 +2,7 @@
   "type": "object",
   "properties": {
     "validated": {"type": "boolean"},
+    "verdict": {"type": "string"},
     "poc": {
       "type": "object",
       "properties": {
@@ -15,6 +16,6 @@
     },
     "reason": {"type": "string"}
   },
-  "required": ["validated", "poc", "reason"],
+  "required": ["validated", "verdict", "poc", "reason"],
   "additionalProperties": false
 }

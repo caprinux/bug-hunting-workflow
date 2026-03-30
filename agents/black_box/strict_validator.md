@@ -49,9 +49,13 @@ If your PoC hits a CAPTCHA, use the captcha-solver MCP tools to bypass it. Do no
 
 Use these exact values — no other values are accepted:
 - `validated`: `true` or `false`
+- `verdict`: exactly one of `confirmed`, `legitimate`, or `not_real`
+  - `confirmed` — PoC executed successfully, bug is proven exploitable
+  - `legitimate` — bug appears real based on static analysis, but cannot be validated (no infra, destructive PoC, etc.)
+  - `not_real` — bug is a false positive, not exploitable, intended behavior, or fundamentally flawed analysis
 - `poc.execution_result`: exactly one of `success`, `failure`, `error`, or `destructive_skipped`
 - `poc.language`: e.g. `python`, `bash`, `javascript`, `curl`
 
 ## Output
 
-JSON object with `validated` (boolean), `poc` (language, code, execution result, output), and `reason` (if not validated).
+JSON object with `validated` (boolean), `verdict`, `poc` (language, code, execution result, output), and `reason`.

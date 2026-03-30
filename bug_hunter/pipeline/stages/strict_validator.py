@@ -14,7 +14,7 @@ import logging
 import os
 from pathlib import Path
 
-from bug_hunter.core.cli_wrapper import run_claude
+from bug_hunter.core.cli_wrapper import run_agent
 from bug_hunter.core.database import list_bugs, update_bug
 from bug_hunter.core.events import event_manager
 from bug_hunter.utils.result_parser import parse_agent_result
@@ -108,8 +108,13 @@ class StrictValidatorStage(PipelineStage):
                     bug_data["validated"] = True
                     update_bug(bug["id"], status="validated", bug_data=bug_data)
                 else:
+                    verdict = result.get("verdict", "")
                     bug_data["cannot_validate_reason"] = result.get("reason", "Unknown")
-                    update_bug(bug["id"], status="cannot_validate", bug_data=bug_data)
+                    bug_data["verdict"] = verdict
+                    if verdict == "not_real":
+                        update_bug(bug["id"], status="discarded", bug_data=bug_data)
+                    else:
+                        update_bug(bug["id"], status="cannot_validate", bug_data=bug_data)
 
         await event_manager.emit_progress(
             context.engagement_id, context.run_id, self.name,
@@ -138,15 +143,22 @@ class StrictValidatorStage(PipelineStage):
             context.engagement_id, status="validated", run_id=context.run_id)]
         cannot_validate = [b["bug_data"] for b in list_bugs(
             context.engagement_id, status="cannot_validate", run_id=context.run_id)]
+        discarded = [b["bug_data"] for b in list_bugs(
+            context.engagement_id, status="discarded", run_id=context.run_id)]
         self.write_output(context, "validated_bugs.json", validated)
         self.write_output(context, "cannot_validate.json", cannot_validate)
+        self.write_output(context, "discarded.json", discarded)
 
         return StageResult(
             success=True,
             input_count=len(bugs),
             output_count=len(validated),
             cost_usd=total_cost,
-            metadata={"validated": len(validated), "cannot_validate": len(cannot_validate)},
+            metadata={
+                "validated": len(validated),
+                "cannot_validate": len(cannot_validate),
+                "discarded": len(discarded),
+            },
         )
 
     async def _validate_single_bug(self, context, bug_data, infra_config, scope_file,
@@ -178,7 +190,7 @@ DESTRUCTIVE POC POLICY: {destructive_policy}
 
 Your output will be collected automatically via structured JSON output. Do not write results to any file."""
 
-        result = await run_claude(
+        result = await run_agent(
             prompt=prompt, agent_file=agent_file,
             model=context.config.models.strict_validator,
             cwd=pocs_dir,
