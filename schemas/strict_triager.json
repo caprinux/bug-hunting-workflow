@@ -6,16 +6,43 @@
       "items": {
         "type": "object",
         "properties": {
-          "id": {"type": "string"},
-          "tag": {"type": "string"},
-          "severity": {"type": "string"},
-          "note": {"type": "string"}
+          "id": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string",
+            "enum": [
+              "strong",
+              "weak",
+              "informational"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low",
+              "informational"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
         },
-        "required": ["id", "tag", "severity", "note"],
+        "required": [
+          "id",
+          "tag",
+          "severity",
+          "note"
+        ],
         "additionalProperties": false
       }
     }
   },
-  "required": ["tagged"],
+  "required": [
+    "tagged"
+  ],
   "additionalProperties": false
 }

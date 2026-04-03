@@ -57,6 +57,7 @@ class ScopeValidatorStage(PipelineStage):
         findings_path = os.path.abspath(findings_file)
 
         scope_file = self._stage_output_path(context, "scoper", "scope.json")
+        scope_details_line = f"SCOPE DETAILS: Read {scope_file} for qualifying/non-qualifying vulns and excluded paths." if os.path.exists(scope_file) else ""
 
         await event_manager.emit_log(
             context.engagement_id, context.run_id, self.name,
@@ -68,7 +69,7 @@ class ScopeValidatorStage(PipelineStage):
 SCOPE DEFINITION:
 {scope_def}
 
-SCOPE DETAILS: Read {scope_file} for qualifying/non-qualifying vulns and excluded paths.
+{scope_details_line}
 
 FINDINGS ({len(bug_data_list)} total): Read {findings_path}
 
@@ -88,7 +89,7 @@ Your output will be collected automatically via structured JSON output. Do not w
             agent_file = None
 
         record_dir, record_meta = self.prepare_agent_run(
-            context, "claude", "scope_validation",
+            context, self._agent_name_for_model(context.config.models.strict_validator), "scope_validation",
             {"finding_count": len(bug_data_list)},
         )
 

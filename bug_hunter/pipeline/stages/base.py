@@ -116,6 +116,12 @@ class PipelineStage(ABC):
         with open(filepath, "w") as f:
             json.dump(data, f, indent=2)
 
+    @staticmethod
+    def _agent_name_for_model(model: str) -> str:
+        """Return 'codex' or 'claude' based on the model string."""
+        from bug_hunter.core.cli_wrapper import is_codex_model
+        return "codex" if is_codex_model(model) else "claude"
+
     def prepare_agent_run(self, context: StageContext, agent_name: str, label: str,
                           metadata: Optional[dict] = None) -> tuple[str, dict]:
         """Create a per-invocation log directory and append a stage index entry."""

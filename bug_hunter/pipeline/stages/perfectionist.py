@@ -58,7 +58,7 @@ class PerfectionistStage(PipelineStage):
 
                 record_dir, record_metadata = self.prepare_agent_run(
                     context,
-                    "claude",
+                    self._agent_name_for_model(context.config.models.perfectionist),
                     f"expand_{bug_id}",
                     {
                         "model": context.config.models.perfectionist,

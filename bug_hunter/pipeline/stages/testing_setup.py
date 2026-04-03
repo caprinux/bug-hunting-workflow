@@ -73,7 +73,7 @@ class TestingSetupStage(PipelineStage):
         prompt = "\n".join(prompt_parts)
 
         record_dir, record_meta = self.prepare_agent_run(
-            context, "claude", "testing_setup",
+            context, self._agent_name_for_model(context.config.models.strict_validator), "testing_setup",
             {"model": context.config.models.strict_validator, "engagement_type": eng_type},
         )
 

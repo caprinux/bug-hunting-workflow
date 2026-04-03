@@ -3,22 +3,60 @@
   "properties": {
     "individual_bugs": {
       "type": "array",
-      "items": {"type": "object"}
+      "items": {
+        "type": "object"
+      }
     },
     "demonstrated_chains": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "id": {"type": "string"},
-          "bug_ids": {"type": "array", "items": {"type": "string"}},
-          "description": {"type": "string"},
-          "combined_impact": {"type": "string"},
-          "execution_order": {"type": "string"},
-          "status": {"type": "string"},
-          "severity": {"type": "string"}
+          "id": {
+            "type": "string"
+          },
+          "bug_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": {
+            "type": "string"
+          },
+          "combined_impact": {
+            "type": "string"
+          },
+          "execution_order": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "demonstrated",
+              "proposed"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low",
+              "informational"
+            ]
+          }
         },
-        "required": ["id", "bug_ids", "description", "combined_impact", "execution_order", "status", "severity"],
+        "required": [
+          "id",
+          "bug_ids",
+          "description",
+          "combined_impact",
+          "execution_order",
+          "status",
+          "severity"
+        ],
         "additionalProperties": false
       }
     },
@@ -27,14 +65,47 @@
       "items": {
         "type": "object",
         "properties": {
-          "id": {"type": "string"},
-          "bug_ids": {"type": "array", "items": {"type": "string"}},
-          "description": {"type": "string"},
-          "combined_impact": {"type": "string"},
-          "status": {"type": "string"},
-          "severity": {"type": "string"}
+          "id": {
+            "type": "string"
+          },
+          "bug_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": {
+            "type": "string"
+          },
+          "combined_impact": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "demonstrated",
+              "proposed"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low",
+              "informational"
+            ]
+          }
         },
-        "required": ["id", "bug_ids", "description", "combined_impact", "status", "severity"],
+        "required": [
+          "id",
+          "bug_ids",
+          "description",
+          "combined_impact",
+          "status",
+          "severity"
+        ],
         "additionalProperties": false
       }
     },
@@ -43,15 +114,35 @@
       "items": {
         "type": "object",
         "properties": {
-          "target_bug_class": {"type": "string"},
-          "reason": {"type": "string"},
-          "priority": {"type": "string"}
+          "target_bug_class": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          }
         },
-        "required": ["target_bug_class", "reason", "priority"],
+        "required": [
+          "target_bug_class",
+          "reason",
+          "priority"
+        ],
         "additionalProperties": false
       }
     }
   },
-  "required": ["individual_bugs", "demonstrated_chains", "proposed_chains", "rehunt_suggestions"],
+  "required": [
+    "individual_bugs",
+    "demonstrated_chains",
+    "proposed_chains",
+    "rehunt_suggestions"
+  ],
   "additionalProperties": false
 }

@@ -83,8 +83,7 @@ Your output will be collected automatically via structured JSON output. Do not w
 
         agent_file = os.path.join(AGENTS_DIR, "shared", "deduplicator.md")
         record_dir, record_metadata = self.prepare_agent_run(
-            context,
-            "claude",
+            context, self._agent_name_for_model(context.config.models.deduplicator),
             "deduplicate_findings",
             {"model": context.config.models.deduplicator, "finding_count": len(bug_data_list)},
         )

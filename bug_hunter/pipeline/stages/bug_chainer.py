@@ -92,7 +92,7 @@ Your output will be collected automatically via structured JSON output. Do not w
         agent_file = os.path.join(AGENTS_DIR, "shared", "bug_chainer.md")
         record_dir, record_metadata = self.prepare_agent_run(
             context,
-            "claude",
+            self._agent_name_for_model(context.config.models.bug_chainer),
             "bug_chainer",
             {
                 "model": context.config.models.bug_chainer,

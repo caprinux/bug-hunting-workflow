@@ -71,7 +71,7 @@ class ScoperStage(PipelineStage):
             cwd = stage_dir
 
         record_dir, record_meta = self.prepare_agent_run(
-            context, "claude", "scoper",
+            context, self._agent_name_for_model(context.config.models.scoper), "scoper",
             {"model": context.config.models.scoper, "engagement_type": eng_type},
         )
 

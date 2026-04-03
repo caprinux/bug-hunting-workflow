@@ -14,7 +14,7 @@
           "vuln_type": {"type": "string"},
           "description": {"type": "string"},
           "reasoning": {"type": "string"},
-          "confidence": {"type": "string"},
+          "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
           "root_cause": {"type": "string"},
           "security_impact": {"type": "string"},
           "validated": {"type": "boolean"},
@@ -23,7 +23,7 @@
             "properties": {
               "language": {"type": "string"},
               "code": {"type": "string"},
-              "execution_result": {"type": "string"},
+              "execution_result": {"type": "string", "enum": ["success", "failure", "error", "destructive_skipped"]},
               "output": {"type": "string"}
             },
             "required": ["language", "code", "execution_result", "output"],
@@ -33,22 +33,8 @@
         "required": ["source_file", "line_range", "url", "http_evidence", "vuln_class", "vuln_type", "description", "reasoning", "confidence", "root_cause", "security_impact", "validated", "poc"],
         "additionalProperties": false
       }
-    },
-    "attack_surfaces": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "id": {"type": "string"},
-          "name": {"type": "string"},
-          "status": {"type": "string"},
-          "findings_notes": {"type": "string"}
-        },
-        "required": ["id", "name", "status", "findings_notes"],
-        "additionalProperties": false
-      }
     }
   },
-  "required": ["bugs", "attack_surfaces"],
+  "required": ["bugs"],
   "additionalProperties": false
 }

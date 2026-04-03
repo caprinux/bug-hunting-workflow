@@ -87,7 +87,7 @@ For each bug, read the original vulnerable code, extract the pattern, and search
 Your output will be collected automatically via structured JSON output. Do not write results to any file."""
 
         record_dir, record_meta = self.prepare_agent_run(
-            context, "claude", "variant_hunt",
+            context, self._agent_name_for_model(context.config.models.variant_hunter), "variant_hunt",
             {"model": context.config.models.variant_hunter,
              "pattern_count": len(patternable)},
         )

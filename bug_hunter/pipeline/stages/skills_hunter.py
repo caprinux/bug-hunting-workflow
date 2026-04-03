@@ -50,6 +50,7 @@ class SkillsHunterStage(PipelineStage):
             return StageResult(success=False, error="No source path available")
 
         scope_file = self._stage_output_path(context, "scoper", "scope.json")
+        scope_line = f"APPLICATION CONTEXT: Read {scope_file}" if os.path.exists(scope_file) else ""
 
         await event_manager.emit_log(
             context.engagement_id, context.run_id, self.name,
@@ -60,7 +61,7 @@ class SkillsHunterStage(PipelineStage):
         schema_file = str(SCHEMAS_DIR / "bug_hunter.json")
 
         prompt = f"""SOURCE CODE ROOT: {source_path}
-APPLICATION CONTEXT: Read {scope_file}
+{scope_line}
 
 Run the following three security scans against the codebase, then report all findings.
 
@@ -73,7 +74,7 @@ Run the following three security scans against the codebase, then report all fin
 Your output will be collected automatically via structured JSON output. Do not write results to any file."""
 
         record_dir, record_meta = self.prepare_agent_run(
-            context, "claude", "skills_hunt",
+            context, self._agent_name_for_model(context.config.models.skills_hunter), "skills_hunt",
             {"model": context.config.models.skills_hunter, "engagement_type": eng_type},
         )
 

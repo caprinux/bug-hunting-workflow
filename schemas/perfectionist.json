@@ -1,7 +1,9 @@
 {
   "type": "object",
   "properties": {
-    "expanded": {"type": "boolean"},
+    "expanded": {
+      "type": "boolean"
+    },
     "expanded_primitives": {
       "type": "object",
       "properties": {
@@ -10,12 +12,31 @@
           "items": {
             "type": "object",
             "properties": {
-              "primitive": {"type": "string"},
-              "poc_file": {"type": "string"},
-              "poc_code": {"type": "string"},
-              "execution_result": {"type": "string"}
+              "primitive": {
+                "type": "string"
+              },
+              "poc_file": {
+                "type": "string"
+              },
+              "poc_code": {
+                "type": "string"
+              },
+              "execution_result": {
+                "type": "string",
+                "enum": [
+                  "success",
+                  "failure",
+                  "error",
+                  "destructive_skipped"
+                ]
+              }
             },
-            "required": ["primitive", "poc_file", "poc_code", "execution_result"],
+            "required": [
+              "primitive",
+              "poc_file",
+              "poc_code",
+              "execution_result"
+            ],
             "additionalProperties": false
           }
         },
@@ -24,18 +45,31 @@
           "items": {
             "type": "object",
             "properties": {
-              "primitive": {"type": "string"},
-              "reason_not_demonstrated": {"type": "string"}
+              "primitive": {
+                "type": "string"
+              },
+              "reason_not_demonstrated": {
+                "type": "string"
+              }
             },
-            "required": ["primitive", "reason_not_demonstrated"],
+            "required": [
+              "primitive",
+              "reason_not_demonstrated"
+            ],
             "additionalProperties": false
           }
         }
       },
-      "required": ["demonstrated", "theoretical"],
+      "required": [
+        "demonstrated",
+        "theoretical"
+      ],
       "additionalProperties": false
     }
   },
-  "required": ["expanded", "expanded_primitives"],
+  "required": [
+    "expanded",
+    "expanded_primitives"
+  ],
   "additionalProperties": false
 }

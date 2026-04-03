@@ -55,8 +55,10 @@ class StrictValidatorStage(PipelineStage):
                 if testing_infra:
                     infra_config = f"{infra_config}\n\n## Local Testing Environment\n{testing_infra}" if infra_config else testing_infra
 
-        # Point agent to scope file instead of inlining
+        # Point agent to scope file if it exists
         scope_file = self._stage_output_path(context, "scoper", "scope.json")
+        if not os.path.exists(scope_file):
+            scope_file = ""
 
         stage_dir = self.get_stage_dir(context)
         pocs_dir = os.path.join(stage_dir, "pocs")
@@ -93,7 +95,7 @@ class StrictValidatorStage(PipelineStage):
                 )
 
                 record_dir, record_meta = self.prepare_agent_run(
-                    context, "claude", f"validate_{bug_id}",
+                    context, self._agent_name_for_model(context.config.models.strict_validator), f"validate_{bug_id}",
                     {"model": context.config.models.strict_validator, "bug_id": bug_id},
                 )
 
@@ -185,7 +187,7 @@ class StrictValidatorStage(PipelineStage):
 INFRASTRUCTURE ACCESS:
 {infra_config}
 
-APPLICATION CONTEXT: Read {scope_file}
+{"APPLICATION CONTEXT: Read " + scope_file if scope_file else ""}
 DESTRUCTIVE POC POLICY: {destructive_policy}
 
 Your output will be collected automatically via structured JSON output. Do not write results to any file."""

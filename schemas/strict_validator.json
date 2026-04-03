@@ -1,21 +1,56 @@
 {
   "type": "object",
   "properties": {
-    "validated": {"type": "boolean"},
-    "verdict": {"type": "string"},
+    "validated": {
+      "type": "boolean"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "confirmed",
+        "legitimate",
+        "not_real"
+      ]
+    },
     "poc": {
       "type": "object",
       "properties": {
-        "language": {"type": "string"},
-        "code": {"type": "string"},
-        "execution_result": {"type": "string"},
-        "output": {"type": "string"}
+        "language": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "execution_result": {
+          "type": "string",
+          "enum": [
+            "success",
+            "failure",
+            "error",
+            "destructive_skipped"
+          ]
+        },
+        "output": {
+          "type": "string"
+        }
       },
-      "required": ["language", "code", "execution_result", "output"],
+      "required": [
+        "language",
+        "code",
+        "execution_result",
+        "output"
+      ],
       "additionalProperties": false
     },
-    "reason": {"type": "string"}
+    "reason": {
+      "type": "string"
+    }
   },
-  "required": ["validated", "verdict", "poc", "reason"],
+  "required": [
+    "validated",
+    "verdict",
+    "poc",
+    "reason"
+  ],
   "additionalProperties": false
 }

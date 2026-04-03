@@ -85,7 +85,7 @@ Your output will be collected automatically via structured JSON output. Do not w
             agent_file = None
 
         record_dir, record_meta = self.prepare_agent_run(
-            context, "claude", "triage_tagging",
+            context, self._agent_name_for_model(context.config.models.strict_triager), "triage_tagging",
             {"finding_count": len(bug_data_list)},
         )
 
