@@ -36,7 +36,7 @@ SCHEMAS_DIR = Path(__file__).parent.parent.parent.parent / "schemas"
 class BugHunterStage(PipelineStage):
 
     def __init__(self):
-        self._surfaces_lock = asyncio.Lock()
+        pass
 
     @property
     def name(self) -> str:
@@ -77,11 +77,6 @@ class BugHunterStage(PipelineStage):
         hunter_config = context.config.bug_hunter
         infra_config = eng_config.get("engagement", {}).get("infra_config", "")
 
-        # Load scope from Scoper stage
-        scope_data = self.read_previous_output(context, "scoper", "scope.json")
-        if not scope_data:
-            return StageResult(success=False, error="No scope data from Scoper stage")
-
         # Get source path and available tools from setup
         setup_data = self.read_previous_output(context, "setup", "setup.json")
         source_path = ""
@@ -99,17 +94,17 @@ class BugHunterStage(PipelineStage):
             if tool_list:
                 available_tools = "AVAILABLE TOOLS: " + ", ".join(tool_list)
 
-        # Initialize progress files if first iteration
-        attack_surfaces_file = os.path.join(stage_dir, "attack_surfaces.json")
         bugs_file = os.path.join(stage_dir, "BUGS.json")
-
-        if not os.path.exists(attack_surfaces_file):
-            with open(attack_surfaces_file, "w") as f:
-                json.dump(scope_data.get("attack_surfaces", []), f, indent=2)
-
         if not os.path.exists(bugs_file):
             with open(bugs_file, "w") as f:
                 json.dump([], f, indent=2)
+
+        # Engagement-level tracking files
+        eng_dir = os.path.dirname(os.path.dirname(context.run_dir))
+        attack_surfaces_file = os.path.join(eng_dir, "ATTACK_SURFACES.md")
+        if not os.path.exists(attack_surfaces_file):
+            with open(attack_surfaces_file, "w") as f:
+                f.write("")
 
         iterations = max(1, hunter_config.iterations)
         agents = hunter_config.agents
@@ -131,20 +126,16 @@ class BugHunterStage(PipelineStage):
                     f.write("")
 
         for iteration in range(1, iterations + 1):
-            # Reload progress files each iteration (previous iteration updated them)
-            with open(attack_surfaces_file) as f:
-                attack_surfaces = json.load(f)
             with open(bugs_file) as f:
                 existing_bugs = json.load(f)
-            # Filter out malformed entries (e.g. if agent wrote directly to BUGS.json)
             existing_bugs = [b for b in existing_bugs if isinstance(b, dict) and b.get("found_by")]
 
             await event_manager.emit_log(
                 context.engagement_id, context.run_id, self.name,
-                f"Iteration {iteration}/{iterations} ({mode}) — {len(attack_surfaces)} surfaces, {len(existing_bugs)} bugs found so far",
+                f"Iteration {iteration}/{iterations} ({mode}) — {len(existing_bugs)} bugs found so far",
             )
 
-            async def _run_agent_iteration(agent_name, _attack_surfaces, _existing_bugs):
+            async def _run_agent_iteration(agent_name, _existing_bugs):
                 nonlocal total_cost
                 agent_stats[agent_name]["running"] += 1
                 await event_manager.emit("agent_progress", context.engagement_id, context.run_id, self.name, {
@@ -154,21 +145,21 @@ class BugHunterStage(PipelineStage):
                     "running": agent_stats[agent_name]["running"],
                 })
 
-                # Make pipeline-managed files read-only so agents can't overwrite them
+                # Make BUGS.json read-only so agents can't overwrite it
                 import stat
-                for protected in [bugs_file, attack_surfaces_file]:
+                for protected in [bugs_file]:
                     if os.path.exists(protected):
                         os.chmod(protected, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
 
                 try:
                     result = await self._run_hunter(
-                        context, agent_name, scope_data, _attack_surfaces,
+                        context, agent_name,
                         _existing_bugs, source_path, infra_config, eng_type, stage_dir,
-                        notes_files[agent_name], available_tools,
+                        notes_files[agent_name], available_tools, attack_surfaces_file,
                     )
                 finally:
                     # Restore write permissions
-                    for protected in [bugs_file, attack_surfaces_file]:
+                    for protected in [bugs_file]:
                         if os.path.exists(protected):
                             os.chmod(protected, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
                 total_cost += result.cost_usd
@@ -181,7 +172,7 @@ class BugHunterStage(PipelineStage):
                     from bug_hunter.utils.result_parser import parse_agent_result
                     raw_file = os.path.join(stage_dir, f"raw_output_{agent_name}_iter{iteration}.md")
                     data = parse_agent_result(
-                        result.result, ["bugs", "attack_surfaces"],
+                        result.result, ["bugs"],
                         f"bug_hunter/{agent_name}", save_raw_to=raw_file,
                     )
                     if not data.get("bugs") and isinstance(result.result, str):
@@ -190,15 +181,11 @@ class BugHunterStage(PipelineStage):
                             f"[{agent_name}] iter {iteration}: text instead of JSON — saved to raw_output",
                         )
                     new_bugs = data.get("bugs", [])
-                    updated_surfaces = data.get("attack_surfaces", [])
 
                     run_prefix = context.run_id[:8]
                     for i, bug in enumerate(new_bugs):
                         bug["id"] = f"{run_prefix}/{agent_name}-i{iteration}-{len(_existing_bugs) + i:03d}"
                         bug["found_by"] = [agent_name]
-
-                    if updated_surfaces:
-                        await self._merge_attack_surfaces(attack_surfaces_file, updated_surfaces)
 
                     agent_stats[agent_name]["succeeded"] += 1
                     await event_manager.emit("agent_progress", context.engagement_id, context.run_id, self.name, {
@@ -228,9 +215,7 @@ class BugHunterStage(PipelineStage):
                     # Reload bugs mid-iteration so later agents see earlier agent's findings
                     with open(bugs_file) as f:
                         current_bugs = json.load(f)
-                    with open(attack_surfaces_file) as f:
-                        current_surfaces = json.load(f)
-                    new_bugs = await _run_agent_iteration(agent, current_surfaces, current_bugs)
+                    new_bugs = await _run_agent_iteration(agent, current_bugs)
                     iteration_bugs.extend(new_bugs)
                     # Persist immediately so next agent sees them
                     if new_bugs:
@@ -239,7 +224,7 @@ class BugHunterStage(PipelineStage):
                             json.dump(current_bugs, f, indent=2)
             else:
                 # Parallel: run all agents concurrently
-                tasks = [_run_agent_iteration(agent, attack_surfaces, existing_bugs) for agent in agents]
+                tasks = [_run_agent_iteration(agent, existing_bugs) for agent in agents]
                 for coro in asyncio.as_completed(tasks):
                     new_bugs = await coro
                     iteration_bugs.extend(new_bugs)
@@ -270,7 +255,6 @@ class BugHunterStage(PipelineStage):
         valid_bugs, quarantined = validate_findings_list(all_new_bugs, quarantine_dir)
 
         self.write_output(context, "all_findings.json", valid_bugs)
-        self.write_output(context, "all_summaries.json", [scope_data.get("architecture", {})])
 
         for bug in valid_bugs:
             create_bug(context.engagement_id, context.run_id, bug)
@@ -280,7 +264,7 @@ class BugHunterStage(PipelineStage):
 
         return StageResult(
             success=True,
-            input_count=len(attack_surfaces),
+            input_count=0,
             output_count=len(valid_bugs),
             cost_usd=total_cost,
             metadata={
@@ -295,27 +279,20 @@ class BugHunterStage(PipelineStage):
         )
 
     async def _run_hunter(self, context: StageContext, agent_name: str,
-                          scope_data: dict, attack_surfaces: list,
                           existing_bugs: list, source_path: str,
                           infra_config: str, eng_type: str, stage_dir: str,
-                          notes_file: str = "", available_tools: str = "") -> CLIResult:
+                          notes_file: str = "", available_tools: str = "",
+                          attack_surfaces_file: str = "") -> CLIResult:
         """Run a single bug hunter agent."""
-        scope_file = self._stage_output_path(context, "scoper", "scope.json")
-        surfaces_file = os.path.abspath(os.path.join(stage_dir, "attack_surfaces.json"))
         bugs_file = os.path.abspath(os.path.join(stage_dir, "BUGS.json"))
+        surfaces_path = os.path.abspath(attack_surfaces_file) if attack_surfaces_file else ""
+        notes_path = os.path.abspath(notes_file) if notes_file else ""
 
         # Determine session state early — needed for prompt construction
         session_id = None
         is_resume = False
         if context.config.bug_hunter.mode == "parallel" and (agent_name == "claude" or agent_name.startswith("claude")):
             session_id, is_resume = self._get_agent_session(context, agent_name)
-
-        notes_section = ""
-        if notes_file:
-            notes_path = os.path.abspath(notes_file)
-            notes_section = f"""
-WORKING NOTES: {notes_path}
-Read this file for context from previous iterations. Update it with your own observations — areas explored, dead ends, leads to follow up, informational findings. Keep it concise. Future iterations will read it."""
 
         if context.run_type == "rehunt" and context.rehunt_target and is_resume:
             # Rehunt with persistent session — agent already has full context
@@ -331,12 +308,15 @@ The above instructions are your PRIMARY OBJECTIVE for this run. Prioritize them 
             prompt = f"""{rehunt_instruction}{"SOURCE CODE ROOT: " + source_path if eng_type == "source_code" else ""}
 {"INFRASTRUCTURE ACCESS:" + chr(10) + infra_config if infra_config else ""}
 
-APPLICATION CONTEXT: Read {scope_file}
-ATTACK SURFACES: Read {surfaces_file}
 BUGS ALREADY FOUND (do not duplicate): Read {bugs_file}
 {available_tools}
-{notes_section}
-BUGS.json and attack_surfaces.json are READ-ONLY. Your output will be collected automatically via structured output — do not write findings to any file.
+ATTACK SURFACES: {surfaces_path}
+Maintain this file as a concise checklist of surfaces you discover and their status. Mark explored surfaces, note key findings. Keep it short.
+
+NOTES: {notes_path}
+Your persistent memory across sessions. Keep it concise — only record important findings, dead ends to avoid, credentials discovered, and key technical details that would be lost to context compaction.
+
+BUGS.json is READ-ONLY. Your output will be collected automatically via structured output — do not write findings to any file.
 When you are done, make sure all background tasks and subagents have completed before finishing."""
 
         if eng_type == "source_code":
@@ -450,26 +430,4 @@ When you are done, make sure all background tasks and subagents have completed b
 
         return result
 
-    async def _merge_attack_surfaces(self, surfaces_file: str, new_surfaces: list):
-        """Merge updated attack surfaces into the existing file."""
-        async with self._surfaces_lock:
-            try:
-                with open(surfaces_file) as f:
-                    existing = json.load(f)
-
-                existing_ids = {s.get("id") for s in existing}
-                for surface in new_surfaces:
-                    sid = surface.get("id")
-                    if sid and sid in existing_ids:
-                        for i, ex in enumerate(existing):
-                            if ex.get("id") == sid:
-                                existing[i].update(surface)
-                                break
-                    else:
-                        existing.append(surface)
-
-                with open(surfaces_file, "w") as f:
-                    json.dump(existing, f, indent=2)
-            except Exception as e:
-                logger.warning(f"Failed to merge attack surfaces: {e}")
 

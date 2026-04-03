@@ -84,6 +84,9 @@ class PipelineOrchestrator:
 
         filtered = []
         for name, order in stages:
+            if name == "scoper":
+                if not self.config.scoper.enabled:
+                    continue
             if name == "deduplicator":
                 # Auto-enable for multi-agent, otherwise respect config
                 multi_agent = len(self.config.bug_hunter.agents) > 1
@@ -651,23 +654,7 @@ class PipelineOrchestrator:
                     _json.dump(merged, f, indent=2)
                 logger.info(f"Merged BUGS.json from {len(prior_runs)} completed runs: {len(merged)} unique bugs")
 
-        # Use the latest completed run's attack_surfaces.json (most up-to-date scan status)
-        # and NOTES.md (accumulated knowledge)
-        for prior_run in reversed(prior_runs):
-            prior_dir = self._get_run_dir(prior_run["id"])
-            bh_dir = prior_dir / f"{bh_order:02d}_bug_hunter"
-
-            surfaces_file = bh_dir / "attack_surfaces.json"
-            if surfaces_file.exists() and surfaces_file.stat().st_size > 10:
-                dst_file = dst_dir / "attack_surfaces.json"
-                if not dst_file.exists():
-                    shutil.copy2(str(surfaces_file), str(dst_file))
-                    logger.info(f"Copied attack_surfaces.json from run {prior_run['id'][:8]}")
-
-            # Notes now live at the engagement level — no need to copy per-run
-
-            if surfaces_file.exists():
-                break
+        # NOTES and ATTACK_SURFACES live at the engagement level — no per-run copying needed
 
     def _prepare_revalidation_bugs(self, run_id: str, bug_ids: list[str] = None):
         """Clone cannot_validate bugs from prior runs into this revalidation run as 'found'.

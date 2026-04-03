@@ -37,6 +37,11 @@ class EngagementConfig:
 
 
 @dataclass
+class ScoperConfig:
+    enabled: bool = False
+
+
+@dataclass
 class BugHunterConfig:
     agents: list[str] = field(default_factory=lambda: ["claude", "codex"])
     iterations: int = 1
@@ -115,6 +120,7 @@ class AppConfig:
     perfectionist: PerfectionistConfig = field(default_factory=PerfectionistConfig)
     strict_triager: StrictTriagerConfig = field(default_factory=StrictTriagerConfig)
     bug_chainer: BugChainerConfig = field(default_factory=BugChainerConfig)
+    scoper: ScoperConfig = field(default_factory=ScoperConfig)
     skills_hunter: SkillsHunterConfig = field(default_factory=SkillsHunterConfig)
     variant_hunter: VariantHunterConfig = field(default_factory=VariantHunterConfig)
     models: ModelsConfig = field(default_factory=ModelsConfig)
