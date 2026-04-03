@@ -622,6 +622,12 @@ async def run_codex(
                 if on_event:
                     on_event(StreamEvent(type="result", data=params))
                 break
+            elif method == "thread/status/changed":
+                status_type = params.get("status", {}).get("type", "")
+                if status_type == "idle":
+                    if on_event:
+                        on_event(StreamEvent(type="result", data=params))
+                    break
             elif method == "turn/failed":
                 error_msg = params.get("error", {}).get("message", "Turn failed")
                 break
