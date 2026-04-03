@@ -55,10 +55,12 @@ class StrictValidatorStage(PipelineStage):
                 if testing_infra:
                     infra_config = f"{infra_config}\n\n## Local Testing Environment\n{testing_infra}" if infra_config else testing_infra
 
-        # Point agent to scope file if it exists
+        # Point agent to scope or program file for context
         scope_file = self._stage_output_path(context, "scoper", "scope.json")
         if not os.path.exists(scope_file):
-            scope_file = ""
+            eng_dir = os.path.dirname(os.path.dirname(context.run_dir))
+            program_file = os.path.join(eng_dir, "program.json")
+            scope_file = program_file if os.path.exists(program_file) else ""
 
         stage_dir = self.get_stage_dir(context)
         pocs_dir = os.path.join(stage_dir, "pocs")
