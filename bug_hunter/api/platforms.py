@@ -126,24 +126,6 @@ async def api_import_program(platform_name: str, program_id: str):
     import_key = f"{platform_name}/{program_id}"
 
     try:
-        # Build scope definition from structured fields
-        scope_parts = []
-
-        if program.qualifying_vulns:
-            scope_parts.append("QUALIFYING VULNERABILITIES:\n" + "\n".join(program.qualifying_vulns))
-        if program.non_qualifying_vulns:
-            scope_parts.append("NON-QUALIFYING VULNERABILITIES:\n" + "\n".join(program.non_qualifying_vulns))
-        if program.scopes:
-            assets = "\n".join(
-                f"{s.get('scope', '')} ({s.get('scope_type_name', '')}, {s.get('asset_value', '')})"
-                for s in program.scopes
-            )
-            scope_parts.append("ASSETS IN SCOPE:\n" + assets)
-        if program.out_of_scope:
-            scope_parts.append("ASSETS NOT IN SCOPE:\n" + "\n".join(program.out_of_scope))
-        if program.rules_text:
-            scope_parts.append("ADDITIONAL NOTES:\n" + program.rules_text)
-
         # Extract credentials
         credentials = ""
         if program.hunter_credentials:
@@ -166,16 +148,6 @@ async def api_import_program(platform_name: str, program_id: str):
 
         parsed = {
             "name": program.name,
-            "qualifying_vulns": "\n".join(program.qualifying_vulns),
-            "non_qualifying_vulns": "\n".join(program.non_qualifying_vulns),
-            "assets_in_scope": "\n".join(
-                f"{s.get('scope', '')} ({s.get('scope_type_name', '')}, {s.get('asset_value', '')})"
-                for s in program.scopes
-            ),
-            "assets_not_in_scope": "\n".join(program.out_of_scope),
-            "scope_notes": "\n\n".join(scope_parts),
-            "additional_context": program.account_access or "",
-            "source_repo": "",
             "infra_url": target_domains[0] if target_domains else "",
             "credentials": credentials,
             "target_domains": target_domains,
@@ -186,8 +158,7 @@ async def api_import_program(platform_name: str, program_id: str):
     except Exception as e:
         _import_status[import_key] = {"status": "failed", "message": str(e)}
 
-    asyncio.create_task(_run_import())
-    return {"status": "started"}
+    return {"status": "completed"}
 
 
 @router.get("/{platform_name}/programs/{program_id}/import/status")
