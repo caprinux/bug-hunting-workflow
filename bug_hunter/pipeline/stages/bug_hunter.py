@@ -77,6 +77,26 @@ class BugHunterStage(PipelineStage):
         hunter_config = context.config.bug_hunter
         infra_config = eng_config.get("engagement", {}).get("infra_config", "")
 
+        # Write program details to a file the agent can read
+        eng_dir = os.path.dirname(os.path.dirname(context.run_dir))
+        program_file = os.path.join(eng_dir, "program.json")
+        if not os.path.exists(program_file):
+            eng_details = eng_config.get("engagement", {})
+            program_data = {
+                "name": context.engagement.get("name", ""),
+                "type": eng_type,
+                "scope_definition": eng_details.get("scope_definition", ""),
+                "infra_config": infra_config,
+                "target_domains": eng_details.get("target_domains", []),
+                "source_repo": eng_details.get("source_repo", ""),
+            }
+            # Include raw platform data if available (from YWH import)
+            raw_program = eng_config.get("raw_program_data")
+            if raw_program:
+                program_data["raw_program_data"] = raw_program
+            with open(program_file, "w") as f:
+                json.dump(program_data, f, indent=2)
+
         # Get source path and available tools from setup
         setup_data = self.read_previous_output(context, "setup", "setup.json")
         source_path = ""
@@ -305,16 +325,14 @@ class BugHunterStage(PipelineStage):
 
 The above instructions are your PRIMARY OBJECTIVE for this run. Prioritize them over general scanning.
 """
+            program_path = os.path.abspath(program_file)
             prompt = f"""{rehunt_instruction}{"SOURCE CODE ROOT: " + source_path if eng_type == "source_code" else ""}
-{"INFRASTRUCTURE ACCESS:" + chr(10) + infra_config if infra_config else ""}
 
+PROGRAM DETAILS (scope, credentials, targets): Read {program_path}
 BUGS ALREADY FOUND (do not duplicate): Read {bugs_file}
 {available_tools}
 ATTACK SURFACES: {surfaces_path}
-Maintain this file as a concise checklist of surfaces you discover and their status. Mark explored surfaces, note key findings. Keep it short.
-
 NOTES: {notes_path}
-Your persistent memory across sessions. Keep it concise — only record important findings, dead ends to avoid, credentials discovered, and key technical details that would be lost to context compaction.
 
 BUGS.json is READ-ONLY. Your output will be collected automatically via structured output — do not write findings to any file.
 When you are done, make sure all background tasks and subagents have completed before finishing."""

@@ -41,11 +41,14 @@ class ScopeValidatorStage(PipelineStage):
         eng_config = context.engagement["config"]
         scope_def = eng_config.get("engagement", {}).get("scope_definition", "")
 
-        # Load scope notes from Scoper if available
-        scope_data = self.read_previous_output(context, "scoper", "scope.json")
-        scope_notes = {}
-        if scope_data:
-            scope_notes = scope_data.get("scope_notes", {})
+        # If no scope_definition, try reading from program.json
+        if not scope_def:
+            eng_dir = os.path.dirname(os.path.dirname(context.run_dir))
+            program_file = os.path.join(eng_dir, "program.json")
+            if os.path.exists(program_file):
+                with open(program_file) as f:
+                    program_data = json.load(f)
+                scope_def = program_data.get("scope_definition", "")
 
         bug_data_list = [b["bug_data"] for b in bugs]
 
@@ -56,8 +59,15 @@ class ScopeValidatorStage(PipelineStage):
             json.dump(bug_data_list, f, indent=2)
         findings_path = os.path.abspath(findings_file)
 
+        scope_details_line = ""
         scope_file = self._stage_output_path(context, "scoper", "scope.json")
-        scope_details_line = f"SCOPE DETAILS: Read {scope_file} for qualifying/non-qualifying vulns and excluded paths." if os.path.exists(scope_file) else ""
+        if os.path.exists(scope_file):
+            scope_details_line = f"SCOPE DETAILS: Read {scope_file} for qualifying/non-qualifying vulns and excluded paths."
+        else:
+            eng_dir = os.path.dirname(os.path.dirname(context.run_dir))
+            program_file = os.path.join(eng_dir, "program.json")
+            if os.path.exists(program_file):
+                scope_details_line = f"PROGRAM DETAILS: Read {os.path.abspath(program_file)} for full scope, qualifying/non-qualifying vulns, and assets."
 
         await event_manager.emit_log(
             context.engagement_id, context.run_id, self.name,

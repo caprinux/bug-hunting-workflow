@@ -8,7 +8,6 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from bug_hunter.core.cli_wrapper import run_claude
 from bug_hunter.platforms import registry
 
 router = APIRouter(prefix="/api/platforms")
@@ -115,7 +114,7 @@ _import_status: dict[str, dict] = {}
 
 @router.post("/{platform_name}/programs/{program_id}/import")
 async def api_import_program(platform_name: str, program_id: str):
-    """Start LLM import of program data (runs in background)."""
+    """Import program data directly — no LLM needed."""
     platform = registry.get(platform_name)
     if not platform:
         raise HTTPException(status_code=404, detail=f"Platform '{platform_name}' not found")
@@ -125,91 +124,67 @@ async def api_import_program(platform_name: str, program_id: str):
         raise HTTPException(status_code=404, detail=f"Program '{program_id}' not found")
 
     import_key = f"{platform_name}/{program_id}"
-    if _import_status.get(import_key, {}).get("status") == "running":
-        raise HTTPException(status_code=409, detail="Import already in progress")
 
-    _import_status[import_key] = {"status": "running", "message": "Parsing program data with LLM..."}
+    try:
+        # Build scope definition from structured fields
+        scope_parts = []
 
-    import asyncio
-
-    async def _run_import():
-        try:
-            raw_json = json.dumps(program.raw_data, indent=2, default=str)
-
-            prompt = f"""Parse this bug bounty program data and extract the fields needed to create a security audit engagement.
-
-PROGRAM DATA:
-{raw_json[:50000]}
-
-Extract and output a JSON object with these exact fields:
-{{
-  "name": "program name suitable for an engagement title",
-  "qualifying_vulns": "one vulnerability type per line, extracted from qualifying_vulnerability list",
-  "non_qualifying_vulns": "one vulnerability type per line, extracted from non_qualifying_vulnerability list",
-  "assets_in_scope": "one asset per line with type (e.g., '*.example.com (web application, HIGH)')",
-  "assets_not_in_scope": "one asset per line from out_of_scope list",
-  "scope_notes": "ONLY technical testing constraints that affect how a bug hunter should test — e.g., 'do not test in production hours', 'only test on staging environment', 'do not perform DoS attacks', 'rate limit to N requests/sec'. Empty string if none.",
-  "additional_context": "technical context useful for bug hunting — VPN requirements, account access info, staging URLs, API documentation links, special testing instructions. Empty string if none.",
-  "source_repo": "any GitHub/GitLab/source code repository URLs found in scopes OR rules_text, comma-separated if multiple (e.g., 'https://gitlab.com/org/repo1, https://github.com/org/repo2'). Look for markdown links like [name](url) in rules_text. Empty string if none.",
-  "infra_url": "primary target URL if identifiable (empty string if none)",
-  "credentials": "extract ALL credentials from hunter_credentials field. Format each as 'role: username / password'. Include all accounts, API keys, tokens, and access details. Empty string if none."
-}}
-
-Be thorough — include all qualifying and non-qualifying vulnerability types.
-For assets_in_scope, include the scope_type and asset_value for each entry.
-
-IMPORTANT: Exclude ALL platform/administrative information that does not help the bug hunter find bugs:
-- Duplicate/reporting policies (first reporter rules, 24-hour windows, report via platform only)
-- Eligibility restrictions (employee exclusions, age requirements, country restrictions)
-- Reward tiers, bounty amounts, payment terms
-- Legal disclaimers, safe harbor language, responsible disclosure timelines
-- Reporter conduct rules, communication policies
-- How rewards are calculated or what severity ratings map to
-Only keep information that directly affects HOW to test the target system."""
-
-            result = await run_claude(
-                prompt=prompt,
-                model="sonnet",
-                timeout=120,
+        if program.qualifying_vulns:
+            scope_parts.append("QUALIFYING VULNERABILITIES:\n" + "\n".join(program.qualifying_vulns))
+        if program.non_qualifying_vulns:
+            scope_parts.append("NON-QUALIFYING VULNERABILITIES:\n" + "\n".join(program.non_qualifying_vulns))
+        if program.scopes:
+            assets = "\n".join(
+                f"{s.get('scope', '')} ({s.get('scope_type_name', '')}, {s.get('asset_value', '')})"
+                for s in program.scopes
             )
+            scope_parts.append("ASSETS IN SCOPE:\n" + assets)
+        if program.out_of_scope:
+            scope_parts.append("ASSETS NOT IN SCOPE:\n" + "\n".join(program.out_of_scope))
+        if program.rules_text:
+            scope_parts.append("ADDITIONAL NOTES:\n" + program.rules_text)
 
-            if not result.success:
-                # Fallback to raw data
-                parsed = {}
-            else:
-                parsed = result.result
-                if isinstance(parsed, str):
-                    try:
-                        import re
-                        match = re.search(r'\{[\s\S]*\}', parsed)
-                        if match:
-                            parsed = json.loads(match.group())
-                        else:
-                            parsed = {}
-                    except (json.JSONDecodeError, TypeError):
-                        parsed = {}
+        # Extract credentials
+        credentials = ""
+        if program.hunter_credentials:
+            cred_lines = []
+            for cred in program.hunter_credentials:
+                if isinstance(cred, dict):
+                    cred_lines.append(
+                        f"{cred.get('access_type', '')}: {cred.get('login', '')} / {cred.get('password', '')}"
+                    )
+                else:
+                    cred_lines.append(str(cred))
+            credentials = "\n".join(cred_lines)
 
-            if not isinstance(parsed, dict):
-                parsed = {}
+        # Extract target domains from scopes
+        target_domains = []
+        for s in program.scopes:
+            scope_val = s.get("scope", "")
+            if scope_val and s.get("scope_type_name", "").lower() in ("web application", "api", "web-application"):
+                target_domains.append(scope_val)
 
-            # Fallback fields from raw program data
-            if not parsed.get("name"):
-                parsed["name"] = program.name
-            if not parsed.get("qualifying_vulns"):
-                parsed["qualifying_vulns"] = "\n".join(program.qualifying_vulns)
-            if not parsed.get("non_qualifying_vulns"):
-                parsed["non_qualifying_vulns"] = "\n".join(program.non_qualifying_vulns)
-            if not parsed.get("assets_in_scope"):
-                parsed["assets_in_scope"] = "\n".join(
-                    f"{s.get('scope', '')} ({s.get('scope_type_name', '')}, {s.get('asset_value', '')})"
-                    for s in program.scopes
-                )
-            if not parsed.get("assets_not_in_scope"):
-                parsed["assets_not_in_scope"] = "\n".join(program.out_of_scope)
+        parsed = {
+            "name": program.name,
+            "qualifying_vulns": "\n".join(program.qualifying_vulns),
+            "non_qualifying_vulns": "\n".join(program.non_qualifying_vulns),
+            "assets_in_scope": "\n".join(
+                f"{s.get('scope', '')} ({s.get('scope_type_name', '')}, {s.get('asset_value', '')})"
+                for s in program.scopes
+            ),
+            "assets_not_in_scope": "\n".join(program.out_of_scope),
+            "scope_notes": "\n\n".join(scope_parts),
+            "additional_context": program.account_access or "",
+            "source_repo": "",
+            "infra_url": target_domains[0] if target_domains else "",
+            "credentials": credentials,
+            "target_domains": target_domains,
+            "raw_program_data": program.raw_data,
+        }
 
-            _import_status[import_key] = {"status": "completed", "result": parsed}
-        except Exception as e:
-            _import_status[import_key] = {"status": "failed", "message": str(e)}
+        _import_status[import_key] = {"status": "completed", "result": parsed}
+    except Exception as e:
+        _import_status[import_key] = {"status": "failed", "message": str(e)}
 
     asyncio.create_task(_run_import())
     return {"status": "started"}

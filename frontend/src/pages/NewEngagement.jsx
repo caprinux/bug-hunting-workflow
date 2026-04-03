@@ -118,6 +118,11 @@ export default function NewEngagement() {
         ? form.infra_url.split('\n').map(d => d.trim()).filter(Boolean)
         : []
 
+      // Pass raw program data from platform import if available
+      if (prefill?.raw_program_data) {
+        config_overrides.raw_program_data = prefill.raw_program_data
+      }
+
       const data = {
         name: form.name,
         type: form.type,
