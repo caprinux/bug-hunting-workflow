@@ -13,6 +13,7 @@ import Report from './pages/Report'
 import Chat from './pages/Chat'
 import Settings from './pages/Settings'
 import Usage from './pages/Usage'
+import ImportReview from './pages/ImportReview'
 import Platforms from './pages/Platforms'
 
 export default function App() {
@@ -59,6 +60,7 @@ export default function App() {
         <Route path="/engagements/:id/report" element={<Report />} />
         <Route path="/engagements/:id/chat" element={<Chat />} />
         <Route path="/platforms" element={<Platforms />} />
+        <Route path="/import/review" element={<ImportReview />} />
         <Route path="/usage" element={<Usage />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" />} />

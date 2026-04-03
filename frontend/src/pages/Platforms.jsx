@@ -115,7 +115,7 @@ export default function Platforms() {
       // Import is synchronous — fetch result immediately
       const status = await api.importStatus(selectedPlatform.name, selectedProgram.id)
       if (status.status === 'completed') {
-        navigate('/engagements/new', { state: { prefill: status.result } })
+        navigate('/import/review', { state: { importData: status.result } })
         return
       } else if (status.status === 'failed') {
         setError(status.message || 'Import failed')
