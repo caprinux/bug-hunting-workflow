@@ -422,6 +422,7 @@ async def run_claude_chat(
 _codex_server: Optional[asyncio.subprocess.Process] = None
 _codex_request_counter = 0
 _codex_lock = asyncio.Lock()
+_codex_run_lock = asyncio.Lock()  # Serialize all codex calls (single stdout reader)
 _codex_initialized = False
 
 
@@ -503,6 +504,17 @@ async def run_codex(
     thread_id: Optional[str] = None,
 ) -> CLIResult:
     """Run Codex via the app-server JSON-RPC protocol. Supports session resume via thread_id."""
+    async with _codex_run_lock:
+        return await _run_codex_impl(
+            prompt, model, cwd, timeout, on_event, additional_dirs,
+            record_dir, record_metadata, output_schema_file, thread_id,
+        )
+
+
+async def _run_codex_impl(
+    prompt, model, cwd, timeout, on_event, additional_dirs,
+    record_dir, record_metadata, output_schema_file, thread_id,
+) -> CLIResult:
     start_time = time.monotonic()
     raw_lines: list[str] = []
     cost_usd = 0.0
@@ -555,11 +567,20 @@ async def run_codex(
             ))
 
         # Send turn
-        rid = await _codex_send("turn/start", {
+        turn_params = {
             "threadId": result_thread_id,
             "input": [{"type": "text", "text": prompt}],
-        })
-        await _codex_read_response(rid, timeout=30)
+        }
+        if output_schema_file:
+            try:
+                with open(output_schema_file) as f:
+                    turn_params["outputSchema"] = json.load(f)
+            except Exception as e:
+                logger.warning(f"Failed to load output schema: {e}")
+
+        rid = await _codex_send("turn/start", turn_params)
+        turn_result = await _codex_read_response(rid, timeout=30)
+        current_turn_id = turn_result.get("turn", {}).get("id", "")
 
         # Read events until turn completes
         deadline = time.monotonic() + timeout
@@ -578,15 +599,33 @@ async def run_codex(
             except json.JSONDecodeError:
                 continue
 
-            # Server requests — auto-approve
+            # Server requests — handle by type
             if "id" in msg and "method" in msg:
-                await _codex_respond(msg["id"], {"accept": True})
+                server_method = msg["method"]
+                if server_method == "item/tool/call":
+                    # Dynamic tool call — not supported, reject
+                    await _codex_respond(msg["id"], {
+                        "contentItems": [{"type": "text", "text": "Tool not available"}],
+                        "success": False,
+                    })
+                else:
+                    # Approval requests, permissions, etc. — auto-approve
+                    await _codex_respond(msg["id"], {"accept": True})
                 continue
             if "id" in msg and "result" in msg:
                 continue
 
             method = msg.get("method", "")
             params = msg.get("params", {})
+
+            # Filter by threadId and turnId — ignore stale events
+            evt_thread = params.get("threadId", "")
+            evt_turn = params.get("turnId", params.get("turn", {}).get("id", "") if isinstance(params.get("turn"), dict) else "")
+            if evt_thread and evt_thread != result_thread_id:
+                continue
+            if current_turn_id and evt_turn and evt_turn != current_turn_id:
+                continue
+
             raw_str = json.dumps(msg, default=str)
             raw_lines.append(raw_str)
             if record_dir:
@@ -619,7 +658,11 @@ async def run_codex(
                             "delta": {"type": "thinking_delta", "thinking": item.get("content", "")},
                         }))
             elif method == "turn/completed":
-                if on_event:
+                # Check for failure via turn status
+                turn = params.get("turn", {})
+                if turn.get("status") == "failed":
+                    error_msg = turn.get("error", {}).get("message", "Turn failed")
+                elif on_event:
                     on_event(StreamEvent(type="result", data=params))
                 break
             elif method == "thread/status/changed":
@@ -628,6 +671,13 @@ async def run_codex(
                     if on_event:
                         on_event(StreamEvent(type="result", data=params))
                     break
+            elif method == "error":
+                # Error notification — check if retryable
+                if params.get("willRetry"):
+                    continue  # Server will retry, keep waiting
+                err_obj = params.get("error", {})
+                error_msg = err_obj.get("message", "Unknown error") if isinstance(err_obj, dict) else str(err_obj)
+                break
             elif method == "turn/failed":
                 error_msg = params.get("error", {}).get("message", "Turn failed")
                 break

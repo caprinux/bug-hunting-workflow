@@ -11,6 +11,7 @@ export default function ImportReview() {
 
   const [name, setName] = useState(importData?.name || '')
   const [type, setType] = useState('black_box')
+  const [sourceRepo, setSourceRepo] = useState('')
   const [credentials, setCredentials] = useState(importData?.credentials || '')
   const [rawData, setRawData] = useState(
     JSON.stringify(importData?.raw_program_data || {}, null, 2)
@@ -82,11 +83,17 @@ export default function ImportReview() {
         return
       }
 
+      if (type === 'source_code' && !sourceRepo.trim()) {
+        setError('Source repository URL is required for source code engagements')
+        setSubmitting(false)
+        return
+      }
+
       const eng = await api.createEngagement({
         name: name.trim(),
         type,
         source_path: '',
-        source_repo: '',
+        source_repo: type === 'source_code' ? sourceRepo.trim() : '',
         target_domains: importData.target_domains || [],
         scope_definition: '',
         infra_config: credentials.trim() ? `CREDENTIALS:\n${credentials.trim()}` : '',
@@ -120,6 +127,12 @@ export default function ImportReview() {
               <option value="source_code">Source Code</option>
             </select>
           </div>
+          {type === 'source_code' && (
+            <div className="form-group">
+              <label>Source Repository URL</label>
+              <input type="text" value={sourceRepo} onChange={e => setSourceRepo(e.target.value)} placeholder="https://github.com/org/repo" />
+            </div>
+          )}
           <div className="form-group">
             <label>Credentials</label>
             <textarea value={credentials} onChange={e => setCredentials(e.target.value)} rows={3} placeholder="username / password" />

@@ -99,7 +99,11 @@ export default function Platforms() {
     setProgramDetails(null)
     try {
       const details = await api.getPlatformProgram(selectedPlatform.name, program.id)
-      setProgramDetails(details)
+      // Guard against stale response — only update if this program is still selected
+      setSelectedProgram(current => {
+        if (current?.id === program.id) setProgramDetails(details)
+        return current
+      })
     } catch (e) {
       setError(e.message)
     }
