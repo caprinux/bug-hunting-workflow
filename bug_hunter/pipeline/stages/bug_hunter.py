@@ -60,15 +60,27 @@ class BugHunterStage(PipelineStage):
             json.dump(sessions, f, indent=2)
 
     def _get_agent_session(self, context: StageContext, agent_name: str) -> tuple[str, bool]:
-        """Get or create a persistent session ID for an agent. Returns (session_id, is_resume)."""
+        """Get or create a persistent session ID for an agent. Returns (session_id, is_resume).
+
+        Only returns is_resume=True if the session was previously used successfully
+        (marked by a _used suffix key).
+        """
         sessions = self._load_sessions(context)
         key = f"bug_hunter_{agent_name}"
-        if key in sessions:
+        used_key = f"{key}_used"
+        if key in sessions and sessions.get(used_key):
             return sessions[key], True
-        session_id = str(uuid4())
-        sessions[key] = session_id
+        if key not in sessions:
+            sessions[key] = str(uuid4())
+            self._save_sessions(context, sessions)
+        return sessions[key], False
+
+    def _mark_session_used(self, context: StageContext, agent_name: str):
+        """Mark a session as successfully used so future calls resume it."""
+        sessions = self._load_sessions(context)
+        key = f"bug_hunter_{agent_name}_used"
+        sessions[key] = True
         self._save_sessions(context, sessions)
-        return session_id, False
 
     async def execute(self, context: StageContext) -> StageResult:
         stage_dir = self.get_stage_dir(context)
@@ -442,12 +454,12 @@ When you are done, make sure all background tasks and subagents have completed b
         else:
             return CLIResult(success=False, error=f"Unknown agent: {agent_name}")
 
-        # Save session/thread ID for future resumption (codex returns thread_id via stream)
-        if not is_resume and result.session_id:
+        # Save session/thread ID and mark as used for future resumption
+        if result.success and result.session_id:
             sessions = self._load_sessions(context)
-            key = f"bug_hunter_{agent_name}"
-            sessions[key] = result.session_id
+            sessions[f"bug_hunter_{agent_name}"] = result.session_id
             self._save_sessions(context, sessions)
+            self._mark_session_used(context, agent_name)
 
         return result
 
