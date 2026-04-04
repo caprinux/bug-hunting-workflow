@@ -176,6 +176,7 @@ class BugHunterStage(PipelineStage):
                         context, agent_name,
                         _existing_bugs, source_path, infra_config, eng_type, stage_dir,
                         notes_files[agent_name], available_tools, attack_surfaces_file,
+                        program_file,
                     )
                 finally:
                     # Restore write permissions
@@ -302,7 +303,8 @@ class BugHunterStage(PipelineStage):
                           existing_bugs: list, source_path: str,
                           infra_config: str, eng_type: str, stage_dir: str,
                           notes_file: str = "", available_tools: str = "",
-                          attack_surfaces_file: str = "") -> CLIResult:
+                          attack_surfaces_file: str = "",
+                          program_file: str = "") -> CLIResult:
         """Run a single bug hunter agent."""
         bugs_file = os.path.abspath(os.path.join(stage_dir, "BUGS.json"))
         surfaces_path = os.path.abspath(attack_surfaces_file) if attack_surfaces_file else ""
@@ -326,13 +328,14 @@ class BugHunterStage(PipelineStage):
 The above instructions are your PRIMARY OBJECTIVE for this run. Prioritize them over general scanning.
 """
             program_path = os.path.abspath(program_file)
-            prompt = f"""{rehunt_instruction}{"SOURCE CODE ROOT: " + source_path if eng_type == "source_code" else ""}
+            prompt = f"""{rehunt_instruction}
+You may find the full details on this engagement here: {program_path}.
 
-PROGRAM DETAILS (scope, credentials, targets): Read {program_path}
-BUGS ALREADY FOUND (do not duplicate): Read {bugs_file}
-{available_tools}
+{"SOURCE CODE ROOT: " + source_path if eng_type == "source_code" else ""}
 ATTACK SURFACES: {surfaces_path}
 NOTES: {notes_path}
+
+{"Identify attack surfaces within the source code, find vulnerabilities throughout the codebases and document attack surfaces as you go along in {surfaces_path}." if eng_type == "source_code" else "Enumerate the targets within scope and find vulnerabilities. As you go along and you identify more attack surfaces, you may update {surfaces_path} to keep track of the target surfaces."}
 
 BUGS.json is READ-ONLY. Your output will be collected automatically via structured output — do not write findings to any file.
 When you are done, make sure all background tasks and subagents have completed before finishing."""
