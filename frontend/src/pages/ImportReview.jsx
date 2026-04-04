@@ -12,7 +12,6 @@ export default function ImportReview() {
   const [name, setName] = useState(importData?.name || '')
   const [type, setType] = useState('black_box')
   const [credentials, setCredentials] = useState(importData?.credentials || '')
-  const [infraUrl, setInfraUrl] = useState(importData?.infra_url || '')
   const [rawData, setRawData] = useState(
     JSON.stringify(importData?.raw_program_data || {}, null, 2)
   )
@@ -83,10 +82,6 @@ export default function ImportReview() {
         return
       }
 
-      const infraParts = []
-      if (infraUrl.trim()) infraParts.push(`TARGET URL: ${infraUrl.trim()}`)
-      if (credentials.trim()) infraParts.push(`CREDENTIALS:\n${credentials.trim()}`)
-
       const eng = await api.createEngagement({
         name: name.trim(),
         type,
@@ -94,7 +89,7 @@ export default function ImportReview() {
         source_repo: '',
         target_domains: importData.target_domains || [],
         scope_definition: '',
-        infra_config: infraParts.join('\n\n'),
+        infra_config: credentials.trim() ? `CREDENTIALS:\n${credentials.trim()}` : '',
         config_overrides: {
           raw_program_data: parsedRaw,
         },
@@ -124,10 +119,6 @@ export default function ImportReview() {
               <option value="black_box">Black Box</option>
               <option value="source_code">Source Code</option>
             </select>
-          </div>
-          <div className="form-group">
-            <label>Target URL</label>
-            <input type="text" value={infraUrl} onChange={e => setInfraUrl(e.target.value)} placeholder="https://..." />
           </div>
           <div className="form-group">
             <label>Credentials</label>
