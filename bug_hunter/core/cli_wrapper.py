@@ -236,10 +236,11 @@ async def run_claude(
 
         if json_schema_file:
             with open(json_schema_file) as f:
-                opts_kwargs["json_schema"] = f.read()
+                schema = json.loads(f.read())
+            opts_kwargs["output_format"] = {"type": "json_schema", "json_schema": schema}
 
         if additional_dirs:
-            opts_kwargs["additional_dirs"] = additional_dirs
+            opts_kwargs["add_dirs"] = additional_dirs
 
         if max_budget_usd:
             opts_kwargs["max_budget_usd"] = max_budget_usd
