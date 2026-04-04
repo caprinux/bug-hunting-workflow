@@ -216,9 +216,12 @@ async def run_claude(
 
     try:
         # Build options
+        import io
+        stderr_capture = io.StringIO()
         opts_kwargs = {
             "permission_mode": "bypassPermissions",
             "model": model,
+            "debug_stderr": stderr_capture,
         }
         if cwd:
             opts_kwargs["cwd"] = cwd
@@ -360,7 +363,10 @@ async def run_claude(
         raise
     except Exception as e:
         duration_ms = int((time.monotonic() - start_time) * 1000)
+        stderr_text = stderr_capture.getvalue().strip() if stderr_capture else ""
         error_msg = str(e)
+        if stderr_text:
+            error_msg = f"{error_msg}\nStderr: {stderr_text[-500:]}"
         logger.error(f"Claude SDK error: {error_msg}")
         return finalize(CLIResult(
             success=False,
