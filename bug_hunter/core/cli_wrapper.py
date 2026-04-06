@@ -226,8 +226,7 @@ async def run_claude(
         if cwd:
             opts_kwargs["cwd"] = cwd
         if session_id and is_resume:
-            opts_kwargs["continue_conversation"] = True
-            opts_kwargs["session_id"] = session_id
+            opts_kwargs["resume"] = session_id
         elif session_id:
             opts_kwargs["session_id"] = session_id
 
