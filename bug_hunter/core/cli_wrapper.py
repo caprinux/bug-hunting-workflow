@@ -239,8 +239,8 @@ async def run_claude(
 
         if json_schema_file:
             with open(json_schema_file) as f:
-                schema = json.loads(f.read())
-            opts_kwargs["output_format"] = {"type": "json_schema", "json_schema": schema}
+                schema_str = f.read()
+            opts_kwargs.setdefault("extra_args", {})["json-schema"] = schema_str
 
         if additional_dirs:
             opts_kwargs["add_dirs"] = additional_dirs
