@@ -54,6 +54,17 @@ export default function RunDetail() {
     }
   }, [events, showAgentStream])
 
+  // Load persisted stream when toggling on
+  useEffect(() => {
+    if (!showAgentStream || !run) return
+    const stage = run.current_stage || 'bug_hunter'
+    api.getStageStream(engagementId, runId, stage)
+      .then(data => setPersistedStream(
+        (data.events || []).map(e => ({ type: 'agent_stream', data: e, timestamp: e.timestamp }))
+      ))
+      .catch(() => setPersistedStream([]))
+  }, [showAgentStream, run, engagementId, runId])
+
   async function handleCancel() {
     if (!confirm('Cancel this run? In-flight subagents will be stopped and the run cannot be resumed.')) return
     setCancelling(true)
@@ -108,19 +119,6 @@ export default function RunDetail() {
   // Agent stream events — live from WebSocket + persisted from stream.jsonl
   const liveStreamEvents = liveEvents.filter(e => e.type === 'agent_stream')
   const agentStreamEvents = persistedStream.length > 0 ? persistedStream : liveStreamEvents
-
-  // Load persisted stream when toggling on
-  useEffect(() => {
-    if (!showAgentStream || !run || !run.stages) return
-    // Find the bug_hunter stage (or current stage)
-    const bhStage = run.stages?.find(s => s.stage_name === 'bug_hunter')
-    const stage = bhStage?.stage_name || run.current_stage || 'bug_hunter'
-    api.getStageStream(engagementId, runId, stage)
-      .then(data => setPersistedStream(
-        (data.events || []).map(e => ({ type: 'agent_stream', data: e, timestamp: e.timestamp }))
-      ))
-      .catch(() => setPersistedStream([]))
-  }, [showAgentStream, run, engagementId, runId])
 
   // Per-agent stats from events
   const agentStats = {}
