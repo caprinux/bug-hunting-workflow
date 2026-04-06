@@ -255,39 +255,32 @@ async def run_claude(
         async def process_messages():
             nonlocal cost_usd, result_session_id, structured_output, usage
             async for msg in client.receive_messages():
-                raw_dict = {"type": type(msg).__name__}
+                events_to_record: list[dict] = []
 
                 if isinstance(msg, AssistantMessage):
-                    raw_dict["content"] = []
                     for block in msg.content:
                         if isinstance(block, TextBlock):
                             accumulated_text.append(block.text)
-                            raw_dict["content"].append({"type": "text", "text": block.text})
+                            evt = {"type": "assistant", "message": {"content": [{"type": "text", "text": block.text}]}}
+                            events_to_record.append(evt)
                             if on_event:
-                                on_event(StreamEvent(type="assistant", data={
-                                    "type": "assistant",
-                                    "message": {"content": [{"type": "text", "text": block.text}]},
-                                }))
+                                on_event(StreamEvent(type="assistant", data=evt))
                         elif isinstance(block, ThinkingBlock):
-                            raw_dict["content"].append({"type": "thinking", "thinking": block.thinking})
+                            evt = {"type": "content_block_delta", "delta": {"type": "thinking_delta", "thinking": block.thinking}}
+                            events_to_record.append(evt)
                             if on_event:
-                                on_event(StreamEvent(type="assistant", data={
-                                    "type": "content_block_delta",
-                                    "delta": {"type": "thinking_delta", "thinking": block.thinking},
-                                }))
+                                on_event(StreamEvent(type="assistant", data=evt))
                         elif isinstance(block, ToolUseBlock):
-                            raw_dict["content"].append({"type": "tool_use", "name": block.name, "input": block.input})
+                            evt = {"type": "tool_use", "name": block.name, "input": block.input}
+                            events_to_record.append(evt)
                             if on_event:
-                                on_event(StreamEvent(type="tool_use", data={
-                                    "type": "tool_use", "name": block.name, "input": block.input,
-                                }))
+                                on_event(StreamEvent(type="tool_use", data=evt))
 
                 elif isinstance(msg, UserMessage):
-                    # Tool results
-                    raw_dict["content"] = []
                     for block in msg.content:
                         if isinstance(block, ToolResultBlock):
-                            raw_dict["content"].append({"type": "tool_result", "content": str(block.content)[:500]})
+                            evt = {"type": "tool_result", "content": str(block.content)[:500]}
+                            events_to_record.append(evt)
 
                 elif isinstance(msg, ResultMessage):
                     cost_usd = getattr(msg, "total_cost_usd", 0.0) or 0.0
@@ -298,20 +291,28 @@ async def run_claude(
                         pass
                     elif usage:
                         usage = vars(usage) if hasattr(usage, "__dict__") else None
-                    raw_dict["cost_usd"] = cost_usd
-                    raw_dict["session_id"] = result_session_id
+                    evt = {
+                        "type": "result", "subtype": "success",
+                        "is_error": getattr(msg, "is_error", False),
+                        "total_cost_usd": cost_usd,
+                        "session_id": result_session_id,
+                        "result": getattr(msg, "result", ""),
+                        "structured_output": structured_output,
+                    }
+                    events_to_record.append(evt)
                     if on_event:
-                        on_event(StreamEvent(type="result", data=raw_dict))
+                        on_event(StreamEvent(type="result", data=evt))
                     break
 
-                raw_str = json.dumps(raw_dict, default=str)
-                raw_lines.append(raw_str)
-                if record_dir:
-                    _append_jsonl(os.path.join(record_dir, "stream.jsonl"), {
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "stream": "sdk",
-                        "raw": raw_str,
-                    })
+                for evt in events_to_record:
+                    raw_str = json.dumps(evt, default=str)
+                    raw_lines.append(raw_str)
+                    if record_dir:
+                        _append_jsonl(os.path.join(record_dir, "stream.jsonl"), {
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "stream": "stdout",
+                            "raw": raw_str,
+                        })
 
         await asyncio.wait_for(process_messages(), timeout=timeout)
         await client.disconnect()
