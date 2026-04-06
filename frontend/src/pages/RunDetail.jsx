@@ -54,15 +54,22 @@ export default function RunDetail() {
     }
   }, [events, showAgentStream])
 
-  // Load persisted stream when toggling on
+  // Load persisted stream from all stages when toggling on
   useEffect(() => {
-    if (!showAgentStream || !run) return
-    const stage = run.current_stage || 'bug_hunter'
-    api.getStageStream(engagementId, runId, stage)
-      .then(data => setPersistedStream(
-        (data.events || []).map(e => ({ type: 'agent_stream', data: e, timestamp: e.timestamp }))
-      ))
-      .catch(() => setPersistedStream([]))
+    if (!showAgentStream || !run || !run.stages) return
+    const stageNames = run.stages
+      .filter(s => s.status === 'completed' || s.status === 'running')
+      .map(s => s.stage_name)
+    Promise.all(
+      stageNames.map(stage =>
+        api.getStageStream(engagementId, runId, stage)
+          .then(data => (data.events || []).map(e => ({ type: 'agent_stream', data: { ...e, stage }, timestamp: e.timestamp })))
+          .catch(() => [])
+      )
+    ).then(results => {
+      const all = results.flat().sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''))
+      setPersistedStream(all)
+    })
   }, [showAgentStream, run, engagementId, runId])
 
   async function handleCancel() {
