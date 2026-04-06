@@ -448,6 +448,7 @@ async def _ensure_codex_server():
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            limit=10 * 1024 * 1024,  # 10MB buffer for large JSON-RPC messages
         )
 
         rid = await _codex_send("initialize", {
