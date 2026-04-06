@@ -221,6 +221,7 @@ async def run_claude(
             "permission_mode": "bypassPermissions",
             "model": model,
             "stderr": lambda line: stderr_lines.append(line),
+            "env": {"IS_SANDBOX": "1"},
         }
         if cwd:
             opts_kwargs["cwd"] = cwd
