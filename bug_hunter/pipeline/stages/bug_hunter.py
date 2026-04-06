@@ -63,17 +63,20 @@ class BugHunterStage(PipelineStage):
         """Get or create a persistent session ID for an agent. Returns (session_id, is_resume).
 
         Only returns is_resume=True if the session was previously used successfully
-        (marked by a _used suffix key).
+        (marked by a _used suffix key). Otherwise generates a fresh session ID
+        every time to avoid "session ID already in use" errors from failed attempts.
         """
         sessions = self._load_sessions(context)
         key = f"bug_hunter_{agent_name}"
         used_key = f"{key}_used"
         if key in sessions and sessions.get(used_key):
             return sessions[key], True
-        if key not in sessions:
-            sessions[key] = str(uuid4())
-            self._save_sessions(context, sessions)
-        return sessions[key], False
+        # Always generate fresh ID for new/unused sessions
+        new_id = str(uuid4())
+        sessions[key] = new_id
+        sessions.pop(used_key, None)
+        self._save_sessions(context, sessions)
+        return new_id, False
 
     def _mark_session_used(self, context: StageContext, agent_name: str):
         """Mark a session as successfully used so future calls resume it."""
@@ -394,10 +397,9 @@ When you are done, make sure all background tasks and subagents have completed b
         if eng_type == "source_code":
             cwd = source_path
         else:
-            # For black_box with persistent sessions, use engagement dir as cwd
-            # so Claude's session storage path is consistent across runs
+            # For black_box, use engagement dir as cwd
             eng_dir = os.path.dirname(os.path.dirname(context.run_dir))
-            cwd = eng_dir
+            cwd = os.path.abspath(eng_dir)
 
         schema_file = str(SCHEMAS_DIR / "bug_hunter.json")
 
