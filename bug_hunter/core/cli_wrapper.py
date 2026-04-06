@@ -216,12 +216,11 @@ async def run_claude(
 
     try:
         # Build options
-        import io
-        stderr_capture = io.StringIO()
+        stderr_lines: list[str] = []
         opts_kwargs = {
             "permission_mode": "bypassPermissions",
             "model": model,
-            "debug_stderr": stderr_capture,
+            "stderr": lambda line: stderr_lines.append(line),
         }
         if cwd:
             opts_kwargs["cwd"] = cwd
@@ -363,7 +362,7 @@ async def run_claude(
         raise
     except Exception as e:
         duration_ms = int((time.monotonic() - start_time) * 1000)
-        stderr_text = stderr_capture.getvalue().strip() if stderr_capture else ""
+        stderr_text = "\n".join(stderr_lines).strip()
         error_msg = str(e)
         if stderr_text:
             error_msg = f"{error_msg}\nStderr: {stderr_text[-500:]}"
