@@ -110,30 +110,34 @@ Your output will be collected automatically via structured JSON output. Do not w
             )
 
         dedup_result = parse_agent_result(result.result, ['deduplicated', 'duplicate_groups'], "deduplicator")
-        deduplicated = dedup_result.get("deduplicated", bug_data_list)
+        # deduplicated is now a list of bug IDs that survived
+        surviving_ids = set(dedup_result.get("deduplicated", []))
         groups = dedup_result.get("duplicate_groups", [])
 
-        self.write_output(context, "deduplicated_findings.json", deduplicated)
-        self.write_output(context, "duplicate_groups.json", groups)
+        # If no structured output, keep all bugs
+        if not surviving_ids and not groups:
+            surviving_ids = {b["bug_data"].get("id") for b in bugs}
 
         merged_ids = set()
         for group in groups:
             for dup_id in group.get("duplicates", []):
                 merged_ids.add(dup_id)
 
-        # Update surviving bugs with merged data from the LLM (combined reasoning, found_by, etc.)
-        dedup_by_id = {d.get("id"): d for d in deduplicated if isinstance(d, dict) and d.get("id")}
+        self.write_output(context, "duplicate_groups.json", groups)
+
+        # Discard merged bugs, keep survivors
         for bug in bugs:
             bug_ext_id = bug["bug_data"].get("id")
             if bug_ext_id in merged_ids:
                 update_bug(bug["id"], status="discarded")
-            elif bug_ext_id in dedup_by_id:
-                update_bug(bug["id"], bug_data=dedup_by_id[bug_ext_id])
+
+        surviving_bugs = [b["bug_data"] for b in bugs if b["bug_data"].get("id") not in merged_ids]
+        self.write_output(context, "deduplicated_findings.json", surviving_bugs)
 
         return StageResult(
             success=True,
             input_count=len(bug_data_list),
-            output_count=len(deduplicated),
+            output_count=len(surviving_bugs),
             cost_usd=result.cost_usd,
             metadata={"duplicates_removed": len(merged_ids)},
         )

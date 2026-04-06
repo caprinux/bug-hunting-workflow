@@ -3,7 +3,8 @@
   "properties": {
     "deduplicated": {
       "type": "array",
-      "items": {"type": "object"}
+      "items": {"type": "string"},
+      "description": "List of bug IDs that survived deduplication"
     },
     "duplicate_groups": {
       "type": "array",
