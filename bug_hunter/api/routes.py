@@ -434,6 +434,70 @@ async def api_list_chains(engagement_id: str):
     return list_chains(engagement_id)
 
 
+@router.get("/engagements/{engagement_id}/runs/{run_id}/stages/{stage_name}/stream")
+async def api_get_stage_stream(engagement_id: str, run_id: str, stage_name: str):
+    """Get agent stream events from stream.jsonl for a stage."""
+    _verify_run_ownership(engagement_id, run_id)
+    engagement = get_engagement(engagement_id)
+    if not engagement:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    stages = list_stage_results(run_id)
+    stage = next((s for s in stages if s["stage_name"] == stage_name), None)
+    if not stage:
+        raise HTTPException(status_code=404, detail="Stage not found")
+
+    stage_order = stage["stage_order"]
+    config = _load_engagement_config(engagement)
+    output_dir = config.pipeline.output_dir
+    stage_dir = os.path.join(output_dir, "engagements", engagement_id, "runs", run_id,
+                             f"{stage_order:02d}_{stage_name}")
+
+    # Find all stream.jsonl files in agent_runs
+    import glob as _glob
+    events = []
+    for stream_file in _glob.glob(os.path.join(stage_dir, "agent_runs", "*", "stream.jsonl")):
+        agent_dir = os.path.basename(os.path.dirname(stream_file))
+        # Extract agent name from dir name (e.g. 20260406T...Z_claude_bug_hunt_abc123 -> claude)
+        parts = agent_dir.split("_")
+        agent_id = parts[1] if len(parts) > 1 else "unknown"
+        try:
+            with open(stream_file) as f:
+                for line in f:
+                    entry = json.loads(line)
+                    raw = json.loads(entry["raw"]) if isinstance(entry.get("raw"), str) else entry.get("raw", {})
+                    evt_type = raw.get("type", "")
+                    evt = {"timestamp": entry.get("timestamp", ""), "agent_id": agent_id}
+
+                    if evt_type == "assistant":
+                        content = raw.get("message", {}).get("content", [])
+                        if isinstance(content, list):
+                            text = " ".join(b.get("text", "") for b in content if b.get("type") == "text")
+                            if text:
+                                evt["event_type"] = "text"
+                                evt["text"] = text[:500]
+                                events.append(evt)
+                    elif evt_type == "content_block_delta":
+                        delta = raw.get("delta", {})
+                        if delta.get("type") == "thinking_delta":
+                            evt["event_type"] = "thinking"
+                            evt["thinking"] = delta.get("thinking", "")[:500]
+                            events.append(evt)
+                    elif evt_type == "tool_use":
+                        evt["event_type"] = "tool_use"
+                        evt["tool_name"] = raw.get("name", "")
+                        evt["tool_input"] = str(raw.get("input", ""))[:200]
+                        events.append(evt)
+                    elif evt_type == "tool_result":
+                        evt["event_type"] = "tool_result"
+                        evt["content"] = raw.get("content", "")[:200]
+                        events.append(evt)
+        except Exception:
+            continue
+
+    return {"events": events}
+
+
 @router.get("/engagements/{engagement_id}/runs/{run_id}/stages/{stage_name}/output")
 async def api_get_stage_output(engagement_id: str, run_id: str, stage_name: str,
                                 path: str = Query(default="")):

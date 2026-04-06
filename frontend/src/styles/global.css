@@ -306,6 +306,13 @@ a:hover { color: var(--accent-hover); }
 }
 .stream-agent.codex { color: var(--color-warning); }
 .stream-text { color: var(--text-secondary); word-break: break-word; }
+.stream-thinking { color: var(--text-muted); font-style: italic; word-break: break-word; }
+.stream-tool { color: var(--color-info); word-break: break-word; }
+.stream-tool strong { color: var(--text-primary); margin-right: 4px; }
+.stream-tool-result { color: var(--text-muted); word-break: break-word; font-size: 11px; }
+.stream-entry.stream-tool_use { opacity: 0.7; }
+.stream-entry.stream-tool_result { opacity: 0.5; }
+.stream-entry.stream-thinking { opacity: 0.6; }
 
 /* Engagement summary */
 .engagement-summary {

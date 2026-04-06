@@ -37,6 +37,8 @@ export const api = {
   listChains: (id) => request(`/engagements/${id}/chains`),
   getStageOutput: (engId, runId, stage, path = '') =>
     request(`/engagements/${engId}/runs/${runId}/stages/${stage}/output?path=${encodeURIComponent(path)}`),
+  getStageStream: (engId, runId, stage) =>
+    request(`/engagements/${engId}/runs/${runId}/stages/${stage}/stream`),
   getCumulative: (engId, filename) => request(`/engagements/${engId}/cumulative/${filename}`),
   getReport: (engId) => request(`/engagements/${engId}/report`),
   generateReport: (engId) => request(`/engagements/${engId}/report/generate`, { method: 'POST' }),

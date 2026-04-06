@@ -361,10 +361,11 @@ When you are done, make sure all background tasks and subagents have completed b
             agent_file = str(AGENTS_DIR / "black_box" / "bug_hunter.md")
 
         def on_event(event: StreamEvent):
-            text = ""
+            data = event.data or {}
+            stream_data = {"agent_id": agent_name}
+
             if event.type == "assistant":
-                # Claude stream: data is {"type": "assistant", "message": {"content": [...]}}
-                content = event.data.get("message", {}).get("content", event.data.get("content", ""))
+                content = data.get("message", {}).get("content", data.get("content", ""))
                 if isinstance(content, list):
                     text = " ".join(
                         block.get("text", "") for block in content
@@ -372,19 +373,41 @@ When you are done, make sure all background tasks and subagents have completed b
                     )
                 elif isinstance(content, str):
                     text = content
+                else:
+                    text = ""
+                if text:
+                    stream_data["text"] = text[:500]
+                    stream_data["event_type"] = "text"
+                else:
+                    # Check for thinking
+                    delta = data.get("delta", {})
+                    if delta.get("type") == "thinking_delta":
+                        stream_data["thinking"] = delta.get("thinking", "")[:500]
+                        stream_data["event_type"] = "thinking"
+                    else:
+                        return
+            elif event.type == "tool_use":
+                stream_data["event_type"] = "tool_use"
+                stream_data["tool_name"] = data.get("name", "")
+                stream_data["tool_input"] = str(data.get("input", ""))[:200]
             elif event.type == "item.completed":
-                item = event.data.get("item", {})
+                item = data.get("item", {})
                 if item.get("type") == "agent_message":
-                    text = item.get("text", "")
-            if text:
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(event_manager.emit_agent_stream(
-                        context.engagement_id, context.run_id, self.name,
-                        agent_name, text[:500],
-                    ))
-                except RuntimeError:
-                    pass
+                    stream_data["text"] = item.get("text", "")[:500]
+                    stream_data["event_type"] = "text"
+                else:
+                    return
+            else:
+                return
+
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(event_manager.emit(
+                    "agent_stream", context.engagement_id, context.run_id, self.name,
+                    stream_data,
+                ))
+            except RuntimeError:
+                pass
 
         record_dir, record_meta = self.prepare_agent_run(
             context, agent_name, "bug_hunt",

@@ -20,6 +20,7 @@ export default function RunDetail() {
   const [resuming, setResuming] = useState(false)
   const [historicalEvents, setHistoricalEvents] = useState([])
   const [showAgentStream, setShowAgentStream] = useState(false)
+  const [persistedStream, setPersistedStream] = useState([])
   const streamRef = useRef(null)
   const { events, connected } = useWebSocket(engagementId)
 
@@ -104,8 +105,20 @@ export default function RunDetail() {
     }
   }
 
-  // Agent stream events (live only, not persisted)
-  const agentStreamEvents = liveEvents.filter(e => e.type === 'agent_stream')
+  // Agent stream events — live from WebSocket + persisted from stream.jsonl
+  const liveStreamEvents = liveEvents.filter(e => e.type === 'agent_stream')
+  const agentStreamEvents = persistedStream.length > 0 ? persistedStream : liveStreamEvents
+
+  // Load persisted stream when toggling on
+  useEffect(() => {
+    if (!showAgentStream || !run) return
+    const stage = run.current_stage || 'bug_hunter'
+    api.getStageStream(engagementId, runId, stage)
+      .then(data => setPersistedStream(
+        (data.events || []).map(e => ({ type: 'agent_stream', data: e, timestamp: e.timestamp }))
+      ))
+      .catch(() => {})
+  }, [showAgentStream, run, engagementId, runId])
 
   // Per-agent stats from events
   const agentStats = {}
@@ -285,14 +298,28 @@ export default function RunDetail() {
             {agentStreamEvents.length === 0 ? (
               <div className="empty-state"><p>Waiting for agent output...</p></div>
             ) : (
-              agentStreamEvents.slice(-200).map((evt, i) => (
-                <div key={i} className="stream-entry">
-                  <span className={`stream-agent ${evt.data?.agent_id || ''}`}>
-                    {evt.data?.agent_id || '?'}
-                  </span>
-                  <span className="stream-text">{evt.data?.text || ''}</span>
-                </div>
-              ))
+              agentStreamEvents.slice(-500).map((evt, i) => {
+                const d = evt.data || {}
+                const evtType = d.event_type || 'text'
+                return (
+                  <div key={i} className={`stream-entry stream-${evtType}`}>
+                    <span className={`stream-agent ${d.agent_id || ''}`}>
+                      {d.agent_id || '?'}
+                    </span>
+                    {evtType === 'thinking' ? (
+                      <span className="stream-thinking">{d.thinking || ''}</span>
+                    ) : evtType === 'tool_use' ? (
+                      <span className="stream-tool">
+                        <strong>{d.tool_name || ''}</strong> {d.tool_input || ''}
+                      </span>
+                    ) : evtType === 'tool_result' ? (
+                      <span className="stream-tool-result">{d.content || ''}</span>
+                    ) : (
+                      <span className="stream-text">{d.text || ''}</span>
+                    )}
+                  </div>
+                )
+              })
             )}
           </div>
         </>
