@@ -309,13 +309,13 @@ function parseJsonl(content) {
         continue // Skip final result, it's in result.json
       }
 
-      // Codex: agent_message
+      // Codex CLI format: agent_message
       if (type === 'item.completed' && raw.item?.type === 'agent_message') {
         messages.push({ role: 'agent', time, label: 'Codex', text: raw.item.text || '' })
         continue
       }
 
-      // Codex: command execution
+      // Codex CLI format: command execution
       if (type === 'item.completed' && raw.item?.type === 'command_execution') {
         messages.push({
           role: 'tool', time,
@@ -326,15 +326,66 @@ function parseJsonl(content) {
         continue
       }
 
-      // Codex: todo list
+      // Codex CLI format: todo list
       if (type === 'item.started' && raw.item?.type === 'todo_list') {
         const items = (raw.item.items || []).map(t => `${t.completed ? '✓' : '○'} ${t.text}`).join('\n')
         messages.push({ role: 'agent', time, label: 'Plan', text: items })
         continue
       }
 
-      // Codex: turn started/completed
+      // Codex CLI format: turn started/completed
       if (type === 'turn.started' || type === 'turn.completed' || type === 'thread.started') {
+        continue
+      }
+
+      // Codex app-server SDK format (method-based, camelCase)
+      const method = raw.method || ''
+      const params = raw.params || {}
+      const sdkItem = params.item || {}
+
+      if (method === 'item/completed' && sdkItem.type === 'agentMessage') {
+        messages.push({ role: 'agent', time, label: 'Codex', text: sdkItem.text || '' })
+        continue
+      }
+      if (method === 'item/completed' && sdkItem.type === 'commandExecution') {
+        messages.push({
+          role: 'tool', time,
+          toolName: 'Shell',
+          toolDesc: sdkItem.command || '',
+          output: sdkItem.aggregatedOutput || '',
+        })
+        continue
+      }
+      if (method === 'item/completed' && sdkItem.type === 'reasoning' && sdkItem.content?.length) {
+        messages.push({ role: 'thinking', time, text: typeof sdkItem.content === 'string' ? sdkItem.content : JSON.stringify(sdkItem.content) })
+        continue
+      }
+      if (method === 'turn/started' || method === 'turn/completed' || method === 'thread/status/changed') {
+        continue
+      }
+
+      // Tool use (Claude SDK normalized format)
+      if (type === 'tool_use') {
+        messages.push({
+          role: 'tool', time,
+          toolName: raw.name || 'Tool',
+          toolDesc: raw.input?.command || raw.input?.file_path || raw.input?.pattern || '',
+          input: raw.input,
+        })
+        continue
+      }
+
+      // Tool result (Claude SDK normalized format)
+      if (type === 'tool_result') {
+        if (messages.length > 0 && messages[messages.length - 1].role === 'tool') {
+          messages[messages.length - 1].output = raw.content || ''
+        }
+        continue
+      }
+
+      // Thinking block (Claude SDK normalized format)
+      if (type === 'content_block_delta' && raw.delta?.type === 'thinking_delta') {
+        messages.push({ role: 'thinking', time, text: raw.delta.thinking || '' })
         continue
       }
 
