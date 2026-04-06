@@ -111,13 +111,15 @@ export default function RunDetail() {
 
   // Load persisted stream when toggling on
   useEffect(() => {
-    if (!showAgentStream || !run) return
-    const stage = run.current_stage || 'bug_hunter'
+    if (!showAgentStream || !run || !run.stages) return
+    // Find the bug_hunter stage (or current stage)
+    const bhStage = run.stages?.find(s => s.stage_name === 'bug_hunter')
+    const stage = bhStage?.stage_name || run.current_stage || 'bug_hunter'
     api.getStageStream(engagementId, runId, stage)
       .then(data => setPersistedStream(
         (data.events || []).map(e => ({ type: 'agent_stream', data: e, timestamp: e.timestamp }))
       ))
-      .catch(() => {})
+      .catch(() => setPersistedStream([]))
   }, [showAgentStream, run, engagementId, runId])
 
   // Per-agent stats from events
@@ -300,7 +302,8 @@ export default function RunDetail() {
             ) : (
               agentStreamEvents.slice(-500).map((evt, i) => {
                 const d = evt.data || {}
-                const evtType = d.event_type || 'text'
+                const evtType = d.event_type || (d.text ? 'text' : d.thinking ? 'thinking' : '')
+                if (!evtType) return null
                 return (
                   <div key={i} className={`stream-entry stream-${evtType}`}>
                     <span className={`stream-agent ${d.agent_id || ''}`}>
@@ -310,7 +313,7 @@ export default function RunDetail() {
                       <span className="stream-thinking">{d.thinking || ''}</span>
                     ) : evtType === 'tool_use' ? (
                       <span className="stream-tool">
-                        <strong>{d.tool_name || ''}</strong> {d.tool_input || ''}
+                        <strong>{d.tool_name || 'tool'}</strong> {d.tool_input || ''}
                       </span>
                     ) : evtType === 'tool_result' ? (
                       <span className="stream-tool-result">{d.content || ''}</span>

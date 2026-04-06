@@ -448,10 +448,10 @@ async def api_get_stage_stream(engagement_id: str, run_id: str, stage_name: str)
         raise HTTPException(status_code=404, detail="Stage not found")
 
     stage_order = stage["stage_order"]
-    config = _load_engagement_config(engagement)
-    output_dir = config.pipeline.output_dir
-    stage_dir = os.path.join(output_dir, "engagements", engagement_id, "runs", run_id,
-                             f"{stage_order:02d}_{stage_name}")
+    stage_dir = os.path.join(
+        _engagement_output_dir(engagement), "engagements", engagement_id,
+        "runs", run_id, f"{stage_order:02d}_{stage_name}",
+    )
 
     # Find all stream.jsonl files in agent_runs
     import glob as _glob
