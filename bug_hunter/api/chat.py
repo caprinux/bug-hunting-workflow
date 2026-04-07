@@ -364,7 +364,7 @@ async def _stream_response(engagement_id: str, chat_id: str, prompt: str,
             model="sonnet",
             cwd=workspace or None,
             additional_dirs=extra_dirs,
-            timeout=600,
+            timeout=None,  # No timeout for chat agents
             on_event=on_event,
         )
 
