@@ -240,6 +240,19 @@ async def api_delete_chat(engagement_id: str, chat_id: str):
     return {"status": "deleted"}
 
 
+@router.post("/{chat_id}/stop")
+async def api_stop_chat(engagement_id: str, chat_id: str):
+    """Stop a running chat response."""
+    chat = get_chat(chat_id)
+    if not chat or chat["engagement_id"] != engagement_id:
+        raise HTTPException(404, "Chat not found")
+    task = _active_chats.get(chat_id)
+    if task and not task.done():
+        task.cancel()
+        return {"status": "stopped"}
+    return {"status": "not_running"}
+
+
 @router.patch("/{chat_id}")
 async def api_update_chat(engagement_id: str, chat_id: str, body: UpdateChatRequest):
     chat = get_chat(chat_id)
@@ -387,6 +400,12 @@ async def _stream_response(engagement_id: str, chat_id: str, prompt: str,
 
     except asyncio.CancelledError:
         logger.info(f"Chat response cancelled for chat {chat_id}")
+        # Save whatever was accumulated before cancellation
+        partial = "".join(accumulated).strip()
+        if partial:
+            partial += "\n\n*[Response stopped by user]*"
+            create_chat_message(chat_id, "assistant", partial)
+        await event_manager.emit_chat_complete(engagement_id, chat_id, "")
     except Exception as e:
         logger.error(f"Chat response error for chat {chat_id}: {e}")
         await event_manager.emit_chat_error(engagement_id, chat_id, str(e))

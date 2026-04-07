@@ -347,25 +347,51 @@ export default function Chat() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={streaming ? 'Waiting for response...' : 'Ask about this engagement...'}
-                  disabled={streaming}
+                  placeholder={streaming ? 'Press Escape to stop...' : 'Ask about this engagement...'}
                   rows={1}
                   onInput={(e) => {
                     e.target.style.height = 'auto'
                     e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
                   }}
                 />
-                <button
-                  className="btn btn-primary"
-                  onClick={handleSend}
-                  disabled={streaming || !input.trim()}
-                  style={{ height: 40 }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="22" y1="2" x2="11" y2="13" />
-                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                  </svg>
-                </button>
+                {streaming ? (
+                  <button
+                    className="btn btn-danger"
+                    onClick={async () => {
+                      try {
+                        await api.stopChat(engagementId, activeChatId)
+                        setStreaming(false)
+                        setStreamingText('')
+                        setThinkingText('')
+                        // Save whatever was streamed so far
+                        const partial = streamingText.trim()
+                        if (partial) {
+                          const chat = await api.getChat(engagementId, activeChatId)
+                          setMessages(chat.messages || [])
+                        }
+                        loadFiles()
+                      } catch (e) { console.error(e) }
+                    }}
+                    style={{ height: 40 }}
+                    title="Stop response"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                      <rect x="6" y="6" width="12" height="12" rx="1" />
+                    </svg>
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleSend}
+                    disabled={!input.trim()}
+                    style={{ height: 40 }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="22" y1="2" x2="11" y2="13" />
+                      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                    </svg>
+                  </button>
+                )}
               </div>
             </>
           )}
