@@ -333,7 +333,7 @@ class BugHunterStage(PipelineStage):
 
         if context.run_type == "rehunt" and context.rehunt_target and is_resume:
             # Rehunt with persistent session — agent already has full context
-            prompt = context.rehunt_target
+            prompt = context.rehunt_target + "\n\nOnly include NEW bugs discovered in this session — do not re-report previously found bugs."
         else:
             rehunt_instruction = ""
             if context.rehunt_target:
@@ -352,7 +352,7 @@ NOTES: {notes_path}
 
 {"Identify attack surfaces within the source code, find vulnerabilities throughout the codebases and document attack surfaces as you go along." if eng_type == "source_code" else "Enumerate the targets within scope and find vulnerabilities. As you go along and you identify more attack surfaces, you may update the list of target surfaces."}
 
-BUGS.json is READ-ONLY. Your output will be collected automatically via structured output — do not write findings to any file.
+BUGS.json is READ-ONLY. Your output will be collected automatically via structured output — do not write findings to any file. Only include NEW bugs discovered in this session — do not re-report previously found bugs.
 When you are done, make sure all background tasks and subagents have completed before finishing."""
 
         if eng_type == "source_code":

@@ -31,3 +31,5 @@ For each bug, provide:
 ## Output
 
 Your findings will be collected automatically via structured JSON output. Do not write findings to files — BUGS.json is read-only. Make sure all background tasks and subagents have completed before you finish.
+
+**IMPORTANT: Only report NEW bugs.** If previously found bugs are listed in your prompt, do NOT include them in your structured output. Do not re-report, re-confirm, or re-validate bugs that have already been found. Focus your effort on discovering new vulnerabilities.
