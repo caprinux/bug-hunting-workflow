@@ -569,10 +569,52 @@ async def run_codex(
 
         client = CodexSDKClient(opts)
 
+        def _serialize_event(event) -> dict:
+            """Produce a parseable dict for stream.jsonl — must round-trip the
+            fields the /stages/{stage}/stream parser keys on."""
+            payload: dict = {"type": "codex_event", "event_class": type(event).__name__}
+            if isinstance(event, ThreadStartedEvent):
+                payload.update({"event_type": "thread_started",
+                                "thread_id": getattr(event, "thread_id", "")})
+            elif isinstance(event, ItemCompletedEvent):
+                item = event.item
+                item_payload: dict = {"item_class": type(item).__name__}
+                if isinstance(item, AgentMessageItem):
+                    item_payload.update({"item_type": "agent_message",
+                                         "text": item.text})
+                elif isinstance(item, CommandExecutionItem):
+                    item_payload.update({"item_type": "command_execution",
+                                         "command": item.command,
+                                         "output": (item.aggregated_output or "")[:1000]})
+                elif isinstance(item, ReasoningItem):
+                    item_payload.update({"item_type": "reasoning",
+                                         "text": getattr(item, "text", "")})
+                else:
+                    item_payload.update({"item_type": getattr(item, "type", ""),
+                                         "repr": str(item)[:500]})
+                payload.update({"event_type": "item_completed", **item_payload})
+            elif isinstance(event, TurnCompletedEvent):
+                payload["event_type"] = "turn_completed"
+                if getattr(event, "usage", None):
+                    payload["usage"] = {
+                        "input_tokens": event.usage.input_tokens,
+                        "output_tokens": event.usage.output_tokens,
+                        "cached_input_tokens": event.usage.cached_input_tokens,
+                    }
+            elif isinstance(event, TurnFailedEvent):
+                payload.update({"event_type": "turn_failed",
+                                "message": getattr(getattr(event, "error", None), "message", "")})
+            elif isinstance(event, StreamErrorEvent):
+                payload.update({"event_type": "stream_error",
+                                "message": getattr(event, "message", "")})
+            else:
+                payload.update({"event_type": "other", "repr": str(event)[:500]})
+            return payload
+
         async def _stream():
             nonlocal result_thread_id, usage_dict
             async for event in client.run_streamed(prompt, resume_thread_id=thread_id):
-                raw_str = json.dumps({"type": type(event).__name__, "data": str(event)[:500]}, default=str)
+                raw_str = json.dumps(_serialize_event(event), default=str)
                 raw_lines.append(raw_str)
                 if record_dir:
                     _append_jsonl(os.path.join(record_dir, "stream.jsonl"), {

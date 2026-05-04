@@ -494,7 +494,7 @@ async def api_get_stage_stream(engagement_id: str, run_id: str, stage_name: str)
                         evt["content"] = raw.get("content", "")[:200]
                         events.append(evt)
 
-                    # Codex app-server format (method-based)
+                    # Codex app-server format (legacy JSON-RPC, method-based)
                     method = raw.get("method", "")
                     if method == "item/completed":
                         item = raw.get("params", {}).get("item", {})
@@ -511,6 +511,23 @@ async def api_get_stage_stream(engagement_id: str, run_id: str, stage_name: str)
                         elif item_type == "reasoning" and item.get("content"):
                             evt["event_type"] = "thinking"
                             evt["thinking"] = str(item["content"])[:500]
+                            events.append(evt)
+
+                    # Codex agent-sdk format (current — type=codex_event)
+                    if evt_type == "codex_event" and raw.get("event_type") == "item_completed":
+                        item_type = raw.get("item_type", "")
+                        if item_type == "agent_message" and raw.get("text"):
+                            evt["event_type"] = "text"
+                            evt["text"] = raw["text"][:500]
+                            events.append(evt)
+                        elif item_type == "command_execution":
+                            evt["event_type"] = "tool_use"
+                            evt["tool_name"] = "Bash"
+                            evt["tool_input"] = raw.get("command", "")[:200]
+                            events.append(evt)
+                        elif item_type == "reasoning" and raw.get("text"):
+                            evt["event_type"] = "thinking"
+                            evt["thinking"] = raw["text"][:500]
                             events.append(evt)
         except Exception:
             continue
