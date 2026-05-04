@@ -39,7 +39,7 @@ export default function EngagementDetail() {
       const cfg = eng.config || {}
       setEngConfig({
         agents: cfg.bug_hunter?.agents || cfg.broad_bug_hunter?.agents || ['claude', 'codex'],
-        codex_model: cfg.bug_hunter?.codex_model || cfg.broad_bug_hunter?.codex_model || 'gpt-5.4',
+        codex_model: cfg.bug_hunter?.codex_model || cfg.broad_bug_hunter?.codex_model || 'gpt-5.5',
         iterations: cfg.bug_hunter?.iterations || cfg.broad_bug_hunter?.iterations || 1,
         mode: cfg.bug_hunter?.mode || 'parallel',
         subagent_timeout: cfg.pipeline?.subagent_timeout || 3600,

@@ -18,7 +18,7 @@ class PipelineConfig:
     output_dir: str = "./audit_output"
     verbose: bool = True
     retry_limit: int = 3
-    subagent_timeout: int = 3600  # 1 hour per subagent
+    subagent_timeout: int = 100000
     resume: bool = True
     auto_install_tools: bool = True
     bug_schema_version: str = "1.0"
@@ -47,7 +47,7 @@ class BugHunterConfig:
     iterations: int = 1
     mode: str = "parallel"  # "parallel" or "sequential"
     exclude_paths: list[str] = field(default_factory=list)
-    codex_model: str = "gpt-5.4"
+    codex_model: str = "gpt-5.5"
 
 
 @dataclass
@@ -94,15 +94,15 @@ class VariantHunterConfig:
 
 @dataclass
 class ModelsConfig:
-    scoper: str = "gpt-5.4"
-    skills_hunter: str = "gpt-5.4"
+    scoper: str = "gpt-5.5"
+    skills_hunter: str = "gpt-5.5"
     bug_hunter_subagent: str = "opus"
-    variant_hunter: str = "gpt-5.4"
-    deduplicator: str = "gpt-5.4"
-    strict_validator: str = "gpt-5.4"
-    perfectionist: str = "gpt-5.4"
-    strict_triager: str = "gpt-5.4"
-    bug_chainer: str = "gpt-5.4"
+    variant_hunter: str = "gpt-5.5"
+    deduplicator: str = "gpt-5.5"
+    strict_validator: str = "gpt-5.5"
+    perfectionist: str = "gpt-5.5"
+    strict_triager: str = "gpt-5.5"
+    bug_chainer: str = "gpt-5.5"
 
 
 @dataclass

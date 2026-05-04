@@ -15,7 +15,7 @@ from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
-CODEX_MODELS = {"gpt-5.4", "o3", "o4-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"}
+CODEX_MODELS = {"gpt-5.5", "gpt-5.4", "o3", "o4-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"}
 
 
 def is_codex_model(model: str) -> bool:
@@ -39,6 +39,10 @@ async def run_agent(
 ):
     """Dispatch to run_claude or run_codex based on the model string."""
     if is_codex_model(model):
+        dev_instructions = None
+        if agent_file and not is_resume:
+            with open(agent_file) as f:
+                dev_instructions = f.read()
         return await run_codex(
             prompt=prompt,
             model=model,
@@ -50,6 +54,7 @@ async def run_agent(
             record_metadata=record_metadata,
             output_schema_file=json_schema_file,
             thread_id=session_id if is_resume else None,
+            developer_instructions=dev_instructions,
         )
     else:
         return await run_claude(
@@ -238,8 +243,8 @@ async def run_claude(
 
         if json_schema_file:
             with open(json_schema_file) as f:
-                schema_str = f.read()
-            opts_kwargs.setdefault("extra_args", {})["json-schema"] = schema_str
+                schema = json.loads(f.read())
+            opts_kwargs["output_format"] = {"type": "json_schema", "schema": schema}
 
         if additional_dirs:
             opts_kwargs["add_dirs"] = additional_dirs
@@ -274,6 +279,9 @@ async def run_claude(
                             events_to_record.append(evt)
                             if on_event:
                                 on_event(StreamEvent(type="tool_use", data=evt))
+                            # Capture StructuredOutput tool call as fallback
+                            if block.name == "StructuredOutput" and isinstance(block.input, dict):
+                                structured_output = block.input
 
                 elif isinstance(msg, UserMessage):
                     for block in msg.content:
@@ -390,118 +398,117 @@ async def run_claude_chat(
     cwd: Optional[str] = None,
     additional_dirs: Optional[list[str]] = None,
 ) -> CLIResult:
-    """Run Claude Code for chat with session persistence.
+    """Run Claude Code for chat with session persistence."""
+    from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions, AssistantMessage, ResultMessage, TextBlock, ThinkingBlock, ToolUseBlock
 
-    Uses the SDK's system_prompt parameter directly for the first message,
-    and resumes with session_id for subsequent messages.
-    """
-    # Write system prompt to a temp file so run_claude can use it as agent_file
-    tmp_file = None
-    if system_prompt and not is_resume:
-        import tempfile
-        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False)
-        tmp.write(system_prompt)
-        tmp.close()
-        tmp_file = tmp.name
+    start_time = time.monotonic()
+    raw_lines: list[str] = []
+    cost_usd = 0.0
+    result_session_id = session_id
+    accumulated_text: list[str] = []
+    structured_output = None
+    usage = None
 
     try:
-        return await run_claude(
-            prompt=prompt,
-            agent_file=tmp_file,
-            model=model,
-            cwd=cwd,
-            timeout=timeout,
-            on_event=on_event,
-            additional_dirs=additional_dirs,
-            session_id=session_id,
-            is_resume=is_resume,
+        opts_kwargs: dict[str, Any] = {
+            "permission_mode": "bypassPermissions",
+            "model": model,
+            "env": {"IS_SANDBOX": "1"},
+        }
+        if cwd:
+            opts_kwargs["cwd"] = cwd
+        if additional_dirs:
+            opts_kwargs["add_dirs"] = additional_dirs
+        if session_id and is_resume:
+            opts_kwargs["resume"] = session_id
+        else:
+            opts_kwargs["session_id"] = session_id
+        if system_prompt and not is_resume:
+            opts_kwargs["system_prompt"] = system_prompt
+
+        options = ClaudeAgentOptions(**opts_kwargs)
+        client = ClaudeSDKClient(options)
+        await client.connect(prompt)
+
+        async def process_messages():
+            nonlocal cost_usd, result_session_id, structured_output, usage
+            async for msg in client.receive_messages():
+                if isinstance(msg, AssistantMessage):
+                    for block in msg.content:
+                        if isinstance(block, TextBlock):
+                            accumulated_text.append(block.text)
+                            if on_event:
+                                on_event(StreamEvent(type="assistant", data={
+                                    "type": "assistant",
+                                    "message": {"content": [{"type": "text", "text": block.text}]},
+                                }))
+                        elif isinstance(block, ThinkingBlock):
+                            if on_event:
+                                on_event(StreamEvent(type="assistant", data={
+                                    "type": "content_block_delta",
+                                    "delta": {"type": "thinking_delta", "thinking": block.thinking},
+                                }))
+                        elif isinstance(block, ToolUseBlock):
+                            if on_event:
+                                on_event(StreamEvent(type="tool_use", data={
+                                    "type": "tool_use", "name": block.name, "input": block.input,
+                                }))
+                elif isinstance(msg, ResultMessage):
+                    cost_usd = getattr(msg, "total_cost_usd", 0.0) or 0.0
+                    result_session_id = getattr(msg, "session_id", session_id) or session_id
+                    structured_output = getattr(msg, "structured_output", None)
+                    usage = getattr(msg, "usage", None)
+                    if on_event:
+                        on_event(StreamEvent(type="result", data={"type": "result"}))
+                    break
+
+        if timeout:
+            await asyncio.wait_for(process_messages(), timeout=timeout)
+        else:
+            await process_messages()
+        await client.disconnect()
+
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        full_text = "".join(accumulated_text)
+        parsed_result = _parse_result_payload(full_text) if full_text else None
+
+        return CLIResult(
+            success=True, result=parsed_result, raw_output=full_text,
+            duration_ms=duration_ms, cost_usd=cost_usd,
+            session_id=result_session_id,
+            usage=vars(usage) if usage and hasattr(usage, "__dict__") and not isinstance(usage, dict) else usage,
         )
-    finally:
-        if tmp_file:
-            try:
-                os.unlink(tmp_file)
-            except OSError:
-                pass
 
-
-# --- Codex (JSON-RPC via app-server) ---
-
-_codex_server: Optional[asyncio.subprocess.Process] = None
-_codex_request_counter = 0
-_codex_lock = asyncio.Lock()
-_codex_run_lock = asyncio.Lock()  # Serialize all codex calls (single stdout reader)
-_codex_initialized = False
-
-
-async def _ensure_codex_server():
-    """Start and initialize the codex app-server if not running."""
-    global _codex_server, _codex_initialized, _codex_request_counter
-
-    async with _codex_lock:
-        if _codex_server and _codex_server.returncode is None and _codex_initialized:
-            return
-        _codex_initialized = False
-        _codex_request_counter = 0
-
-        _codex_server = await asyncio.create_subprocess_exec(
-            "codex", "app-server", "--listen", "stdio://",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            limit=10 * 1024 * 1024,  # 10MB buffer for large JSON-RPC messages
-        )
-
-        rid = await _codex_send("initialize", {
-            "clientInfo": {"name": "bhw", "version": "1.0.0"},
-            "capabilities": {"experimentalApi": True},
-        })
-        await _codex_read_response(rid, timeout=60)
-
-        _codex_server.stdin.write((json.dumps({"method": "initialized"}) + "\n").encode())
-        await _codex_server.stdin.drain()
-        _codex_initialized = True
-        logger.info("Codex app-server initialized")
-
-
-async def _codex_send(method: str, params: dict) -> int:
-    global _codex_request_counter
-    _codex_request_counter += 1
-    rid = _codex_request_counter
-    msg = {"jsonrpc": "2.0", "id": rid, "method": method, "params": params}
-    _codex_server.stdin.write((json.dumps(msg) + "\n").encode())
-    await _codex_server.stdin.drain()
-    return rid
-
-
-async def _codex_respond(request_id, result: dict):
-    msg = {"jsonrpc": "2.0", "id": request_id, "result": result}
-    _codex_server.stdin.write((json.dumps(msg) + "\n").encode())
-    await _codex_server.stdin.drain()
-
-
-async def _codex_read_response(expected_id: int, timeout: float = 60) -> dict:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        remaining = max(0.1, deadline - time.monotonic())
-        line = await asyncio.wait_for(_codex_server.stdout.readline(), timeout=remaining)
-        if not line:
-            raise RuntimeError("Codex server closed")
+    except asyncio.TimeoutError:
         try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if msg.get("id") == expected_id:
-            if "error" in msg and "result" not in msg:
-                raise RuntimeError(f"Codex error: {msg['error']}")
-            return msg.get("result", {})
-        if "id" in msg and "method" in msg:
-            await _codex_respond(msg["id"], {"accept": True})
-    raise TimeoutError(f"Codex response timed out after {timeout}s")
+            await client.disconnect()
+        except Exception:
+            pass
+        return CLIResult(
+            success=False, error=f"Timed out after {timeout}s",
+            duration_ms=int((time.monotonic() - start_time) * 1000),
+            session_id=result_session_id,
+        )
+    except asyncio.CancelledError:
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+        raise
+    except Exception as e:
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        logger.error(f"Claude chat error: {e}")
+        return CLIResult(
+            success=False, error=str(e),
+            duration_ms=duration_ms, session_id=result_session_id,
+        )
 
+
+# --- Codex (via codex-agent-sdk) ---
 
 async def run_codex(
     prompt: str,
-    model: str = "gpt-5.4",
+    model: str = "gpt-5.5",
     cwd: Optional[str] = None,
     timeout: int = 300,
     on_event: Optional[Callable[[StreamEvent], None]] = None,
@@ -510,25 +517,21 @@ async def run_codex(
     record_metadata: Optional[dict] = None,
     output_schema_file: Optional[str] = None,
     thread_id: Optional[str] = None,
+    developer_instructions: Optional[str] = None,
 ) -> CLIResult:
-    """Run Codex via the app-server JSON-RPC protocol. Supports session resume via thread_id."""
-    async with _codex_run_lock:
-        return await _run_codex_impl(
-            prompt, model, cwd, timeout, on_event, additional_dirs,
-            record_dir, record_metadata, output_schema_file, thread_id,
-        )
+    """Run Codex via the codex-agent-sdk. Each call spawns a subprocess — safe for concurrency."""
+    from codex_agent_sdk import (
+        CodexSDKClient, CodexAgentOptions, SandboxMode, ApprovalPolicy,
+        ItemCompletedEvent, TurnCompletedEvent, TurnFailedEvent,
+        ThreadStartedEvent, StreamErrorEvent,
+        AgentMessageItem, CommandExecutionItem, ReasoningItem,
+    )
 
-
-async def _run_codex_impl(
-    prompt, model, cwd, timeout, on_event, additional_dirs,
-    record_dir, record_metadata, output_schema_file, thread_id,
-) -> CLIResult:
     start_time = time.monotonic()
     raw_lines: list[str] = []
-    cost_usd = 0.0
     result_thread_id = thread_id or ""
-    error_msg = ""
     codex_messages: list[str] = []
+    usage_dict: Optional[dict] = None
 
     if record_dir:
         os.makedirs(record_dir, exist_ok=True)
@@ -552,152 +555,79 @@ async def _run_codex_impl(
         return result
 
     try:
-        await _ensure_codex_server()
+        opts = CodexAgentOptions(
+            model=model,
+            sandbox=SandboxMode.FULL_ACCESS,
+            approval_policy=ApprovalPolicy.NEVER,
+            cwd=cwd,
+            additional_writable_dirs=list(additional_dirs or []),
+            output_schema_file=output_schema_file,
+            skip_git_repo_check=True,
+            ephemeral=not thread_id,
+            developer_instructions=developer_instructions,
+        )
 
-        if thread_id:
-            result_thread_id = thread_id
-        else:
-            thread_params = {
-                "model": model,
-                "approvalPolicy": "never",
-                "sandbox": "danger-full-access",
-            }
-            if cwd:
-                thread_params["cwd"] = cwd
-            rid = await _codex_send("thread/start", thread_params)
-            thread_result = await _codex_read_response(rid, timeout=60)
-            result_thread_id = thread_result.get("thread", {}).get("id", "")
+        client = CodexSDKClient(opts)
 
-        if not result_thread_id:
-            return finalize(CLIResult(
-                success=False, error="Failed to get thread ID",
-                duration_ms=int((time.monotonic() - start_time) * 1000),
-            ))
-
-        # Send turn
-        turn_params = {
-            "threadId": result_thread_id,
-            "input": [{"type": "text", "text": prompt}],
-        }
-        if output_schema_file:
-            try:
-                with open(output_schema_file) as f:
-                    turn_params["outputSchema"] = json.load(f)
-            except Exception as e:
-                logger.warning(f"Failed to load output schema: {e}")
-
-        rid = await _codex_send("turn/start", turn_params)
-        turn_result = await _codex_read_response(rid, timeout=30)
-        current_turn_id = turn_result.get("turn", {}).get("id", "")
-
-        # Read events until turn completes
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            remaining = max(0.1, deadline - time.monotonic())
-            try:
-                line = await asyncio.wait_for(_codex_server.stdout.readline(), timeout=remaining)
-            except asyncio.TimeoutError:
-                error_msg = f"Timed out after {timeout}s"
-                break
-            if not line:
-                error_msg = "Codex server closed unexpectedly"
-                break
-            try:
-                msg = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            # Server requests — handle by type
-            if "id" in msg and "method" in msg:
-                server_method = msg["method"]
-                if server_method == "item/tool/call":
-                    # Dynamic tool call — not supported, reject
-                    await _codex_respond(msg["id"], {
-                        "contentItems": [{"type": "text", "text": "Tool not available"}],
-                        "success": False,
+        async def _stream():
+            nonlocal result_thread_id, usage_dict
+            async for event in client.run_streamed(prompt, resume_thread_id=thread_id):
+                raw_str = json.dumps({"type": type(event).__name__, "data": str(event)[:500]}, default=str)
+                raw_lines.append(raw_str)
+                if record_dir:
+                    _append_jsonl(os.path.join(record_dir, "stream.jsonl"), {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "stream": "sdk", "raw": raw_str,
                     })
-                else:
-                    # Approval requests, permissions, etc. — auto-approve
-                    await _codex_respond(msg["id"], {"accept": True})
-                continue
-            if "id" in msg and "result" in msg:
-                continue
 
-            method = msg.get("method", "")
-            params = msg.get("params", {})
+                if isinstance(event, ThreadStartedEvent):
+                    result_thread_id = event.thread_id or result_thread_id
 
-            # Filter by threadId and turnId — ignore stale events
-            evt_thread = params.get("threadId", "")
-            evt_turn = params.get("turnId", params.get("turn", {}).get("id", "") if isinstance(params.get("turn"), dict) else "")
-            if evt_thread and evt_thread != result_thread_id:
-                continue
-            if current_turn_id and evt_turn and evt_turn != current_turn_id:
-                continue
+                elif isinstance(event, ItemCompletedEvent):
+                    item = event.item
+                    if isinstance(item, AgentMessageItem):
+                        codex_messages.append(item.text)
+                        if on_event:
+                            on_event(StreamEvent(type="assistant", data={
+                                "type": "assistant",
+                                "message": {"content": [{"type": "text", "text": item.text}]},
+                            }))
+                    elif isinstance(item, CommandExecutionItem):
+                        if on_event:
+                            on_event(StreamEvent(type="tool_use", data={
+                                "type": "tool_use", "name": "Bash",
+                                "input": {"command": item.command},
+                                "output": (item.aggregated_output or "")[:500],
+                            }))
+                    elif isinstance(item, ReasoningItem):
+                        if on_event:
+                            on_event(StreamEvent(type="assistant", data={
+                                "type": "content_block_delta",
+                                "delta": {"type": "thinking_delta", "thinking": item.text},
+                            }))
 
-            raw_str = json.dumps(msg, default=str)
-            raw_lines.append(raw_str)
-            if record_dir:
-                _append_jsonl(os.path.join(record_dir, "stream.jsonl"), {
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "stream": "sdk", "raw": raw_str,
-                })
+                elif isinstance(event, TurnCompletedEvent):
+                    if event.usage:
+                        usage_dict = {
+                            "input_tokens": event.usage.input_tokens,
+                            "output_tokens": event.usage.output_tokens,
+                            "cached_input_tokens": event.usage.cached_input_tokens,
+                        }
+                    if on_event:
+                        on_event(StreamEvent(type="result", data={"type": "result"}))
 
-            if method == "item/completed":
-                item = params.get("item", {})
-                item_type = item.get("type", "")
-                if item_type == "agentMessage":
-                    codex_messages.append(item.get("text", ""))
-                    if on_event:
-                        on_event(StreamEvent(type="assistant", data={
-                            "type": "assistant",
-                            "message": {"content": [{"type": "text", "text": item.get("text", "")}]},
-                        }))
-                elif item_type == "commandExecution":
-                    if on_event:
-                        on_event(StreamEvent(type="tool_use", data={
-                            "type": "tool_use", "name": "Bash",
-                            "input": {"command": item.get("command", "")},
-                            "output": item.get("aggregatedOutput", "")[:500],
-                        }))
-                elif item_type == "reasoning":
-                    if on_event:
-                        on_event(StreamEvent(type="assistant", data={
-                            "type": "content_block_delta",
-                            "delta": {"type": "thinking_delta", "thinking": item.get("content", "")},
-                        }))
-            elif method == "turn/completed":
-                # Check for failure via turn status
-                turn = params.get("turn", {})
-                if turn.get("status") == "failed":
-                    error_msg = turn.get("error", {}).get("message", "Turn failed")
-                elif on_event:
-                    on_event(StreamEvent(type="result", data=params))
-                break
-            elif method == "thread/status/changed":
-                status_type = params.get("status", {}).get("type", "")
-                if status_type == "idle":
-                    if on_event:
-                        on_event(StreamEvent(type="result", data=params))
-                    break
-            elif method == "error":
-                # Error notification — check if retryable
-                if params.get("willRetry"):
-                    continue  # Server will retry, keep waiting
-                err_obj = params.get("error", {})
-                error_msg = err_obj.get("message", "Unknown error") if isinstance(err_obj, dict) else str(err_obj)
-                break
-            elif method == "turn/failed":
-                error_msg = params.get("error", {}).get("message", "Turn failed")
-                break
+                elif isinstance(event, TurnFailedEvent):
+                    raise RuntimeError(event.error.message)
+
+                elif isinstance(event, StreamErrorEvent):
+                    raise RuntimeError(event.message)
+
+        if timeout:
+            await asyncio.wait_for(_stream(), timeout=timeout)
+        else:
+            await _stream()
 
         duration_ms = int((time.monotonic() - start_time) * 1000)
-
-        if error_msg:
-            return finalize(CLIResult(
-                success=False, error=error_msg,
-                duration_ms=duration_ms, cost_usd=cost_usd,
-                session_id=result_thread_id,
-            ))
 
         parsed_result = None
         if codex_messages:
@@ -710,10 +640,17 @@ async def _run_codex_impl(
         return finalize(CLIResult(
             success=True, result=parsed_result,
             raw_output="\n".join(raw_lines),
-            duration_ms=duration_ms, cost_usd=cost_usd,
+            duration_ms=duration_ms, cost_usd=0.0,
             session_id=result_thread_id,
+            usage=usage_dict,
         ))
 
+    except asyncio.TimeoutError:
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        return finalize(CLIResult(
+            success=False, error=f"Timed out after {timeout}s",
+            duration_ms=duration_ms, session_id=result_thread_id,
+        ))
     except asyncio.CancelledError:
         if record_dir:
             _write_json(os.path.join(record_dir, "result.json"), {
@@ -728,8 +665,7 @@ async def _run_codex_impl(
         logger.error(f"Codex SDK error: {e}")
         return finalize(CLIResult(
             success=False, error=str(e),
-            duration_ms=duration_ms, cost_usd=cost_usd,
-            session_id=result_thread_id,
+            duration_ms=duration_ms, session_id=result_thread_id,
         ))
 
 

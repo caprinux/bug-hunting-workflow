@@ -465,6 +465,8 @@ When you are done, make sure all background tasks and subagents have completed b
                     is_resume=False,
                 )
         elif agent_name == "codex" or agent_name.startswith("codex"):
+            with open(agent_file) as f:
+                dev_instructions = f.read()
             result = await run_codex(
                 prompt=prompt,
                 model=context.config.bug_hunter.codex_model,
@@ -475,6 +477,7 @@ When you are done, make sure all background tasks and subagents have completed b
                 record_dir=record_dir,
                 record_metadata=record_meta,
                 output_schema_file=schema_file,
+                developer_instructions=dev_instructions,
             )
         else:
             return CLIResult(success=False, error=f"Unknown agent: {agent_name}")

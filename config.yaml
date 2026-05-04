@@ -2,11 +2,11 @@ pipeline:
   output_dir: ./audit_output
   verbose: true
   retry_limit: 3
-  subagent_timeout: 3600
+  subagent_timeout: 100000
   resume: true
   auto_install_tools: true
   bug_schema_version: '1.0'
-  request_delay: 0
+  request_delay: 0.0
   max_concurrent_infra_agents: 5
 engagement:
   type: source_code
@@ -19,8 +19,10 @@ bug_hunter:
   agents:
   - claude
   - codex
+  iterations: 1
+  mode: parallel
   exclude_paths: []
-  codex_model: gpt-5.4
+  codex_model: gpt-5.5
 deduplicator:
   enabled: false
   similarity_threshold: 0.8
@@ -29,19 +31,38 @@ strict_validator:
   max_concurrent: 5
   poc_language: python
 perfectionist:
+  enabled: false
   max_concurrent: 3
 strict_triager:
   contrived_threshold: 3
   severity_floor: low
 bug_chainer:
+  enabled: false
   max_concurrent: 2
+  rehunt_auto_approve: false
+scoper:
+  enabled: false
+skills_hunter:
+  enabled: true
+variant_hunter:
+  enabled: true
 models:
-  scoper: opus
+  scoper: gpt-5.5
+  skills_hunter: gpt-5.5
   bug_hunter_subagent: opus
-  deduplicator: opus
-  strict_validator: opus
-  perfectionist: opus
-  strict_triager: opus
-  bug_chainer: opus
+  variant_hunter: gpt-5.5
+  deduplicator: gpt-5.5
+  strict_validator: gpt-5.5
+  perfectionist: gpt-5.5
+  strict_triager: gpt-5.5
+  bug_chainer: gpt-5.5
 auth:
   password: ''
+broad_bug_hunter:
+  agents:
+  - claude
+  - codex
+  iterations: 1
+  mode: parallel
+  exclude_paths: []
+  codex_model: gpt-5.5
