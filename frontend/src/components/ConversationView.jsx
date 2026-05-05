@@ -338,6 +338,82 @@ function parseJsonl(content) {
         continue
       }
 
+      // Codex agent-sdk format (current — type=codex_event, snake_case)
+      if (type === 'codex_event') {
+        const eventType = raw.event_type || ''
+        const itemType = raw.item_type || ''
+        if (eventType === 'item_completed' && itemType === 'agent_message') {
+          // When the codex schema includes a `narrative` field, the assistant
+          // message text is `{"narrative": "...", ...}`. Surface the narrative
+          // as the visible bubble; if it is empty or the text is not JSON,
+          // fall back to the raw text so we never silently drop a turn.
+          const txt = raw.text || ''
+          let display = txt
+          let dropped = false
+          try {
+            const obj = JSON.parse(txt)
+            if (obj && typeof obj === 'object' && 'narrative' in obj) {
+              const narrative = (obj.narrative || '').trim()
+              if (narrative) {
+                display = narrative
+              } else {
+                dropped = true
+              }
+            }
+          } catch { /* leave display = txt */ }
+          if (!dropped) {
+            messages.push({ role: 'agent', time, label: 'Codex', text: display })
+          }
+          continue
+        }
+        if (eventType === 'item_completed' && itemType === 'command_execution') {
+          messages.push({
+            role: 'tool', time,
+            toolName: 'Shell',
+            toolDesc: raw.command || '',
+            output: raw.output || '',
+          })
+          continue
+        }
+        if (eventType === 'item_completed' && itemType === 'reasoning' && raw.text) {
+          messages.push({ role: 'thinking', time, text: raw.text })
+          continue
+        }
+        if (eventType === 'item_completed' && itemType === 'web_search') {
+          messages.push({
+            role: 'tool', time,
+            toolName: 'WebSearch',
+            toolDesc: raw.query || '',
+            input: raw.query || '',
+          })
+          continue
+        }
+        if (eventType === 'item_completed' && itemType === 'error') {
+          messages.push({
+            role: 'system', time,
+            text: `[error] ${raw.message || ''}`,
+          })
+          continue
+        }
+        if (eventType === 'item_started' && itemType === 'todo_list' && Array.isArray(raw.items)) {
+          const lines = raw.items.map(t => `${t.completed ? '✓' : '○'} ${t.text}`).join('\n')
+          if (lines) messages.push({ role: 'agent', time, label: 'Plan', text: lines })
+          continue
+        }
+        if (eventType === 'item_completed' && itemType === 'file_change' && Array.isArray(raw.changes)) {
+          const lines = raw.changes.map(c => `${c.kind || 'change'}: ${c.path}`).join('\n')
+          if (lines) messages.push({
+            role: 'tool', time,
+            toolName: 'FileChange', toolDesc: raw.changes[0]?.path || '',
+            output: lines,
+          })
+          continue
+        }
+        // item_started for non-todo, thread_started, turn_started, turn_completed,
+        // turn_failed, etc.: ignore.
+        continue
+      }
+
       // Codex app-server SDK format (method-based, camelCase)
       const method = raw.method || ''
       const params = raw.params || {}

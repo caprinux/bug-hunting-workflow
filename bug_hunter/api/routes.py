@@ -517,9 +517,18 @@ async def api_get_stage_stream(engagement_id: str, run_id: str, stage_name: str)
                     if evt_type == "codex_event" and raw.get("event_type") == "item_completed":
                         item_type = raw.get("item_type", "")
                         if item_type == "agent_message" and raw.get("text"):
-                            evt["event_type"] = "text"
-                            evt["text"] = raw["text"][:500]
-                            events.append(evt)
+                            from bug_hunter.core.cli_wrapper import split_codex_agent_message
+                            narrative, data_preview = split_codex_agent_message(raw["text"])
+                            if narrative:
+                                events.append({
+                                    "timestamp": evt["timestamp"], "agent_id": evt["agent_id"],
+                                    "event_type": "text", "text": narrative[:500],
+                                })
+                            if data_preview:
+                                events.append({
+                                    "timestamp": evt["timestamp"], "agent_id": evt["agent_id"],
+                                    "event_type": "text", "text": data_preview[:500],
+                                })
                         elif item_type == "command_execution":
                             evt["event_type"] = "tool_use"
                             evt["tool_name"] = "Bash"
