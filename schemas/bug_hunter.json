@@ -1,40 +1,109 @@
 {
   "type": "object",
   "properties": {
+    "narrative": {
+      "type": "string",
+      "description": "Brief progress note (1-2 sentences) for the human-readable conversation log. Always populate. Plain text, no markdown. Empty string only if you have nothing to say."
+    },
     "bugs": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "source_file": {"type": "string"},
-          "line_range": {"type": "string"},
-          "url": {"type": "string"},
-          "http_evidence": {"type": "string"},
-          "vuln_class": {"type": "string"},
-          "vuln_type": {"type": "string"},
-          "description": {"type": "string"},
-          "reasoning": {"type": "string"},
-          "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-          "root_cause": {"type": "string"},
-          "security_impact": {"type": "string"},
-          "validated": {"type": "boolean"},
+          "source_file": {
+            "type": "string"
+          },
+          "line_range": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "http_evidence": {
+            "type": "string"
+          },
+          "vuln_class": {
+            "type": "string"
+          },
+          "vuln_type": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "reasoning": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "root_cause": {
+            "type": "string"
+          },
+          "security_impact": {
+            "type": "string"
+          },
+          "validated": {
+            "type": "boolean"
+          },
           "poc": {
             "type": "object",
             "properties": {
-              "language": {"type": "string"},
-              "code": {"type": "string"},
-              "execution_result": {"type": "string", "enum": ["success", "failure", "error", "destructive_skipped"]},
-              "output": {"type": "string"}
+              "language": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "execution_result": {
+                "type": "string",
+                "enum": [
+                  "success",
+                  "failure",
+                  "error",
+                  "destructive_skipped"
+                ]
+              },
+              "output": {
+                "type": "string"
+              }
             },
-            "required": ["language", "code", "execution_result", "output"],
+            "required": [
+              "language",
+              "code",
+              "execution_result",
+              "output"
+            ],
             "additionalProperties": false
           }
         },
-        "required": ["source_file", "line_range", "url", "http_evidence", "vuln_class", "vuln_type", "description", "reasoning", "confidence", "root_cause", "security_impact", "validated", "poc"],
+        "required": [
+          "source_file",
+          "line_range",
+          "url",
+          "http_evidence",
+          "vuln_class",
+          "vuln_type",
+          "description",
+          "reasoning",
+          "confidence",
+          "root_cause",
+          "security_impact",
+          "validated",
+          "poc"
+        ],
         "additionalProperties": false
       }
     }
   },
-  "required": ["bugs"],
+  "required": [
+    "narrative",
+    "bugs"
+  ],
   "additionalProperties": false
 }

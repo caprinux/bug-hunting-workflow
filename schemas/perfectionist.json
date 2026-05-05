@@ -1,6 +1,10 @@
 {
   "type": "object",
   "properties": {
+    "narrative": {
+      "type": "string",
+      "description": "Brief progress note (1-2 sentences) for the human-readable conversation log. Always populate. Plain text, no markdown. Empty string only if you have nothing to say."
+    },
     "expanded": {
       "type": "boolean"
     },
@@ -68,6 +72,7 @@
     }
   },
   "required": [
+    "narrative",
     "expanded",
     "expanded_primitives"
   ],

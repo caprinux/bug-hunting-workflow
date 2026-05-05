@@ -1,23 +1,40 @@
 {
   "type": "object",
   "properties": {
+    "narrative": {
+      "type": "string",
+      "description": "Brief progress note (1-2 sentences) for the human-readable conversation log. Always populate. Plain text, no markdown. Empty string only if you have nothing to say."
+    },
     "in_scope": {
       "type": "array",
-      "items": {"type": "string"}
+      "items": {
+        "type": "string"
+      }
     },
     "out_of_scope": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "id": {"type": "string"},
-          "reason": {"type": "string"}
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
         },
-        "required": ["id", "reason"],
+        "required": [
+          "id",
+          "reason"
+        ],
         "additionalProperties": false
       }
     }
   },
-  "required": ["in_scope", "out_of_scope"],
+  "required": [
+    "narrative",
+    "in_scope",
+    "out_of_scope"
+  ],
   "additionalProperties": false
 }

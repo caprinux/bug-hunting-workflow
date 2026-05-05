@@ -1,9 +1,15 @@
 {
   "type": "object",
   "properties": {
+    "narrative": {
+      "type": "string",
+      "description": "Brief progress note (1-2 sentences) for the human-readable conversation log. Always populate. Plain text, no markdown. Empty string only if you have nothing to say."
+    },
     "deduplicated": {
       "type": "array",
-      "items": {"type": "string"},
+      "items": {
+        "type": "string"
+      },
       "description": "List of bug IDs that survived deduplication"
     },
     "duplicate_groups": {
@@ -11,15 +17,32 @@
       "items": {
         "type": "object",
         "properties": {
-          "merged_into": {"type": "string"},
-          "duplicates": {"type": "array", "items": {"type": "string"}},
-          "reason": {"type": "string"}
+          "merged_into": {
+            "type": "string"
+          },
+          "duplicates": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
         },
-        "required": ["merged_into", "duplicates", "reason"],
+        "required": [
+          "merged_into",
+          "duplicates",
+          "reason"
+        ],
         "additionalProperties": false
       }
     }
   },
-  "required": ["deduplicated", "duplicate_groups"],
+  "required": [
+    "narrative",
+    "deduplicated",
+    "duplicate_groups"
+  ],
   "additionalProperties": false
 }
