@@ -109,6 +109,8 @@ Your output will be collected automatically via structured JSON output. Do not w
             record_dir=record_dir,
             record_metadata=record_metadata,
             json_schema_file=str(SCHEMAS_DIR / "bug_chainer.json"),
+            reasoning_effort=context.config.pipeline.codex_reasoning_effort,
+            reasoning_summary=context.config.pipeline.codex_reasoning_summary,
         )
 
         if not result.success:

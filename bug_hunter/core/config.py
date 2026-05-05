@@ -24,6 +24,8 @@ class PipelineConfig:
     bug_schema_version: str = "1.0"
     request_delay: float = 0.0
     max_concurrent_infra_agents: int = 5
+    codex_reasoning_effort: str = "xhigh"  # minimal | low | medium | high | xhigh
+    codex_reasoning_summary: str = "auto"  # none | auto | concise | detailed
 
 
 @dataclass

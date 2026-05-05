@@ -23,6 +23,26 @@ def is_codex_model(model: str) -> bool:
     return model in CODEX_MODELS or model.startswith("gpt-") or model.startswith("o3") or model.startswith("o4")
 
 
+# Appended to every codex developer_instructions. Tells the model how to use
+# the schema's `narrative` field and that array data fields are deltas — the
+# backend (run_codex._merge_codex_messages) unions them across emissions.
+# Claude does NOT see this; its result-extraction takes only the last
+# assistant message and would silently drop earlier deltas.
+CODEX_STREAMING_GUIDANCE = """
+
+## Conversation streaming
+
+Your structured output is gated by a JSON schema. Every assistant message you emit must conform to it. The schema includes a `narrative` field alongside the data fields.
+
+Use it so a human can follow what you are doing:
+
+- **Always populate `narrative`** in every message with a 1-2 sentence plain-text note about what you are doing, what you just discovered, or what you plan to test next. Keep it short. No markdown.
+- **Treat array data fields as deltas**: in each message include only items newly discovered or processed in THAT message. Do NOT re-emit items you already reported in a previous message — the system aggregates the union across all your messages.
+- **For non-array fields** (scalars and objects): the FINAL message of the turn must contain the final, complete values. Earlier messages can leave them empty/placeholder; the system keeps the latest non-empty value seen.
+- Empty arrays and empty narrative strings are fine when there is nothing new to say or to record.
+"""
+
+
 async def run_agent(
     prompt: str,
     model: str = "opus",
@@ -36,6 +56,8 @@ async def run_agent(
     record_metadata: Optional[dict] = None,
     session_id: Optional[str] = None,
     is_resume: bool = False,
+    reasoning_effort: Optional[str] = "xhigh",
+    reasoning_summary: Optional[str] = "auto",
 ):
     """Dispatch to run_claude or run_codex based on the model string."""
     if is_codex_model(model):
@@ -55,6 +77,8 @@ async def run_agent(
             output_schema_file=json_schema_file,
             thread_id=session_id if is_resume else None,
             developer_instructions=dev_instructions,
+            reasoning_effort=reasoning_effort,
+            reasoning_summary=reasoning_summary,
         )
     else:
         return await run_claude(
@@ -112,6 +136,93 @@ def _parse_result_payload(payload: Any) -> Any:
             continue
 
     return payload
+
+
+def split_codex_agent_message(text: str) -> tuple[Optional[str], Optional[str]]:
+    """Split a codex AgentMessageItem text payload into the human-facing
+    narrative and a compact preview of any non-empty data fields.
+
+    The schema gates each codex turn into ``{"narrative": "...", "bugs": [...], ...}``.
+    For the agent-stream sidebar we render the narrative as the visible
+    bubble and only surface the data fields when at least one of them
+    actually has content — empty arrays / strings / objects are hidden.
+
+    Returns ``(narrative, data_preview)``. Either may be ``None``:
+      - If ``text`` is not a JSON object with a ``narrative`` key,
+        returns ``(text, None)`` so the caller falls back to raw text.
+      - If the JSON has only the narrative or only empty data fields,
+        the corresponding output is ``None``.
+    """
+    if not isinstance(text, str) or not text:
+        return None, None
+    try:
+        obj = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return text, None
+    if not isinstance(obj, dict) or "narrative" not in obj:
+        return text, None
+
+    narrative = obj.get("narrative")
+    narrative = narrative.strip() if isinstance(narrative, str) else ""
+    filtered = {
+        k: v for k, v in obj.items()
+        if k != "narrative" and v not in ([], "", {}, None)
+    }
+    data_preview = json.dumps(filtered, default=str) if filtered else None
+    return (narrative or None), data_preview
+
+
+def _merge_codex_messages(messages: list[str]) -> Any:
+    """Aggregate every parseable AgentMessageItem from a codex turn.
+
+    With the schema gating every assistant message, agents emit incremental
+    deltas across many turns. We merge them so callers see one unified
+    structured result:
+      - top-level array fields are concatenated in emit order;
+      - top-level scalar/object fields take the latest non-empty value;
+      - the human-facing `narrative` field is dropped from the merged
+        result (it is a per-message conversation log, not a final field).
+
+    If no message parses as a JSON object, fall back to the original
+    "last message wins" + best-effort parse behavior.
+    """
+    if not messages:
+        return None
+
+    parsed_objects: list[dict] = []
+    for msg in messages:
+        try:
+            obj = json.loads(msg)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(obj, dict):
+            parsed_objects.append(obj)
+
+    if not parsed_objects:
+        last = messages[-1]
+        try:
+            return json.loads(last)
+        except (json.JSONDecodeError, TypeError):
+            return _parse_result_payload(last)
+
+    merged: dict = {}
+    for obj in parsed_objects:
+        for k, v in obj.items():
+            if k == "narrative":
+                continue
+            if isinstance(v, list):
+                existing = merged.get(k)
+                if isinstance(existing, list):
+                    existing.extend(v)
+                else:
+                    merged[k] = list(v)
+            else:
+                # scalars/objects: latest non-empty wins
+                if v in (None, "", {}):
+                    merged.setdefault(k, v)
+                else:
+                    merged[k] = v
+    return merged
 
 
 def _json_default(value: Any) -> str:
@@ -292,7 +403,7 @@ async def run_claude(
                 elif isinstance(msg, ResultMessage):
                     cost_usd = getattr(msg, "total_cost_usd", 0.0) or 0.0
                     result_session_id = getattr(msg, "session_id", session_id) or session_id or ""
-                    structured_output = getattr(msg, "structured_output", None)
+                    structured_output = getattr(msg, "structured_output", None) or structured_output
                     usage = getattr(msg, "usage", None)
                     if isinstance(usage, dict):
                         pass
@@ -518,14 +629,41 @@ async def run_codex(
     output_schema_file: Optional[str] = None,
     thread_id: Optional[str] = None,
     developer_instructions: Optional[str] = None,
+    reasoning_effort: Optional[str] = "xhigh",
+    reasoning_summary: Optional[str] = "auto",
 ) -> CLIResult:
     """Run Codex via the codex-agent-sdk. Each call spawns a subprocess — safe for concurrency."""
     from codex_agent_sdk import (
         CodexSDKClient, CodexAgentOptions, SandboxMode, ApprovalPolicy,
-        ItemCompletedEvent, TurnCompletedEvent, TurnFailedEvent,
+        ReasoningEffort,
+        ItemCompletedEvent, ItemStartedEvent,
+        TurnCompletedEvent, TurnFailedEvent,
         ThreadStartedEvent, StreamErrorEvent,
         AgentMessageItem, CommandExecutionItem, ReasoningItem,
     )
+
+    # Append the codex-only streaming guidance so the model knows to emit
+    # narrative + delta arrays. Claude never sees this because run_claude is
+    # a separate dispatch path.
+    if developer_instructions is None:
+        developer_instructions = CODEX_STREAMING_GUIDANCE.lstrip()
+    elif "## Conversation streaming" not in developer_instructions:
+        developer_instructions = developer_instructions.rstrip() + CODEX_STREAMING_GUIDANCE
+
+    re_enum: Optional[ReasoningEffort] = None
+    if reasoning_effort:
+        try:
+            re_enum = ReasoningEffort(reasoning_effort.lower())
+        except ValueError:
+            logger.warning(f"Unknown reasoning_effort {reasoning_effort!r}; using SDK default")
+
+    # codex_agent_sdk doesn't expose reasoning_summary directly, so we plumb
+    # it through config_overrides — the SDK forwards each entry to codex CLI
+    # as `--config k=v`. The value must already be a TOML literal (a quoted
+    # string), matching how the SDK encodes reasoning_effort itself.
+    extra_overrides: dict[str, str] = {}
+    if reasoning_summary:
+        extra_overrides["model_reasoning_summary"] = f'"{reasoning_summary.lower()}"'
 
     start_time = time.monotonic()
     raw_lines: list[str] = []
@@ -565,6 +703,8 @@ async def run_codex(
             skip_git_repo_check=True,
             ephemeral=not thread_id,
             developer_instructions=developer_instructions,
+            reasoning_effort=re_enum,
+            config_overrides=extra_overrides,
         )
 
         client = CodexSDKClient(opts)
@@ -576,7 +716,7 @@ async def run_codex(
             if isinstance(event, ThreadStartedEvent):
                 payload.update({"event_type": "thread_started",
                                 "thread_id": getattr(event, "thread_id", "")})
-            elif isinstance(event, ItemCompletedEvent):
+            elif isinstance(event, (ItemCompletedEvent, ItemStartedEvent)):
                 item = event.item
                 item_payload: dict = {"item_class": type(item).__name__}
                 if isinstance(item, AgentMessageItem):
@@ -590,9 +730,33 @@ async def run_codex(
                     item_payload.update({"item_type": "reasoning",
                                          "text": getattr(item, "text", "")})
                 else:
-                    item_payload.update({"item_type": getattr(item, "type", ""),
-                                         "repr": str(item)[:500]})
-                payload.update({"event_type": "item_completed", **item_payload})
+                    cls_name = type(item).__name__
+                    item_type = getattr(item, "type", "") or cls_name
+                    item_payload["item_type"] = item_type
+                    if cls_name == "WebSearchItem":
+                        item_payload["query"] = getattr(item, "query", "") or ""
+                    elif cls_name == "ErrorItem":
+                        item_payload["message"] = getattr(item, "message", "") or ""
+                    elif cls_name == "TodoListItem":
+                        items = getattr(item, "items", None) or []
+                        item_payload["items"] = [
+                            {"text": getattr(t, "text", ""),
+                             "completed": bool(getattr(t, "completed", False))}
+                            for t in items
+                        ]
+                    elif cls_name == "FileChangeItem":
+                        changes = getattr(item, "changes", None) or []
+                        item_payload["changes"] = [
+                            {"path": getattr(c, "path", ""),
+                             "kind": getattr(getattr(c, "kind", None), "value",
+                                             str(getattr(c, "kind", "")))}
+                            for c in changes
+                        ]
+                    else:
+                        item_payload["repr"] = str(item)[:500]
+                event_type = ("item_completed" if isinstance(event, ItemCompletedEvent)
+                              else "item_started")
+                payload.update({"event_type": event_type, **item_payload})
             elif isinstance(event, TurnCompletedEvent):
                 payload["event_type"] = "turn_completed"
                 if getattr(event, "usage", None):
@@ -630,10 +794,17 @@ async def run_codex(
                     if isinstance(item, AgentMessageItem):
                         codex_messages.append(item.text)
                         if on_event:
-                            on_event(StreamEvent(type="assistant", data={
-                                "type": "assistant",
-                                "message": {"content": [{"type": "text", "text": item.text}]},
-                            }))
+                            narrative, data_preview = split_codex_agent_message(item.text)
+                            if narrative:
+                                on_event(StreamEvent(type="assistant", data={
+                                    "type": "assistant",
+                                    "message": {"content": [{"type": "text", "text": narrative}]},
+                                }))
+                            if data_preview:
+                                on_event(StreamEvent(type="assistant", data={
+                                    "type": "assistant",
+                                    "message": {"content": [{"type": "text", "text": data_preview}]},
+                                }))
                     elif isinstance(item, CommandExecutionItem):
                         if on_event:
                             on_event(StreamEvent(type="tool_use", data={
@@ -671,13 +842,7 @@ async def run_codex(
 
         duration_ms = int((time.monotonic() - start_time) * 1000)
 
-        parsed_result = None
-        if codex_messages:
-            last_msg = codex_messages[-1]
-            try:
-                parsed_result = json.loads(last_msg)
-            except (json.JSONDecodeError, TypeError):
-                parsed_result = _parse_result_payload(last_msg)
+        parsed_result = _merge_codex_messages(codex_messages)
 
         return finalize(CLIResult(
             success=True, result=parsed_result,

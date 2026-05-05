@@ -201,6 +201,8 @@ Your output will be collected automatically via structured JSON output. Do not w
             timeout=context.config.pipeline.subagent_timeout,
             record_dir=record_dir, record_metadata=record_meta,
             json_schema_file=str(SCHEMAS_DIR / "strict_validator.json"),
+            reasoning_effort=context.config.pipeline.codex_reasoning_effort,
+            reasoning_summary=context.config.pipeline.codex_reasoning_summary,
         )
 
         if not result.success:

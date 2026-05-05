@@ -8,6 +8,8 @@ pipeline:
   bug_schema_version: '1.0'
   request_delay: 0.0
   max_concurrent_infra_agents: 5
+  codex_reasoning_effort: xhigh
+  codex_reasoning_summary: auto
 engagement:
   type: source_code
   source_path: ''
@@ -49,7 +51,7 @@ variant_hunter:
 models:
   scoper: gpt-5.5
   skills_hunter: gpt-5.5
-  bug_hunter_subagent: opus
+  bug_hunter_subagent: claude-opus-4-6[1m]
   variant_hunter: gpt-5.5
   deduplicator: gpt-5.5
   strict_validator: gpt-5.5

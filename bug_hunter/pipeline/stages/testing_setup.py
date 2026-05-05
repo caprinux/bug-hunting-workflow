@@ -85,6 +85,8 @@ class TestingSetupStage(PipelineStage):
             timeout=context.config.pipeline.subagent_timeout,
             record_dir=record_dir,
             record_metadata=record_meta,
+            reasoning_effort=context.config.pipeline.codex_reasoning_effort,
+            reasoning_summary=context.config.pipeline.codex_reasoning_summary,
         )
 
         if not result.success:

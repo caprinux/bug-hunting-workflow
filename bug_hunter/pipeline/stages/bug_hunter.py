@@ -478,6 +478,8 @@ When you are done, make sure all background tasks and subagents have completed b
                 record_metadata=record_meta,
                 output_schema_file=schema_file,
                 developer_instructions=dev_instructions,
+                reasoning_effort=context.config.pipeline.codex_reasoning_effort,
+                reasoning_summary=context.config.pipeline.codex_reasoning_summary,
             )
         else:
             return CLIResult(success=False, error=f"Unknown agent: {agent_name}")
