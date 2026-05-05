@@ -108,12 +108,14 @@ cd bug-hunting-workflow
 # Install backend dependencies
 pip install -r requirements.txt
 
-# Install frontend dependencies
-cd frontend && npm install && cd ..
+# Install frontend dependencies and build the production bundle
+cd frontend && npm install && npm run build && cd ..
 
 # Start the application
 python -m bug_hunter.main
 ```
+
+The backend serves the prebuilt bundle from `frontend/dist/`. After editing anything under `frontend/src/`, re-run `npm run build` (or `npm run dev` for live reload) — `npm install` alone does not rebuild.
 
 The server starts on `http://0.0.0.0:80`. On first launch, it generates a secure random password and prints it to the console. Use it to log in.
 

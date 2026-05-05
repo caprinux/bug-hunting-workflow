@@ -4,6 +4,7 @@ import useTitle from '../hooks/useTitle'
 
 const CLAUDE_MODEL_OPTIONS = [
   { value: 'opus', label: 'Claude Opus 4.7' },
+  { value: 'claude-opus-4-6[1m]', label: 'Claude Opus 4.6 (1M context)' },
   { value: 'sonnet', label: 'Claude Sonnet 4.6' },
   { value: 'haiku', label: 'Claude Haiku 4.5' },
 ]
