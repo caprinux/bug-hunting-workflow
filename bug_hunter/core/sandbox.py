@@ -25,7 +25,7 @@ import shlex
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 # Fixed container-side paths.
 WORK = "/work"
@@ -57,6 +57,7 @@ class ContainerSpec:
     agent_home_host: str    # host dir  -> /agent-home  (rw, persistent for resume)
     network: bool = True
     env: dict = field(default_factory=dict)
+    codex_bin: Optional[str] = None   # override the codex binary mounted in (else bundled)
 
     @property
     def home_env_name(self) -> str:
@@ -64,7 +65,9 @@ class ContainerSpec:
 
     @property
     def bin_host(self) -> str:
-        return bundled_codex_bin() if self.kind == "codex" else bundled_claude_bin()
+        if self.kind == "codex":
+            return self.codex_bin or bundled_codex_bin()
+        return bundled_claude_bin()
 
     @property
     def bin_container(self) -> str:

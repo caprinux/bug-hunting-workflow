@@ -119,6 +119,30 @@ async def test_live_bug_hunter_finds_planted_vuln(tmp_path):
           f"codex_model={cfg.bug_hunter.codex_model} effort={cfg.pipeline.codex_reasoning_effort}")
 
 
+async def test_live_codex_bin_unlocks_gpt56_and_max_reasoning(tmp_path):
+    """The codex_bin workaround: point run_codex at a newer system codex so a
+    gpt-5.6 model with 'max' reasoning works despite the pinned SDK (which caps
+    at xhigh). Verifies the reasoning-effort tolerance patch + codex_bin wiring."""
+    import shutil
+
+    from bug_hunter.core.cli_wrapper import resolve_codex_bin, run_codex
+
+    if not shutil.which("codex"):
+        pytest.skip("no system codex on PATH")
+
+    r = await asyncio.wait_for(run_codex(
+        prompt="Reply with exactly: PONG",
+        model="gpt-5.6-terra", cwd=str(tmp_path), timeout=120,
+        reasoning_effort="max", reasoning_summary="none",
+        codex_bin=resolve_codex_bin("system"),
+    ), timeout=150)
+
+    if not r.success and ("model" in (r.error or "").lower() or "not found" in (r.error or "").lower()):
+        pytest.skip(f"system codex lacks gpt-5.6/max on this account: {r.error[:120]}")
+    assert r.success, r.error
+    assert "pong" in str(r.result).lower(), r.result
+
+
 async def test_live_full_pipeline_finds_planted_bugs(tmp_path):
     """Thorough: the whole pipeline to completion. Slower/pricier — enable with
     RUN_LIVE_FULL=1 on top of RUN_LIVE_E2E=1."""

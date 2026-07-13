@@ -23,6 +23,58 @@ def is_codex_model(model: str) -> bool:
     return model in CODEX_MODELS or model.startswith("gpt-") or model.startswith("o3") or model.startswith("o4")
 
 
+def resolve_codex_bin(value: Optional[str]) -> Optional[str]:
+    """Resolve the pipeline.codex_bin config value to a codex binary path.
+
+    "" -> None (use the SDK's bundled codex). "system" -> the codex on PATH.
+    Anything else -> that path. Pointing at a newer system codex unlocks newer
+    models / reasoning levels (e.g. gpt-5.6, max/ultra) that the SDK's bundled
+    codex predates — paired with the reasoning-effort tolerance patch below.
+    """
+    if not value:
+        return None
+    if value == "system":
+        import shutil
+        return shutil.which("codex")
+    return value
+
+
+_REASONING_ENUM_PATCHED = False
+
+
+def tolerate_new_reasoning_efforts() -> None:
+    """Let the SDK's ReasoningEffort enum accept values it doesn't know yet
+    (e.g. 'max'/'ultra' from codex 0.144+).
+
+    We only ever *send* the effort as a config string (codex applies it); the
+    problem is purely that the SDK's typed models reject unknown values when
+    *parsing responses*. This registers unknown values as dynamic enum members
+    so validation passes without dropping the distinction. Idempotent; used only
+    when a custom codex_bin is configured.
+    """
+    global _REASONING_ENUM_PATCHED
+    if _REASONING_ENUM_PATCHED:
+        return
+    try:
+        from openai_codex.generated import v2_all
+        RE = v2_all.ReasoningEffort
+
+        def _missing(cls, value):
+            if isinstance(value, str) and value not in cls._value2member_map_:
+                member = object.__new__(cls)
+                member._name_ = value.upper()
+                member._value_ = value
+                cls._value2member_map_[value] = member
+                cls._member_map_[member._name_] = member
+                return member
+            return None
+
+        RE._missing_ = classmethod(_missing)
+        _REASONING_ENUM_PATCHED = True
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning(f"Could not extend ReasoningEffort enum: {e}")
+
+
 # Appended to every codex developer_instructions. Tells the model how to use
 # the schema's `narrative` field and that array data fields are deltas — the
 # backend (run_codex._merge_codex_messages) unions them across emissions.
@@ -725,6 +777,7 @@ async def run_codex(
     reasoning_effort: Optional[str] = "xhigh",
     reasoning_summary: Optional[str] = "auto",
     container: Optional["ContainerSpec"] = None,
+    codex_bin: Optional[str] = None,
 ) -> CLIResult:
     """Run Codex via the official OpenAI Codex Python SDK (``openai_codex``).
 
@@ -788,6 +841,11 @@ async def run_codex(
         })
         return result
 
+    # A custom codex binary (e.g. a newer system codex) can emit reasoning
+    # levels the pinned SDK doesn't know — tolerate them when parsing responses.
+    if codex_bin or (container is not None and getattr(container, "codex_bin", None)):
+        tolerate_new_reasoning_efforts()
+
     # In container mode the codex app-server runs inside Docker; point the SDK's
     # spawned process at `docker run …` and make the thread cwd the in-container
     # /work mount. full_access is safe because the container is the jail.
@@ -798,6 +856,9 @@ async def run_codex(
         seed_agent_home(container)
         codex_config = CodexConfig(launch_args_override=codex_launch_args(container))
         codex_cwd = WORK
+    elif codex_bin:
+        # Non-container: run the given codex binary directly.
+        codex_config = CodexConfig(codex_bin=codex_bin)
 
     try:
         async def _run():

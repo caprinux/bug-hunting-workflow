@@ -21,7 +21,7 @@ from typing import Any, Optional
 
 from uuid import uuid4
 
-from bug_hunter.core.cli_wrapper import CLIResult, StreamEvent, run_claude, run_codex
+from bug_hunter.core.cli_wrapper import CLIResult, StreamEvent, resolve_codex_bin, run_claude, run_codex
 from bug_hunter.core.sandbox import SRC, WORK, ContainerSpec
 from bug_hunter.core.database import create_bug
 from bug_hunter.core.events import event_manager
@@ -354,6 +354,7 @@ class BugHunterStage(PipelineStage):
         return ContainerSpec(
             image=sb.image, kind=kind, work_host=agent_ws,
             source_host=source_host, agent_home_host=agent_home, network=sb.network,
+            codex_bin=resolve_codex_bin(context.config.pipeline.codex_bin) if kind == "codex" else None,
         )
 
     async def _run_hunter(self, context: StageContext, agent_name: str,
@@ -551,6 +552,7 @@ When you are done, make sure all background tasks and subagents have completed b
                 reasoning_effort=context.config.pipeline.codex_reasoning_effort,
                 reasoning_summary=context.config.pipeline.codex_reasoning_summary,
                 container=container,
+                codex_bin=resolve_codex_bin(context.config.pipeline.codex_bin),
             )
 
             # If resume failed (thread expired/missing), drop the stale thread
@@ -579,6 +581,7 @@ When you are done, make sure all background tasks and subagents have completed b
                     reasoning_effort=context.config.pipeline.codex_reasoning_effort,
                     reasoning_summary=context.config.pipeline.codex_reasoning_summary,
                     container=container,
+                    codex_bin=resolve_codex_bin(context.config.pipeline.codex_bin),
                 )
         else:
             return CLIResult(success=False, error=f"Unknown agent: {agent_name}")

@@ -27,15 +27,17 @@ const CODEX_MODEL_OPTIONS = [
   { value: 'gpt-5.2', label: 'GPT-5.2 (API key)' },
 ]
 
-// Reasoning levels the openai-codex SDK currently understands. codex 0.144+ adds
-// 'max' and 'ultra', but the pinned SDK (0.1.0b3) rejects those values, so they
-// are intentionally omitted until a newer SDK ships.
+// 'max' / 'ultra' (and the gpt-5.6 models) only work when Codex Binary below is
+// set to a codex >= 0.144 (e.g. 'system'); the SDK's bundled codex tops out at
+// 'xhigh'.
 const CODEX_REASONING_OPTIONS = [
   { value: 'minimal', label: 'Minimal' },
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
   { value: 'xhigh', label: 'X-High' },
+  { value: 'max', label: 'Max (needs codex ≥ 0.144)' },
+  { value: 'ultra', label: 'Ultra (needs codex ≥ 0.144)' },
 ]
 
 const CODEX_SUMMARY_OPTIONS = [
@@ -58,8 +60,9 @@ const SECTIONS = [
       { key: 'verbose', label: 'Verbose Logging', type: 'bool', help: 'Detailed logging at each stage' },
       { key: 'resume', label: 'Resume on Restart', type: 'bool', help: 'Resume pipeline from last checkpoint on restart' },
       { key: 'auto_install_tools', label: 'Auto-install Tools', type: 'bool', help: 'Automatically install missing tools at setup' },
-      { key: 'codex_reasoning_effort', label: 'Codex Reasoning Effort', type: 'select', options: CODEX_REASONING_OPTIONS, help: 'Reasoning depth for Codex agents. Higher = deeper/slower/pricier. (max/ultra require a newer openai-codex SDK; unsupported today.)' },
+      { key: 'codex_reasoning_effort', label: 'Codex Reasoning Effort', type: 'select', options: CODEX_REASONING_OPTIONS, help: 'Reasoning depth for Codex agents. Higher = deeper/slower/pricier. max/ultra require Codex Binary set below.' },
       { key: 'codex_reasoning_summary', label: 'Codex Reasoning Summary', type: 'select', options: CODEX_SUMMARY_OPTIONS, help: 'Verbosity of Codex reasoning summaries streamed to the UI' },
+      { key: 'codex_bin', label: 'Codex Binary', type: 'text', help: "Blank = SDK's bundled codex. 'system' = the codex on PATH (unlocks gpt-5.6 + max/ultra reasoning). Or an explicit path to a codex binary." },
     ],
   },
   {

@@ -10,6 +10,7 @@ pipeline:
   max_concurrent_infra_agents: 5
   codex_reasoning_effort: xhigh
   codex_reasoning_summary: auto
+  codex_bin: ''  # ''=bundled codex; 'system'=codex on PATH (unlocks gpt-5.6, max/ultra); or a path
 engagement:
   type: source_code
   source_path: ''

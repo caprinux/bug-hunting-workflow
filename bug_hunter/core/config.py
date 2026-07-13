@@ -24,8 +24,12 @@ class PipelineConfig:
     bug_schema_version: str = "1.0"
     request_delay: float = 0.0
     max_concurrent_infra_agents: int = 5
-    codex_reasoning_effort: str = "xhigh"  # minimal | low | medium | high | xhigh
+    codex_reasoning_effort: str = "xhigh"  # minimal | low | medium | high | xhigh (max | ultra need codex_bin)
     codex_reasoning_summary: str = "auto"  # none | auto | concise | detailed
+    # Optional codex binary override. "" = the SDK's bundled codex; "system" =
+    # the codex on PATH; or an explicit path. A newer system codex unlocks newer
+    # models / reasoning levels (gpt-5.6, max/ultra) that the bundled one predates.
+    codex_bin: str = ""
 
 
 @dataclass
