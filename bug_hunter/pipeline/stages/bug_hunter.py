@@ -15,12 +15,14 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from uuid import uuid4
 
 from bug_hunter.core.cli_wrapper import CLIResult, StreamEvent, run_claude, run_codex
+from bug_hunter.core.sandbox import SRC, WORK, ContainerSpec
 from bug_hunter.core.database import create_bug
 from bug_hunter.core.events import event_manager
 from bug_hunter.pipeline.stages.base import PipelineStage, StageContext, StageResult
@@ -314,6 +316,46 @@ class BugHunterStage(PipelineStage):
             },
         )
 
+    def _maybe_container(self, context: StageContext, agent_name: str, eng_type: str,
+                         source_path: str, program_file: str, stage_dir: str) -> Optional[ContainerSpec]:
+        """Build a per-agent ContainerSpec when sandbox isolation is enabled.
+
+        Each claude/codex agent gets a private working dir (its OWN NOTES +
+        ATTACK_SURFACES, a copy of program.json) mounted at /work, the source
+        read-only at /src, and a persistent per-agent home (for resume). It
+        cannot see the shared engagement dir or any sibling agent's work.
+        """
+        sb = context.config.sandbox
+        if not sb.enabled or not (agent_name.startswith("claude") or agent_name.startswith("codex")):
+            return None
+
+        agent_ws = os.path.abspath(os.path.join(stage_dir, "agent_ws", agent_name))
+        os.makedirs(agent_ws, exist_ok=True)
+        for fname in ("NOTES.md", "ATTACK_SURFACES.md"):
+            fp = os.path.join(agent_ws, fname)
+            if not os.path.exists(fp):
+                open(fp, "w").close()
+        priv_program = os.path.join(agent_ws, "program.json")
+        if program_file and os.path.exists(program_file) and not os.path.exists(priv_program):
+            shutil.copy2(program_file, priv_program)
+
+        # Source mounted read-only at /src; empty placeholder for black_box.
+        if eng_type == "source_code" and source_path and os.path.isdir(source_path):
+            source_host = os.path.abspath(source_path)
+        else:
+            source_host = os.path.join(agent_ws, "_src")
+            os.makedirs(source_host, exist_ok=True)
+
+        # Persistent per-agent home (Codex rollouts / Claude sessions) so resume
+        # survives across runs. Lives at the engagement level.
+        eng_dir = os.path.dirname(os.path.dirname(context.run_dir))
+        agent_home = os.path.join(eng_dir, "agent_homes", agent_name)
+        kind = "codex" if agent_name.startswith("codex") else "claude"
+        return ContainerSpec(
+            image=sb.image, kind=kind, work_host=agent_ws,
+            source_host=source_host, agent_home_host=agent_home, network=sb.network,
+        )
+
     async def _run_hunter(self, context: StageContext, agent_name: str,
                           existing_bugs: list, source_path: str,
                           infra_config: str, eng_type: str, stage_dir: str,
@@ -325,11 +367,37 @@ class BugHunterStage(PipelineStage):
         surfaces_path = os.path.abspath(attack_surfaces_file) if attack_surfaces_file else ""
         notes_path = os.path.abspath(notes_file) if notes_file else ""
 
-        # Determine session state early — needed for prompt construction
+        # Determine session state early — needed for prompt construction.
+        # Persistent sessions are parallel-only: each agent keeps its own
+        # conversation (Claude session / Codex thread) so re-hunts resume with
+        # full prior context instead of restarting from the notes files.
         session_id = None
         is_resume = False
-        if context.config.bug_hunter.mode == "parallel" and (agent_name == "claude" or agent_name.startswith("claude")):
+        if context.config.bug_hunter.mode == "parallel" and (
+            agent_name.startswith("claude") or agent_name.startswith("codex")
+        ):
             session_id, is_resume = self._get_agent_session(context, agent_name)
+
+        # Container isolation: when enabled, each parallel agent runs in its own
+        # Docker container with a private working dir. It gets its OWN NOTES /
+        # ATTACK_SURFACES (not the shared engagement files) and cannot see any
+        # other agent's work — so paths handed to it are the in-container mounts.
+        container = self._maybe_container(context, agent_name, eng_type, source_path,
+                                          program_file, stage_dir)
+        if container is not None:
+            disp_program = f"{WORK}/program.json"
+            disp_source = SRC
+            disp_surfaces = f"{WORK}/ATTACK_SURFACES.md"
+            disp_notes = f"{WORK}/NOTES.md"
+            bugs_note = ("Your output will be collected automatically via structured output — "
+                         "do not write findings to any file.")
+        else:
+            disp_program = os.path.abspath(program_file)
+            disp_source = source_path
+            disp_surfaces = surfaces_path
+            disp_notes = notes_path
+            bugs_note = ("BUGS.json is READ-ONLY. Your output will be collected automatically via "
+                         "structured output — do not write findings to any file.")
 
         if context.run_type == "rehunt" and context.rehunt_target and is_resume:
             # Rehunt with persistent session — agent already has full context
@@ -342,17 +410,16 @@ class BugHunterStage(PipelineStage):
 
 The above instructions are your PRIMARY OBJECTIVE for this run. Prioritize them over general scanning.
 """
-            program_path = os.path.abspath(program_file)
             prompt = f"""{rehunt_instruction}
-You may find the full details on this engagement here: {program_path}.
+You may find the full details on this engagement here: {disp_program}.
 
-{"SOURCE CODE ROOT: " + source_path if eng_type == "source_code" else ""}
-ATTACK SURFACES: {surfaces_path}
-NOTES: {notes_path}
+{"SOURCE CODE ROOT: " + disp_source if eng_type == "source_code" else ""}
+ATTACK SURFACES: {disp_surfaces}
+NOTES: {disp_notes}
 
 {"Identify attack surfaces within the source code, find vulnerabilities throughout the codebases and document attack surfaces as you go along." if eng_type == "source_code" else "Enumerate the targets within scope and find vulnerabilities. As you go along and you identify more attack surfaces, you may update the list of target surfaces."}
 
-BUGS.json is READ-ONLY. Your output will be collected automatically via structured output — do not write findings to any file. Only include NEW bugs discovered in this session — do not re-report previously found bugs.
+{bugs_note} Only include NEW bugs discovered in this session — do not re-report previously found bugs.
 When you are done, make sure all background tasks and subagents have completed before finishing."""
 
         if eng_type == "source_code":
@@ -440,6 +507,7 @@ When you are done, make sure all background tasks and subagents have completed b
                 record_metadata=record_meta,
                 session_id=session_id,
                 is_resume=is_resume,
+                container=container,
             )
 
             # If resume failed (expired/missing session), retry with a fresh session
@@ -463,6 +531,7 @@ When you are done, make sure all background tasks and subagents have completed b
                     record_metadata=record_meta,
                     session_id=new_sid,
                     is_resume=False,
+                    container=container,
                 )
         elif agent_name == "codex" or agent_name.startswith("codex"):
             with open(agent_file) as f:
@@ -477,10 +546,40 @@ When you are done, make sure all background tasks and subagents have completed b
                 record_dir=record_dir,
                 record_metadata=record_meta,
                 output_schema_file=schema_file,
+                thread_id=session_id if is_resume else None,
                 developer_instructions=dev_instructions,
                 reasoning_effort=context.config.pipeline.codex_reasoning_effort,
                 reasoning_summary=context.config.pipeline.codex_reasoning_summary,
+                container=container,
             )
+
+            # If resume failed (thread expired/missing), drop the stale thread
+            # id and retry with a fresh thread.
+            check_text = f"{result.error} {result.raw_output}".lower()
+            if not result.success and is_resume and (
+                "thread" in check_text or "not found" in check_text or "resume" in check_text
+            ):
+                logger.warning(f"Codex thread resume failed for {agent_name}, starting fresh thread")
+                sessions = self._load_sessions(context)
+                sessions.pop(f"bug_hunter_{agent_name}", None)
+                sessions.pop(f"bug_hunter_{agent_name}_used", None)
+                self._save_sessions(context, sessions)
+                result = await run_codex(
+                    prompt=prompt,
+                    model=context.config.bug_hunter.codex_model,
+                    cwd=cwd,
+                    timeout=context.config.pipeline.subagent_timeout,
+                    on_event=on_event,
+                    additional_dirs=extra_dirs,
+                    record_dir=record_dir,
+                    record_metadata=record_meta,
+                    output_schema_file=schema_file,
+                    thread_id=None,
+                    developer_instructions=dev_instructions,
+                    reasoning_effort=context.config.pipeline.codex_reasoning_effort,
+                    reasoning_summary=context.config.pipeline.codex_reasoning_summary,
+                    container=container,
+                )
         else:
             return CLIResult(success=False, error=f"Unknown agent: {agent_name}")
 
