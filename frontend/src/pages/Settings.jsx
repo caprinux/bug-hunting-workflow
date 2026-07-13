@@ -3,18 +3,16 @@ import { api } from '../utils/api'
 import useTitle from '../hooks/useTitle'
 
 const CLAUDE_MODEL_OPTIONS = [
-  { value: 'opus', label: 'Claude Opus 4.7' },
-  { value: 'claude-opus-4-6[1m]', label: 'Claude Opus 4.6 (1M context)' },
-  { value: 'sonnet', label: 'Claude Sonnet 4.6' },
+  { value: 'opus', label: 'Claude Opus 4.8' },
+  { value: 'claude-opus-4-8[1m]', label: 'Claude Opus 4.8 (1M context)' },
+  { value: 'sonnet', label: 'Claude Sonnet 5' },
   { value: 'haiku', label: 'Claude Haiku 4.5' },
 ]
 
 const CODEX_MODEL_OPTIONS = [
   { value: 'gpt-5.5', label: 'GPT-5.5' },
   { value: 'gpt-5.4', label: 'GPT-5.4' },
-  { value: 'o3', label: 'GPT o3' },
-  { value: 'o4-mini', label: 'GPT o4-mini' },
-  { value: 'gpt-4.1', label: 'GPT-4.1' },
+  { value: 'gpt-5.4-mini', label: 'GPT-5.4 mini' },
 ]
 
 const SECTIONS = [
@@ -190,7 +188,7 @@ export default function Settings() {
                 checked={selectedAgents.includes('claude')}
                 onChange={e => toggleAgent('claude', e.target.checked)}
               />
-              <span>Claude (Claude Opus 4.7)</span>
+              <span>Claude (Claude Opus 4.8)</span>
             </label>
             <label className="toggle-label">
               <input

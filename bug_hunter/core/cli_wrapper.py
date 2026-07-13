@@ -15,7 +15,7 @@ from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
-CODEX_MODELS = {"gpt-5.5", "gpt-5.4", "o3", "o4-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"}
+CODEX_MODELS = {"gpt-5.5", "gpt-5.4", "gpt-5.4-mini"}
 
 
 def is_codex_model(model: str) -> bool:

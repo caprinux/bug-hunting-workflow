@@ -51,7 +51,7 @@ variant_hunter:
 models:
   scoper: gpt-5.5
   skills_hunter: gpt-5.5
-  bug_hunter_subagent: claude-opus-4-6[1m]
+  bug_hunter_subagent: claude-opus-4-8[1m]
   variant_hunter: gpt-5.5
   deduplicator: gpt-5.5
   strict_validator: gpt-5.5
