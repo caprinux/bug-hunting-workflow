@@ -283,8 +283,14 @@ async def run_claude(
     record_metadata: Optional[dict] = None,
     session_id: Optional[str] = None,
     is_resume: bool = False,
+    container: Optional["ContainerSpec"] = None,
 ) -> CLIResult:
-    """Run Claude Code via the claude-agent-sdk."""
+    """Run Claude Code via the claude-agent-sdk.
+
+    When ``container`` is given, the claude CLI runs inside a Docker container
+    (isolated filesystem view) instead of directly on the host — see
+    :mod:`bug_hunter.core.sandbox`.
+    """
     from claude_agent_sdk import (
         ClaudeSDKClient, ClaudeAgentOptions,
         AssistantMessage, UserMessage, ResultMessage,
@@ -339,7 +345,18 @@ async def run_claude(
             "stderr": lambda line: stderr_lines.append(line),
             "env": {"IS_SANDBOX": "1"},
         }
-        if cwd:
+        if container is not None:
+            # Run claude inside a Docker container: point cli_path at a wrapper
+            # that execs `docker run ... /opt/claude "$@"`. The container's -w and
+            # HOME are /work, and mounts are the only writable paths, so host
+            # cwd/add_dirs are irrelevant here. Skip the SDK's pre-flight `-v`
+            # probe (a second container spawn).
+            from bug_hunter.core.sandbox import seed_agent_home, write_claude_wrapper
+            seed_agent_home(container)
+            wrapper_dir = record_dir or os.path.join(os.path.abspath(container.work_host), ".bhw")
+            opts_kwargs["cli_path"] = write_claude_wrapper(container, wrapper_dir)
+            os.environ["CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK"] = "1"
+        elif cwd:
             opts_kwargs["cwd"] = cwd
         if session_id and is_resume:
             opts_kwargs["resume"] = session_id
@@ -357,7 +374,9 @@ async def run_claude(
                 schema = json.loads(f.read())
             opts_kwargs["output_format"] = {"type": "json_schema", "schema": schema}
 
-        if additional_dirs:
+        if additional_dirs and container is None:
+            # In container mode, host add_dirs are meaningless — the container's
+            # mounts define what the agent can see.
             opts_kwargs["add_dirs"] = additional_dirs
 
         if max_budget_usd:
@@ -615,7 +634,81 @@ async def run_claude_chat(
         )
 
 
-# --- Codex (via codex-agent-sdk) ---
+# --- Codex (via the official OpenAI Codex Python SDK: openai_codex) ---
+
+def _codex_reasoning_text(item: Any) -> str:
+    """Flatten a ReasoningThreadItem's summary + content lists into one string."""
+    parts: list[str] = []
+    parts.extend(getattr(item, "summary", None) or [])
+    parts.extend(getattr(item, "content", None) or [])
+    return " ".join(p for p in parts if isinstance(p, str)).strip()
+
+
+def _serialize_codex_item(item: Any, payload: dict) -> None:
+    """Serialize a ThreadItem's ``root`` into the legacy codex_event schema.
+
+    The keys here (``item_type`` ∈ agent_message/command_execution/reasoning
+    and their text/command fields) are what the /stages/{stage}/stream replay
+    endpoint parses, so they must stay stable across SDK migrations.
+    """
+    payload["item_class"] = type(item).__name__
+    itype = getattr(item, "type", "") or ""
+    if itype == "agentMessage":
+        payload.update({"item_type": "agent_message", "text": getattr(item, "text", "") or ""})
+    elif itype == "commandExecution":
+        payload.update({"item_type": "command_execution",
+                        "command": getattr(item, "command", "") or "",
+                        "output": (getattr(item, "aggregated_output", "") or "")[:1000]})
+    elif itype == "reasoning":
+        payload.update({"item_type": "reasoning", "text": _codex_reasoning_text(item)})
+    elif itype == "webSearch":
+        payload.update({"item_type": "web_search", "query": getattr(item, "query", "") or ""})
+    elif itype == "fileChange":
+        changes = getattr(item, "changes", None) or []
+        payload.update({"item_type": "file_change",
+                        "changes": [{"path": getattr(c, "path", "")} for c in changes]})
+    else:
+        payload.update({"item_type": itype or type(item).__name__, "repr": str(item)[:500]})
+
+
+def _serialize_codex_event(event: Any) -> dict:
+    """Produce a parseable dict for stream.jsonl from an openai_codex Notification.
+
+    Routes on the JSON-RPC ``method`` string and preserves the same
+    ``type=codex_event`` shape the previous SDK emitted so the stream replay
+    endpoint keeps working unchanged.
+    """
+    method = getattr(event, "method", "") or ""
+    p = getattr(event, "payload", None)
+    payload: dict = {"type": "codex_event", "method": method, "event_class": type(p).__name__}
+
+    if method == "thread/started":
+        payload.update({"event_type": "thread_started",
+                        "thread_id": getattr(getattr(p, "thread", None), "id", "")})
+    elif method in ("item/completed", "item/started"):
+        payload["event_type"] = "item_completed" if method == "item/completed" else "item_started"
+        item = getattr(getattr(p, "item", None), "root", None)
+        _serialize_codex_item(item, payload)
+    elif method == "turn/completed":
+        turn = getattr(p, "turn", None)
+        payload.update({"event_type": "turn_completed",
+                        "status": getattr(getattr(turn, "status", None), "value", "")})
+        err = getattr(turn, "error", None)
+        if err is not None:
+            payload["message"] = getattr(err, "message", "")
+    elif method == "thread/tokenUsage/updated":
+        total = getattr(getattr(p, "token_usage", None), "total", None)
+        payload["event_type"] = "token_usage"
+        if total is not None:
+            payload["usage"] = {
+                "input_tokens": getattr(total, "input_tokens", 0),
+                "output_tokens": getattr(total, "output_tokens", 0),
+                "cached_input_tokens": getattr(total, "cached_input_tokens", 0),
+            }
+    else:
+        payload.update({"event_type": "other", "repr": str(p)[:500]})
+    return payload
+
 
 async def run_codex(
     prompt: str,
@@ -631,16 +724,19 @@ async def run_codex(
     developer_instructions: Optional[str] = None,
     reasoning_effort: Optional[str] = "xhigh",
     reasoning_summary: Optional[str] = "auto",
+    container: Optional["ContainerSpec"] = None,
 ) -> CLIResult:
-    """Run Codex via the codex-agent-sdk. Each call spawns a subprocess — safe for concurrency."""
-    from codex_agent_sdk import (
-        CodexSDKClient, CodexAgentOptions, SandboxMode, ApprovalPolicy,
-        ReasoningEffort,
-        ItemCompletedEvent, ItemStartedEvent,
-        TurnCompletedEvent, TurnFailedEvent,
-        ThreadStartedEvent, StreamErrorEvent,
-        AgentMessageItem, CommandExecutionItem, ReasoningItem,
-    )
+    """Run Codex via the official OpenAI Codex Python SDK (``openai_codex``).
+
+    Each call opens its own ``AsyncCodex`` — a dedicated codex app-server
+    subprocess — so concurrent calls are isolated and safe for parallel
+    hunting. Passing ``thread_id`` resumes that thread instead of starting a
+    fresh one; otherwise the thread is created ephemeral.
+
+    When ``container`` is given, the codex app-server runs inside a Docker
+    container (isolated filesystem view) — see :mod:`bug_hunter.core.sandbox`.
+    """
+    from openai_codex import AsyncCodex, ApprovalMode, CodexConfig, Sandbox
 
     # Append the codex-only streaming guidance so the model knows to emit
     # narrative + delta arrays. Claude never sees this because run_claude is
@@ -650,20 +746,20 @@ async def run_codex(
     elif "## Conversation streaming" not in developer_instructions:
         developer_instructions = developer_instructions.rstrip() + CODEX_STREAMING_GUIDANCE
 
-    re_enum: Optional[ReasoningEffort] = None
+    # Reasoning knobs are forwarded to the codex app-server as config overrides,
+    # matching the CLI's `model_reasoning_effort` / `model_reasoning_summary`
+    # keys. The official SDK takes a plain JSON config object (no TOML quoting).
+    thread_config: dict[str, Any] = {}
     if reasoning_effort:
-        try:
-            re_enum = ReasoningEffort(reasoning_effort.lower())
-        except ValueError:
-            logger.warning(f"Unknown reasoning_effort {reasoning_effort!r}; using SDK default")
-
-    # codex_agent_sdk doesn't expose reasoning_summary directly, so we plumb
-    # it through config_overrides — the SDK forwards each entry to codex CLI
-    # as `--config k=v`. The value must already be a TOML literal (a quoted
-    # string), matching how the SDK encodes reasoning_effort itself.
-    extra_overrides: dict[str, str] = {}
+        thread_config["model_reasoning_effort"] = reasoning_effort.lower()
     if reasoning_summary:
-        extra_overrides["model_reasoning_summary"] = f'"{reasoning_summary.lower()}"'
+        thread_config["model_reasoning_summary"] = reasoning_summary.lower()
+
+    # Structured output is passed to the turn as a schema dict, not a file path.
+    output_schema: Optional[dict] = None
+    if output_schema_file:
+        with open(output_schema_file) as f:
+            output_schema = json.load(f)
 
     start_time = time.monotonic()
     raw_lines: list[str] = []
@@ -675,7 +771,7 @@ async def run_codex(
         os.makedirs(record_dir, exist_ok=True)
         _write_text(os.path.join(record_dir, "prompt.txt"), prompt)
         _write_json(os.path.join(record_dir, "request.json"), {
-            "cli": "codex-sdk", "model": model, "thread_id": thread_id or "",
+            "cli": "openai-codex", "model": model, "thread_id": thread_id or "",
             "additional_dirs": additional_dirs or [], "metadata": record_metadata or {},
             "cwd": cwd or "", "timeout_seconds": timeout,
             "started_at": datetime.now(timezone.utc).isoformat(),
@@ -692,153 +788,117 @@ async def run_codex(
         })
         return result
 
+    # In container mode the codex app-server runs inside Docker; point the SDK's
+    # spawned process at `docker run …` and make the thread cwd the in-container
+    # /work mount. full_access is safe because the container is the jail.
+    codex_config = None
+    codex_cwd = cwd
+    if container is not None:
+        from bug_hunter.core.sandbox import WORK, codex_launch_args, seed_agent_home
+        seed_agent_home(container)
+        codex_config = CodexConfig(launch_args_override=codex_launch_args(container))
+        codex_cwd = WORK
+
     try:
-        opts = CodexAgentOptions(
-            model=model,
-            sandbox=SandboxMode.FULL_ACCESS,
-            approval_policy=ApprovalPolicy.NEVER,
-            cwd=cwd,
-            additional_writable_dirs=list(additional_dirs or []),
-            output_schema_file=output_schema_file,
-            skip_git_repo_check=True,
-            ephemeral=not thread_id,
-            developer_instructions=developer_instructions,
-            reasoning_effort=re_enum,
-            config_overrides=extra_overrides,
-        )
-
-        client = CodexSDKClient(opts)
-
-        def _serialize_event(event) -> dict:
-            """Produce a parseable dict for stream.jsonl — must round-trip the
-            fields the /stages/{stage}/stream parser keys on."""
-            payload: dict = {"type": "codex_event", "event_class": type(event).__name__}
-            if isinstance(event, ThreadStartedEvent):
-                payload.update({"event_type": "thread_started",
-                                "thread_id": getattr(event, "thread_id", "")})
-            elif isinstance(event, (ItemCompletedEvent, ItemStartedEvent)):
-                item = event.item
-                item_payload: dict = {"item_class": type(item).__name__}
-                if isinstance(item, AgentMessageItem):
-                    item_payload.update({"item_type": "agent_message",
-                                         "text": item.text})
-                elif isinstance(item, CommandExecutionItem):
-                    item_payload.update({"item_type": "command_execution",
-                                         "command": item.command,
-                                         "output": (item.aggregated_output or "")[:1000]})
-                elif isinstance(item, ReasoningItem):
-                    item_payload.update({"item_type": "reasoning",
-                                         "text": getattr(item, "text", "")})
-                else:
-                    cls_name = type(item).__name__
-                    item_type = getattr(item, "type", "") or cls_name
-                    item_payload["item_type"] = item_type
-                    if cls_name == "WebSearchItem":
-                        item_payload["query"] = getattr(item, "query", "") or ""
-                    elif cls_name == "ErrorItem":
-                        item_payload["message"] = getattr(item, "message", "") or ""
-                    elif cls_name == "TodoListItem":
-                        items = getattr(item, "items", None) or []
-                        item_payload["items"] = [
-                            {"text": getattr(t, "text", ""),
-                             "completed": bool(getattr(t, "completed", False))}
-                            for t in items
-                        ]
-                    elif cls_name == "FileChangeItem":
-                        changes = getattr(item, "changes", None) or []
-                        item_payload["changes"] = [
-                            {"path": getattr(c, "path", ""),
-                             "kind": getattr(getattr(c, "kind", None), "value",
-                                             str(getattr(c, "kind", "")))}
-                            for c in changes
-                        ]
-                    else:
-                        item_payload["repr"] = str(item)[:500]
-                event_type = ("item_completed" if isinstance(event, ItemCompletedEvent)
-                              else "item_started")
-                payload.update({"event_type": event_type, **item_payload})
-            elif isinstance(event, TurnCompletedEvent):
-                payload["event_type"] = "turn_completed"
-                if getattr(event, "usage", None):
-                    payload["usage"] = {
-                        "input_tokens": event.usage.input_tokens,
-                        "output_tokens": event.usage.output_tokens,
-                        "cached_input_tokens": event.usage.cached_input_tokens,
-                    }
-            elif isinstance(event, TurnFailedEvent):
-                payload.update({"event_type": "turn_failed",
-                                "message": getattr(getattr(event, "error", None), "message", "")})
-            elif isinstance(event, StreamErrorEvent):
-                payload.update({"event_type": "stream_error",
-                                "message": getattr(event, "message", "")})
-            else:
-                payload.update({"event_type": "other", "repr": str(event)[:500]})
-            return payload
-
-        async def _stream():
+        async def _run():
             nonlocal result_thread_id, usage_dict
-            async for event in client.run_streamed(prompt, resume_thread_id=thread_id):
-                raw_str = json.dumps(_serialize_event(event), default=str)
-                raw_lines.append(raw_str)
-                if record_dir:
-                    _append_jsonl(os.path.join(record_dir, "stream.jsonl"), {
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "stream": "sdk", "raw": raw_str,
-                    })
+            async with AsyncCodex(config=codex_config) as codex:
+                # Full filesystem access + no approval prompts replace the old
+                # SandboxMode.FULL_ACCESS / ApprovalPolicy.NEVER. Full access
+                # subsumes the previous additional_writable_dirs.
+                start_kwargs: dict[str, Any] = {
+                    "model": model,
+                    "cwd": codex_cwd,
+                    "sandbox": Sandbox.full_access,
+                    "approval_mode": ApprovalMode.deny_all,
+                    "developer_instructions": developer_instructions,
+                    "config": thread_config or None,
+                }
+                if thread_id:
+                    thread = await codex.thread_resume(thread_id, **start_kwargs)
+                else:
+                    # Non-ephemeral so the thread's rollout is persisted to disk
+                    # and can be resumed on a later run (see bug_hunter re-hunts).
+                    thread = await codex.thread_start(ephemeral=False, **start_kwargs)
+                result_thread_id = getattr(thread, "id", "") or result_thread_id
 
-                if isinstance(event, ThreadStartedEvent):
-                    result_thread_id = event.thread_id or result_thread_id
+                turn = await thread.turn(prompt, output_schema=output_schema)
+                async for event in turn.stream():
+                    try:
+                        serialized = _serialize_codex_event(event)
+                    except Exception:
+                        serialized = {"type": "codex_event", "event_type": "other"}
+                    raw_str = json.dumps(serialized, default=str)
+                    raw_lines.append(raw_str)
+                    if record_dir:
+                        _append_jsonl(os.path.join(record_dir, "stream.jsonl"), {
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "stream": "sdk", "raw": raw_str,
+                        })
 
-                elif isinstance(event, ItemCompletedEvent):
-                    item = event.item
-                    if isinstance(item, AgentMessageItem):
-                        codex_messages.append(item.text)
-                        if on_event:
-                            narrative, data_preview = split_codex_agent_message(item.text)
-                            if narrative:
-                                on_event(StreamEvent(type="assistant", data={
-                                    "type": "assistant",
-                                    "message": {"content": [{"type": "text", "text": narrative}]},
+                    method = getattr(event, "method", "") or ""
+                    p = getattr(event, "payload", None)
+
+                    if method == "thread/started":
+                        tid = getattr(getattr(p, "thread", None), "id", "")
+                        if tid:
+                            result_thread_id = tid
+
+                    elif method == "item/completed":
+                        item = getattr(getattr(p, "item", None), "root", None)
+                        itype = getattr(item, "type", "") or ""
+                        if itype == "agentMessage":
+                            text = getattr(item, "text", "") or ""
+                            codex_messages.append(text)
+                            if on_event:
+                                narrative, data_preview = split_codex_agent_message(text)
+                                if narrative:
+                                    on_event(StreamEvent(type="assistant", data={
+                                        "type": "assistant",
+                                        "message": {"content": [{"type": "text", "text": narrative}]},
+                                    }))
+                                if data_preview:
+                                    on_event(StreamEvent(type="assistant", data={
+                                        "type": "assistant",
+                                        "message": {"content": [{"type": "text", "text": data_preview}]},
+                                    }))
+                        elif itype == "commandExecution":
+                            if on_event:
+                                on_event(StreamEvent(type="tool_use", data={
+                                    "type": "tool_use", "name": "Bash",
+                                    "input": {"command": getattr(item, "command", "") or ""},
+                                    "output": (getattr(item, "aggregated_output", "") or "")[:500],
                                 }))
-                            if data_preview:
+                        elif itype == "reasoning":
+                            if on_event:
                                 on_event(StreamEvent(type="assistant", data={
-                                    "type": "assistant",
-                                    "message": {"content": [{"type": "text", "text": data_preview}]},
+                                    "type": "content_block_delta",
+                                    "delta": {"type": "thinking_delta",
+                                              "thinking": _codex_reasoning_text(item)},
                                 }))
-                    elif isinstance(item, CommandExecutionItem):
+
+                    elif method == "thread/tokenUsage/updated":
+                        total = getattr(getattr(p, "token_usage", None), "total", None)
+                        if total is not None:
+                            usage_dict = {
+                                "input_tokens": getattr(total, "input_tokens", 0),
+                                "output_tokens": getattr(total, "output_tokens", 0),
+                                "cached_input_tokens": getattr(total, "cached_input_tokens", 0),
+                            }
+
+                    elif method == "turn/completed":
+                        turn_obj = getattr(p, "turn", None)
+                        status = getattr(getattr(turn_obj, "status", None), "value", "")
                         if on_event:
-                            on_event(StreamEvent(type="tool_use", data={
-                                "type": "tool_use", "name": "Bash",
-                                "input": {"command": item.command},
-                                "output": (item.aggregated_output or "")[:500],
-                            }))
-                    elif isinstance(item, ReasoningItem):
-                        if on_event:
-                            on_event(StreamEvent(type="assistant", data={
-                                "type": "content_block_delta",
-                                "delta": {"type": "thinking_delta", "thinking": item.text},
-                            }))
-
-                elif isinstance(event, TurnCompletedEvent):
-                    if event.usage:
-                        usage_dict = {
-                            "input_tokens": event.usage.input_tokens,
-                            "output_tokens": event.usage.output_tokens,
-                            "cached_input_tokens": event.usage.cached_input_tokens,
-                        }
-                    if on_event:
-                        on_event(StreamEvent(type="result", data={"type": "result"}))
-
-                elif isinstance(event, TurnFailedEvent):
-                    raise RuntimeError(event.error.message)
-
-                elif isinstance(event, StreamErrorEvent):
-                    raise RuntimeError(event.message)
+                            on_event(StreamEvent(type="result", data={"type": "result"}))
+                        if status == "failed":
+                            err = getattr(turn_obj, "error", None)
+                            raise RuntimeError(getattr(err, "message", "") or "codex turn failed")
 
         if timeout:
-            await asyncio.wait_for(_stream(), timeout=timeout)
+            await asyncio.wait_for(_run(), timeout=timeout)
         else:
-            await _stream()
+            await _run()
 
         duration_ms = int((time.monotonic() - start_time) * 1000)
 

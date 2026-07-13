@@ -123,7 +123,7 @@ Every stage also writes its raw structured output under the run directory (see [
 - **Python 3.11+**
 - **Node.js 18+** (to build the frontend)
 - **[Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)** (`claude`) and the `claude_agent_sdk` Python package — required.
-- **[Codex CLI](https://github.com/openai/codex)** (`codex`) and the [`codex-agent-sdk`](https://github.com/caprinux/codex-agent-sdk-python) Python package — optional, enables the second hunting agent.
+- **[Codex CLI](https://github.com/openai/codex)** (`codex`, for login/auth) and the official [`openai-codex`](https://github.com/openai/codex/tree/main/sdk/python) Python SDK — optional, enables the second hunting agent.
 - For black-box engagements: `subfinder`, `httpx`, `nmap`, `katana`, `gau`, `nuclei`, `ffuf`, `sqlmap` (and `go` to install the Go-based ones). These are **auto-installed on first run** when `auto_install_tools` is enabled.
 
 ### Install & run
@@ -227,7 +227,7 @@ Frontend (React + Vite) ──REST + WebSocket──▶ Backend (FastAPI + SQLit
 
 - **Frontend** — React 18 + Vite SPA. REST for CRUD, native WebSocket for live pipeline/agent events and chat streaming. Dark/light theme.
 - **Backend** — FastAPI + Uvicorn. REST API for engagements, runs, bugs, chains, reports, platforms, and chat; a `/ws` WebSocket for real-time updates; and a pipeline **orchestrator** that runs stages sequentially with retry, pause/resume/cancel, and disk-checkpointed resumability. Auth is a signed (HMAC) bearer token or HTTP Basic.
-- **Agents** — Claude and Codex invoked via their Python SDKs (`claude_agent_sdk`, `codex_agent_sdk`), each guided by a markdown instruction file and constrained to a JSON Schema from `schemas/`. Reasoning and tool use are streamed to the frontend and recorded to `stream.jsonl`.
+- **Agents** — Claude and Codex invoked via their Python SDKs (`claude_agent_sdk`, `openai_codex`), each guided by a markdown instruction file and constrained to a JSON Schema from `schemas/`. Reasoning and tool use are streamed to the frontend and recorded to `stream.jsonl`.
 - **Storage** — SQLite (`audit_output/db.sqlite`) for engagement/run/bug/chain/event/chat metadata; structured JSON files on disk for every finding and intermediate output.
 
 ### Bug schema

@@ -8,4 +8,4 @@ httpx>=0.27.0
 
 # Agent SDKs
 claude-agent-sdk>=0.2.94            # required — drives the Claude hunting/validation agents
-codex-agent-sdk @ git+https://github.com/caprinux/codex-agent-sdk-python   # optional — enables the Codex (GPT) agent
+openai-codex>=0.1.0b3               # optional — enables the Codex (GPT) agent (official SDK, currently beta; the prerelease pin lets pip install it without a global --pre)
