@@ -5,14 +5,26 @@ import useTitle from '../hooks/useTitle'
 const CLAUDE_MODEL_OPTIONS = [
   { value: 'opus', label: 'Claude Opus 4.8' },
   { value: 'claude-opus-4-8[1m]', label: 'Claude Opus 4.8 (1M context)' },
+  { value: 'claude-opus-4-6[1m]', label: 'Claude Opus 4.6 (1M context)' },
   { value: 'sonnet', label: 'Claude Sonnet 5' },
   { value: 'haiku', label: 'Claude Haiku 4.5' },
 ]
 
+// Current Codex lineup. Which of these an install can actually use depends on
+// its Codex auth/build — ChatGPT sign-in on this account exposes gpt-5.5 /
+// gpt-5.4 / gpt-5.4-mini (see `codex models`); the GPT-5.6 family and
+// codex-specialized models require a plan/build that offers them (or API-key
+// auth for the deprecated ones).
 const CODEX_MODEL_OPTIONS = [
+  { value: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
+  { value: 'gpt-5.6-terra', label: 'GPT-5.6 Terra' },
+  { value: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
   { value: 'gpt-5.5', label: 'GPT-5.5' },
   { value: 'gpt-5.4', label: 'GPT-5.4' },
   { value: 'gpt-5.4-mini', label: 'GPT-5.4 mini' },
+  { value: 'gpt-5.3-codex-spark', label: 'GPT-5.3-Codex Spark (Pro)' },
+  { value: 'gpt-5.3-codex', label: 'GPT-5.3-Codex (API key)' },
+  { value: 'gpt-5.2', label: 'GPT-5.2 (API key)' },
 ]
 
 const SECTIONS = [
