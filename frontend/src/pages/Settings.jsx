@@ -27,6 +27,24 @@ const CODEX_MODEL_OPTIONS = [
   { value: 'gpt-5.2', label: 'GPT-5.2 (API key)' },
 ]
 
+// Reasoning levels the openai-codex SDK currently understands. codex 0.144+ adds
+// 'max' and 'ultra', but the pinned SDK (0.1.0b3) rejects those values, so they
+// are intentionally omitted until a newer SDK ships.
+const CODEX_REASONING_OPTIONS = [
+  { value: 'minimal', label: 'Minimal' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'xhigh', label: 'X-High' },
+]
+
+const CODEX_SUMMARY_OPTIONS = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'concise', label: 'Concise' },
+  { value: 'detailed', label: 'Detailed' },
+  { value: 'none', label: 'None' },
+]
+
 const SECTIONS = [
   {
     key: 'pipeline',
@@ -40,6 +58,8 @@ const SECTIONS = [
       { key: 'verbose', label: 'Verbose Logging', type: 'bool', help: 'Detailed logging at each stage' },
       { key: 'resume', label: 'Resume on Restart', type: 'bool', help: 'Resume pipeline from last checkpoint on restart' },
       { key: 'auto_install_tools', label: 'Auto-install Tools', type: 'bool', help: 'Automatically install missing tools at setup' },
+      { key: 'codex_reasoning_effort', label: 'Codex Reasoning Effort', type: 'select', options: CODEX_REASONING_OPTIONS, help: 'Reasoning depth for Codex agents. Higher = deeper/slower/pricier. (max/ultra require a newer openai-codex SDK; unsupported today.)' },
+      { key: 'codex_reasoning_summary', label: 'Codex Reasoning Summary', type: 'select', options: CODEX_SUMMARY_OPTIONS, help: 'Verbosity of Codex reasoning summaries streamed to the UI' },
     ],
   },
   {
