@@ -108,6 +108,18 @@ class ModelsConfig:
 
 
 @dataclass
+class SandboxConfig:
+    # When enabled, each parallel hunting agent runs in its own Docker container
+    # with a private filesystem view (read-only rootfs; only its /work, /agent-home
+    # and a tmpfs are writable; source mounted read-only at /src). This prevents
+    # concurrent agents from seeing each other's work or writing outside their
+    # working directory, while still executing every tool on PATH.
+    enabled: bool = False
+    image: str = "bhw-agent:latest"
+    network: bool = True  # agents need network for recon / PoC execution
+
+
+@dataclass
 class AuthConfig:
     password: str = ""
 
@@ -126,6 +138,7 @@ class AppConfig:
     skills_hunter: SkillsHunterConfig = field(default_factory=SkillsHunterConfig)
     variant_hunter: VariantHunterConfig = field(default_factory=VariantHunterConfig)
     models: ModelsConfig = field(default_factory=ModelsConfig)
+    sandbox: SandboxConfig = field(default_factory=SandboxConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
     # Legacy aliases for backward compatibility with existing config files
     broad_bug_hunter: BugHunterConfig = field(default_factory=BugHunterConfig)
@@ -142,7 +155,7 @@ def _merge_dict_into_dataclass(dc: object, data: dict) -> None:
                                 StrictValidatorConfig, PerfectionistConfig,
                                 StrictTriagerConfig, BugChainerConfig,
                                 SkillsHunterConfig, VariantHunterConfig,
-                                ModelsConfig, AuthConfig)):
+                                ModelsConfig, SandboxConfig, AuthConfig)):
             if isinstance(value, dict):
                 _merge_dict_into_dataclass(current, value)
         else:

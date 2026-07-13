@@ -58,6 +58,13 @@ models:
   perfectionist: gpt-5.5
   strict_triager: gpt-5.5
   bug_chainer: gpt-5.5
+sandbox:
+  # Isolate each parallel hunting agent in its own Docker container (private
+  # filesystem view; can't see each other or write outside /work). Requires the
+  # bhw-agent image (built by setup/ubuntu-24-04-setup.sh). Default off.
+  enabled: false
+  image: bhw-agent:latest
+  network: true
 auth:
   password: ''
 broad_bug_hunter:
